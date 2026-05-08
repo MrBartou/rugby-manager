@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build
+dist/
+build/
+.vite/
+.tsbuildinfo
+
+# Tauri
+src-tauri/target/
+src-tauri/Cargo.lock
+
+# Test
+coverage/
+.nyc_output/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*~
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Saves locales (dev)
+*.save
+*.save.gz
+saves/
+
+# Excel temp files
+~$*.xlsx
+*.tmp
