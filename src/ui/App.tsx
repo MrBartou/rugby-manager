@@ -245,6 +245,7 @@ import { simulateMatch } from '../engine/match/simulate.js';
 import { createRng } from '../engine/rng.js';
 import {
   buildSeasonSaveFromState,
+  SaveWriteError,
   generateSeasonSaveId,
   seasonSaveRepository,
 } from '../data/season-save-repository.js';
@@ -1206,9 +1207,15 @@ export function App() {
       // L'auto-save est silencieuse : la signaler à chaque journée serait du bruit.
       if (kind === 'manual') notify('Partie sauvegardée', 'success');
       setTimeout(() => setSeasonSaveStatus('idle'), 2500);
-    } catch {
+    } catch (e) {
       setSeasonSaveStatus('error');
-      notify('Échec de la sauvegarde', 'warn');
+      // V0.60 : dire la cause et le remède. « Échec de la sauvegarde » laissait
+      // le joueur sans la moindre piste, et le stockage plein est de loin la
+      // cause la plus fréquente.
+      notify(
+        e instanceof SaveWriteError ? e.message : 'Échec de la sauvegarde.',
+        'warn',
+      );
     }
   };
 
