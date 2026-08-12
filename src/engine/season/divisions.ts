@@ -13,16 +13,16 @@
  *
  * ## Une seconde division de plein droit
  *
- * La Pro D2 est ici un championnat comme l'autre : quatorze clubs, mêmes
- * journées, mêmes phases finales, mêmes finances. C'est délibéré — la saison
+ * La Pro D2 est ici un championnat comme l'autre : même moteur de calendrier,
+ * mêmes phases finales, mêmes finances. C'est délibéré — la saison
  * entière (calendrier, barrages, demies, finale, économie) fonctionne alors
  * sans une ligne de code spécifique, et un manager relégué continue de jouer
  * exactement comme avant, dans un monde plus pauvre.
  *
- * La vraie Pro D2 compte seize clubs et trente journées. On s'en écarte
- * sciemment : aligner les deux formats évitait de rendre paramétrable tout ce
- * qui, aujourd'hui, suppose vingt-six journées et des phases finales aux
- * journées 27 à 29.
+ * V0.56 : la Pro D2 joue son vrai format, seize clubs et trente journées. Les
+ * phases finales suivent la longueur du championnat au lieu d'être figées aux
+ * journées 27 à 29, et le Top 14 garde le sien. Cet en-tête a décrit une Pro D2
+ * à quatorze clubs pendant quatre versions après le changement.
  *
  * ## Le championnat qu'on ne joue pas
  *
@@ -269,10 +269,13 @@ export function resolvePromotions(input: PromotionInput, rng: Rng): PromotionOut
   // Le club de Top 14 reçoit : il part favori, mais la marche n'est pas si
   // haute qu'un treizième en fin de course domine un deuxième lancé.
   const delta = (strengthOf(secondToLast) + 4) - strengthOf(runnerUp);
-  const top14Score = Math.max(0, Math.round(21 + delta * 0.42 + rng.nextGaussian(0, 7)));
-  const rawChallenger = Math.max(0, Math.round(21 - delta * 0.30 + rng.nextGaussian(0, 7)));
-  // Pas de match nul en barrage : celui qui reçoit passe.
-  const challengerScore = rawChallenger === top14Score ? rawChallenger - 3 : rawChallenger;
+  const rawTop14 = Math.max(0, Math.round(21 + delta * 0.42 + rng.nextGaussian(0, 7)));
+  const challengerScore = Math.max(0, Math.round(21 - delta * 0.30 + rng.nextGaussian(0, 7)));
+  // Pas de match nul en barrage : celui qui reçoit passe. V0.60 : on l'inscrit
+  // dans le score du receveur, et non en retirant trois points au visiteur.
+  // L'ancienne écriture pouvait produire un score négatif, et surtout un 0-0
+  // annoncé comme une descente puisque la comparaison, elle, était stricte.
+  const top14Score = challengerScore === rawTop14 ? rawTop14 + 3 : rawTop14;
   const survives = top14Score > challengerScore;
 
   if (!survives) {
