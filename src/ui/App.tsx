@@ -1400,6 +1400,13 @@ export function App() {
       seed: seasonSeedRef.current,
       development: withLoanMinutes,
     });
+    // V0.60 : on retient qui était prêté **avant** de vider la liste.
+    //
+    // Le registre de carrière lit cette information plus bas, pour marquer la
+    // ligne de saison d'un joueur parti jouer ailleurs. Elle était vidée ici,
+    // trois cents lignes plus haut : le marqueur n'a jamais été posé depuis son
+    // introduction en v0.59.
+    const pretsDeLaSaison = loansRef.current;
     loansRef.current = [];
     setLoanEpoch(e => e + 1);
     developmentReportsRef.current = rollover.developmentReports;
@@ -1839,7 +1846,7 @@ export function App() {
     // pas plus tôt, parce qu'il faut les honneurs : une ligne de saison porte
     // aussi les titres individuels.
     (() => {
-      const enLoan = new Set(loansRef.current.map(l => l.playerId as string));
+      const enLoan = new Set(pretsDeLaSaison.map(l => l.playerId as string));
       const entries: SeasonEntry[] = [];
       for (const player of listAllPlayersWithOverrides()) {
         const stat = state.seasonPlayerStats.get(player.id);
