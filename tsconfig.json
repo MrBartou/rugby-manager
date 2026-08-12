@@ -14,6 +14,14 @@
     "noImplicitOverride": true,
     "exactOptionalPropertyTypes": true,
 
+    /*
+     * Vite assure seule la transpilation : `tsc` ne sert ici qu'à vérifier les types.
+     * Sans noEmit, `npm run build` déposait un .js compilé à côté de chaque source,
+     * et la résolution de `import './Foo.js'` tombait sur ce .js périmé plutôt que
+     * sur le .tsx — masquant silencieusement les modifications.
+     */
+    "noEmit": true,
+
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
