@@ -2,10 +2,12 @@ import { useMemo, useRef, useState } from 'react';
 import {
   autoLineup,
   clearPlayerOverrides,
+  isSeedPlayer,
   listAllPlayersWithOverrides,
   listClubs,
   listRoster,
   makeMatchInput,
+  retiredSeedPlayers,
   setPlayerOverrides,
 } from '../data/seed-browser.js';
 import type { ManualLineup } from '../data/seed-browser.js';
@@ -249,6 +251,7 @@ import { simulateMatch } from '../engine/match/simulate.js';
 import { createRng } from '../engine/rng.js';
 import {
   buildSeasonSaveFromState,
+  pruneRetiredOverrides,
   SaveWriteError,
   generateSeasonSaveId,
   seasonSaveRepository,
@@ -980,7 +983,13 @@ export function App() {
   const loadSeason = async (saveId: string): Promise<void> => {
     const save = await seasonSaveRepository.load(saveId);
     if (!save) return;
-    setPlayerOverrides(save.playerOverrides);
+    // V0.60 : les retraités élagués reviennent depuis les données de base. Sans
+    // cette reconstruction, ils ressusciteraient : absents des overrides, le
+    // CSV les rendrait à nouveau jouables.
+    setPlayerOverrides([
+      ...save.playerOverrides,
+      ...retiredSeedPlayers(save.retiredSeedPlayerIds ?? [], save.currentSeason),
+    ]);
 
     // V0.44 — la division doit être restaurée **avant** de construire la
     // session : c'est elle qui dit quels quatorze clubs composent le
@@ -1176,18 +1185,29 @@ export function App() {
     const prefix = kind === 'auto' ? '⟲ Auto · ' : '';
     const displayName = `${prefix}${playerClub?.shortName ?? state.playerClubId} • ${seasonLabel} • ${phaseLabel}`;
     try {
+      // V0.60 : les retraités de longue date sortent de la sauvegarde, réduits
+      // à leur identifiant quand les données de base savent les reconstruire.
+      // Sans cela, vingt saisons de retraites suffisaient à faire heurter le
+      // quota du navigateur, et la partie mourait d'un stockage plein.
+      const elagage = pruneRetiredOverrides(
+        listAllPlayersWithOverrides(),
+        state.currentSeason,
+        isSeedPlayer,
+      );
+
       await seasonSaveRepository.save(buildSeasonSaveFromState(
         saveId,
         state,
         seasonSeedRef.current,
         clubs.map(c => c.id),
         displayName,
-        listAllPlayersWithOverrides(),
+        elagage.overrides,
         careerHistoryRef.current,
         reputationRef.current,
         objectiveRef.current ?? undefined,
         confidenceRef.current,
         {
+          retiredSeedPlayerIds: elagage.retiredSeedPlayerIds,
           aiMarket: aiMarketRef.current,
           ...(winterMarketRef.current !== null ? { winterMarketSeason: winterMarketRef.current } : {}),
           news: newsRef.current.items,
