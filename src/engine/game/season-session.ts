@@ -39,7 +39,6 @@ import { applyBadFitMoodPenalty, evaluateIdentityFit } from '../club/identity-fi
 import {
   applyMovement,
   computeAnnualPayroll,
-  computeMatchRevenue,
   computeRoundPayroll,
   initFinancesForAllClubs,
   type ClubFinances,
@@ -131,7 +130,11 @@ import {
   type TrainingFocus,
 } from '../club/development.js';
 import { coachingQualityFromStaff, generateStaffForClub, type StaffMember } from '../club/staff.js';
-import { matchdayRevenue } from '../club/club-management.js';
+import {
+  DEFAULT_PLAN,
+  INITIAL_FACILITIES,
+  matchdayRevenue,
+} from '../club/club-management.js';
 import { loanWageReliefPerRound } from '../club/loans.js';
 import { canRegister, type SigningCheck } from '../club/regulations.js';
 import { attendanceBonus, rivalryBetween } from '../season/rivalries.js';
@@ -1504,20 +1507,30 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
       const standing = standings.get(m.homeClubId);
       const played = standing?.played ?? 0;
       const winsRatio = played > 0 ? (standing?.wins ?? 0) / played : 0.5;
-      // V0.45 — le club de l'utilisateur encaisse selon **sa** politique
-      // tarifaire et son stade agrandi ; les clubs IA gardent le modèle
-      // historique, faute d'avoir une direction à piloter.
       // V0.48 — un derby remplit l'enceinte quel que soit le classement.
       const rivalry = rivalryBetween(m.homeClubId, m.awayClubId);
-      const revenue = m.homeClubId === opts.playerClubId && opts.clubDirection
-        ? matchdayRevenue({
-          club,
-          facilities: opts.clubDirection().facilities,
-          plan: opts.clubDirection().plan,
-          winsRatio,
-          ...(rivalry ? { rivalryBonus: attendanceBonus(rivalry.intensity) } : {}),
-        }).revenue
-        : computeMatchRevenue(club, winsRatio);
+      // V0.60 — une seule billetterie pour tout le monde.
+      //
+      // Le club dirigé passait par `matchdayRevenue` (V0.45), les clubs IA par
+      // un `computeMatchRevenue` de V0.6 au billet à trente euros en dur. Deux
+      // économies parallèles, dont une seule tenait compte du stade agrandi, de
+      // la politique tarifaire et des derbys : les recettes du championnat
+      // n'étaient pas comparables entre elles.
+      //
+      // Un club IA n'a pas de direction à piloter : on lui prête la politique
+      // par défaut et ses installations d'origine. Sa campagne de communication
+      // est réputée incluse dans son budget annuel, faute d'un poste de dépense
+      // qui la facturerait.
+      const direction = m.homeClubId === opts.playerClubId && opts.clubDirection
+        ? opts.clubDirection()
+        : { facilities: INITIAL_FACILITIES, plan: DEFAULT_PLAN };
+      const revenue = matchdayRevenue({
+        club,
+        facilities: direction.facilities,
+        plan: direction.plan,
+        winsRatio,
+        ...(rivalry ? { rivalryBonus: attendanceBonus(rivalry.intensity) } : {}),
+      }).revenue;
       applyClubMovement(m.homeClubId, {
         kind: 'MATCH_REVENUE',
         amount: revenue,
