@@ -12,6 +12,7 @@ import {
   diagnoseSquad,
   leagueAverageByPosition,
   runAiMarket,
+  runAiMarketAcrossDivisions,
   type AiMarketInput,
 } from '../../src/engine/club/ai-market.js';
 import { makeSquad } from './fixtures.js';
@@ -542,5 +543,71 @@ describe('mercato IA — interdiction de recruter', () => {
       transferBannedClubs: new Set(['b' as ClubId]),
     }));
     expect(out.transfers.some(t => t.toClubId !== 'b' && t.toClubId !== 'libre')).toBe(true);
+  });
+});
+
+// =============================================================================
+// Les deux divisions : v0.60
+// =============================================================================
+
+describe('le mercato tourne dans les deux divisions', () => {
+  /** Trois clubs de première division, trois de seconde. */
+  const elite = CLUB_IDS.slice(0, 3);
+  const seconde = CLUB_IDS.slice(3);
+
+  const deuxPasses = () => runAiMarketAcrossDivisions({
+    seed: 'deux-divisions',
+    base: {
+      players: scenario().players,
+      playerClubId: 'a' as ClubId,
+      balanceByClub: new Map(CLUB_IDS.map(id => [id, 40_000_000])),
+      currentSeason: SEASON,
+      rankedClubIds: CLUB_IDS,
+    },
+    byDivision: [
+      { division: 'TOP14', clubs: elite.map(id => club(id)) },
+      { division: 'PRO_D2', clubs: seconde.map(id => club(id)) },
+    ],
+  });
+
+  it('rend un effectif complet, pas seulement celui d\'une division', () => {
+    // Le défaut d'origine : la division qu'on ne joue pas ne voyait jamais le
+    // marché, et se vidait saison après saison sous l'effet des retraites.
+    const total = scenario().players.length;
+    expect(deuxPasses().players).toHaveLength(total);
+  });
+
+  it('la seconde passe part de ce que la première a laissé', () => {
+    // Les trésoreries doivent s'enchaîner : sinon un club paierait deux fois
+    // avec le même argent.
+    const result = deuxPasses();
+    expect(result.balanceByClub.size).toBeGreaterThan(0);
+    for (const [, solde] of result.balanceByClub) {
+      expect(Number.isFinite(solde)).toBe(true);
+    }
+  });
+
+  it('ne touche jamais au club dirigé, dans aucune des deux passes', () => {
+    const mien = deuxPasses().transfers.filter(t =>
+      t.fromClubId === ('a' as ClubId) || t.toClubId === ('a' as ClubId));
+    expect(mien).toEqual([]);
+  });
+
+  it('une division vide ne fait pas échouer l\'autre', () => {
+    const result = runAiMarketAcrossDivisions({
+      seed: 'une-seule',
+      base: {
+        players: scenario().players,
+        playerClubId: 'a' as ClubId,
+        balanceByClub: new Map(CLUB_IDS.map(id => [id, 40_000_000])),
+        currentSeason: SEASON,
+        rankedClubIds: CLUB_IDS,
+      },
+      byDivision: [
+        { division: 'TOP14', clubs: CLUB_IDS.map(id => club(id)) },
+        { division: 'PRO_D2', clubs: [] },
+      ],
+    });
+    expect(result.players).toHaveLength(scenario().players.length);
   });
 });

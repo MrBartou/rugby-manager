@@ -381,6 +381,50 @@ const URGENCY_SALARY_DIVISOR = 50;
  * hiérarchie réelle du marché : les gros servis d'abord, les autres sur ce qui
  * reste. Chaque club traite ses besoins du plus criant au moins urgent.
  */
+/**
+ * Le mercato des deux divisions, dans la foulée : v0.60.
+ *
+ * L'intersaison ne faisait tourner le marché que dans la division du manager,
+ * alors que le vieillissement et les retraites frappent tout le monde. Le
+ * championnat qu'on ne joue pas perdait des joueurs chaque saison sans jamais
+ * en recevoir, et se vidait au fil des années.
+ *
+ * Une seule passe sur l'ensemble des clubs ne réglerait rien : le plafond
+ * salarial n'est pas le même en Top 14 et en Pro D2, et `runAiMarket` en prend
+ * un seul. On enchaîne donc une passe par division, la seconde partant des
+ * effectifs et des trésoreries que la première a laissés.
+ */
+export function runAiMarketAcrossDivisions(input: {
+  readonly base: Omit<AiMarketInput, 'clubs' | 'division' | 'seed'>;
+  readonly seed: string;
+  /** Clubs de chaque division, dans l'ordre où le marché doit se jouer. */
+  readonly byDivision: readonly {
+    readonly division: 'TOP14' | 'PRO_D2';
+    readonly clubs: readonly Club[];
+  }[];
+}): AiMarketResult {
+  let players = input.base.players;
+  let balances = input.base.balanceByClub;
+  const transfers: AiTransfer[] = [];
+
+  for (const { division, clubs } of input.byDivision) {
+    if (clubs.length === 0) continue;
+    const pass = runAiMarket({
+      ...input.base,
+      players,
+      balanceByClub: balances,
+      clubs,
+      division,
+      seed: `${input.seed}_${division}`,
+    });
+    players = pass.players;
+    balances = pass.balanceByClub;
+    transfers.push(...pass.transfers);
+  }
+
+  return { players, balanceByClub: balances, transfers };
+}
+
 export function runAiMarket(input: AiMarketInput): AiMarketResult {
   const windowId = input.window ?? 'ESTIVAL';
   const rules = WINDOW_RULES[windowId];
