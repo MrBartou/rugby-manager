@@ -2912,7 +2912,7 @@ export function App() {
     const session = seasonRef.current;
     if (!session) return;
     const state = session.getState();
-    if (!isWindowOpeningRound(state.currentRound, 'HIVERNAL')) return;
+    if (!isWindowOpeningRound(state.currentRound, 'HIVERNAL', state.calendar.totalRounds)) return;
     if (winterMarketRef.current === state.currentSeason) return;
     winterMarketRef.current = state.currentSeason;
 

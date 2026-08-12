@@ -12,6 +12,7 @@ import {
   isWindowOpeningRound,
   nextWindow,
   transferWindowStatus,
+  transferWindowsFor,
   windowForRound,
 } from '../../src/engine/season/transfer-window.js';
 
@@ -61,5 +62,29 @@ describe('fenêtres de mercato', () => {
   it('signale le dernier jour d\'une fenêtre', () => {
     expect(transferWindowStatus(16).summary).toMatch(/dernier jour/i);
     expect(transferWindowStatus(14).roundsLeft).toBe(2);
+  });
+});
+
+describe('la fenêtre d\'hiver suit le calendrier de la division', () => {
+  it('le Top 14 garde J13 à J16', () => {
+    const hiver = transferWindowsFor(26).find(w => w.id === 'HIVERNAL')!;
+    expect([hiver.opensAt, hiver.closesAfter]).toEqual([13, 16]);
+  });
+
+  it('la Pro D2, qui joue trente journées, l\'ouvre à mi-parcours', () => {
+    // V0.60 : figée à J13, elle s'ouvrait et se refermait avant la trêve.
+    const hiver = transferWindowsFor(30).find(w => w.id === 'HIVERNAL')!;
+    expect([hiver.opensAt, hiver.closesAfter]).toEqual([15, 18]);
+  });
+
+  it('et la journée d\'ouverture suit, pour l\'IA comme pour le manager', () => {
+    expect(isWindowOpeningRound(15, 'HIVERNAL', 30)).toBe(true);
+    expect(isWindowOpeningRound(13, 'HIVERNAL', 30)).toBe(false);
+    expect(isTransferWindowOpen(18, 30)).toBe(true);
+    expect(isTransferWindowOpen(18, 26)).toBe(false);
+  });
+
+  it('un nombre de journées absurde retombe sur le Top 14', () => {
+    expect(transferWindowsFor(2)).toEqual(transferWindowsFor(26));
   });
 });

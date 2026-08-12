@@ -1173,7 +1173,7 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
       // V0.30 — la contrainte calendaire vaut pour tout le monde. Laisser le
       // manager acheter en continu pendant que l'IA attend sa fenêtre lui
       // donnerait un avantage que rien ne justifie.
-      const window = transferWindowStatus(currentRound);
+      const window = transferWindowStatus(currentRound, calendar.totalRounds);
       if (!window.open) return window.summary;
       // Sans accès aux effectifs adverses, impossible de juger la profondeur du
       // vendeur — mieux vaut fermer la porte que décider à l'aveugle.
@@ -1674,7 +1674,7 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
       pendingContractDecisions,
       resolvedContractDecisions,
       pendingIncomingOffers,
-      transferWindow: transferWindowStatus(currentRound),
+      transferWindow: transferWindowStatus(currentRound, calendar.totalRounds),
       bidCooldowns,
       jokersUsedFor,
       academy,
