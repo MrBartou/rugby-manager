@@ -1,6 +1,6 @@
-# Statut global — V0.59
+# Statut global — V0.60
 
-> Dernière mise à jour : V0.59 livrée. **1201/1201 tests verts. Calibration 12/12 cibles atteintes (8000 matchs par scénario).**
+> Dernière mise à jour : V0.60 livrée. **1264/1264 tests verts. Calibration 12/12 cibles atteintes (8000 matchs par scénario).**
 >
 > Ce document a longtemps annoncé V0.5 alors que le code était déjà en V0.10+ : les jalons
 > V0.6 à V0.12 (carrière, transferts, finances, JIFF, formation, internationaux, records)
@@ -309,6 +309,14 @@
 - [x] Le banc du XV de France : la fédération approche un manager titré, et le poste ne se cumule pas
 - [x] Un test qui empêche un extra de sauvegarde de se perdre en route
 
+### ✅ V0.60 : Fondations, le monde tient vingt saisons
+- [x] Le championnat va au bout : retrait de points, phases finales rechargées, finale nulle tranchée, saison sans titre
+- [x] Les règles ne se contournent plus : trêves, prêts, interdiction de recruter, joker médical, compo de secours
+- [x] La sauvegarde ne se perd plus : lecture défensive, copie de secours, quota, format versionné, élagage mesuré
+- [x] Deux divisions, deux calendriers : jeunes et mercato partout, salaires sur trente journées, mercato d'hiver à mi-parcours
+- [x] Une seule vérité : squelette de V0.1 retiré, ancienne sélection purgée, champs morts supprimés, version affichée réelle
+- [ ] Extraire l'intersaison vers le moteur, reporté en V0.61 (voir le CHANGELOG)
+
 ### ⬜ V0.9 — Bêta privée
 - [ ] Init Tauri (binaire desktop)
 - [ ] EULA + politique de confidentialité
@@ -380,6 +388,7 @@ npm run calibrate                         # 8000 matchs par scénario vs 12 cibl
 ## Métriques actuelles
 
 - **14 clubs de Top 14** nominatifs, **16 clubs de Pro D2**, ~700 joueurs
+- **Sauvegarde** : 705 Ko à la mi-saison 1, bornée par l'élagage des carrières achevées
 - **30 traits** de personnalité en 5 catégories
 - **Saison complète** simulable en moins d'une seconde
 - **Calibration moteur** : 12/12 cibles vertes sur 8000 matchs par scénario
