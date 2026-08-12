@@ -919,6 +919,7 @@ export function App() {
         homeClubId: homeId,
         awayClubId: awayId,
         ...weatherForSim(homeId),
+        unavailable: unavailableNow(),
         matchId: `s_${seed}_${homeId}_${awayId}`,
       }),
       playerClubRoster: listRoster(playerClubId),
@@ -1013,6 +1014,7 @@ export function App() {
         homeClubId: homeId,
         awayClubId: awayId,
         ...weatherForSim(homeId),
+        unavailable: unavailableNow(),
         matchId: `s_${save.seed}_${homeId}_${awayId}`,
       }),
       playerClubRoster: listRoster(save.playerClubId),
@@ -1787,6 +1789,7 @@ export function App() {
         homeClubId: homeId,
         awayClubId: awayId,
         ...weatherForSim(homeId),
+        unavailable: unavailableNow(),
         matchId: `s_${newSeed}_${homeId}_${awayId}`,
       }),
       playerClubRoster: listRoster(state.playerClubId),
@@ -3245,6 +3248,7 @@ export function App() {
       homeClubId: ctx.homeClubId,
       awayClubId: ctx.awayClubId,
       matchId: `r_${ctx.seed}`,
+      unavailable: unavailableNow(),
       homeFans: crowdForHomeMatch(ctx.homeClubId, isHomeForPlayer),
       ...ctx.conditions,
       // Le joueur fournit sa compo : si HOME, on l'applique côté HOME, sinon côté AWAY
@@ -3367,6 +3371,7 @@ export function App() {
       homeClubId: playerMatch.homeClubId,
       awayClubId: playerMatch.awayClubId,
       matchId: `auto_${state.currentRound}`,
+      unavailable: unavailableThisRound(state),
       homeFans: crowdForHomeMatch(
         playerMatch.homeClubId as string,
         playerMatch.homeClubId === state.playerClubId,
@@ -3691,6 +3696,19 @@ export function App() {
   };
 
   /**
+   * V0.60 : les indisponibles du moment, pour toute rencontre auto-simulée.
+   *
+   * Le groupe France est tiré des deux divisions, donc cet ensemble vaut pour
+   * tous les clubs, pas seulement le nôtre : les autres perdent eux aussi leurs
+   * internationaux la journée de trêve.
+   */
+  const unavailableNow = (): ReadonlySet<PlayerId> => (
+    seasonRef.current
+      ? unavailableThisRound(seasonRef.current.getState())
+      : new Set<PlayerId>()
+  );
+
+  /**
    * V0.55 — envoie un joueur jouer ailleurs pour la saison.
    *
    * Le prêt est un arbitrage, pas un rangement : on gagne un joueur formé dans
@@ -3784,6 +3802,7 @@ export function App() {
         homeClubId: homeId,
         awayClubId: awayId,
         ...weatherForSim(homeId),
+        unavailable: unavailableNow(),
         matchId: `s_${seed}_${homeId}_${awayId}`,
       }),
       playerClubRoster: listRoster(offer.clubId as string),
