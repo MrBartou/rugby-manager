@@ -198,6 +198,7 @@ import {
   capReport,
   jiffReport,
   reviewSeason,
+  countsAsOffence,
   sanctionSummary,
 } from '../engine/club/regulations.js';
 import {
@@ -1544,7 +1545,8 @@ export function App() {
       });
       if (verdicts.length === 0) continue;
 
-      nextRepeat.add(club.id as string);
+      // V0.60 : seul un verdict qui sanctionne vraiment fait un antécédent.
+      if (verdicts.some(countsAsOffence)) nextRepeat.add(club.id as string);
       const points = verdicts.reduce((n, x) => n + x.pointsDeducted, 0);
       if (points > 0) penalties.set(club.id, points);
       if (verdicts.some(x => x.transferBan)) bannedClubs.add(club.id);
