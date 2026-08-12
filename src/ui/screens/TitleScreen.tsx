@@ -49,7 +49,9 @@ export function TitleScreen({ onNewCareer, onContinue, onFreeMatch }: Props) {
     const count = restoreBackup();
     setRestored(count);
     if (count > 0) {
-      seasonSaveRepository.list().then(list => { setSaves(list); setHealth(storageHealth()); });
+      seasonSaveRepository.list()
+        .then(list => { setSaves(list); setHealth(storageHealth()); })
+        .catch(() => setHealth(storageHealth()));
     }
   };
 
