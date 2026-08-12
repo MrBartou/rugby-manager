@@ -193,6 +193,50 @@ describe('les absents restent absents', () => {
   });
 });
 
+describe('un effectif décimé se présente quand même', () => {
+  /** Dix-sept joueurs, dont quatre partis en sélection : il en reste treize. */
+  const effectifCourt = (): readonly Player[] =>
+    rosterForClub(SEED, 'alpha').slice(0, 17);
+
+  it('aligne quinze joueurs plutôt que de lever une exception', () => {
+    // V0.60, trouvé en jeu : écarter d'un coup blessés, suspendus et
+    // internationaux d'un effectif déjà creusé descendait sous quinze, et la
+    // journée s'arrêtait sur une exception non rattrapée. La partie était
+    // morte, sans message.
+    const court = effectifCourt();
+    const partis = new Set(court.slice(0, 4).map(p => p.id));
+
+    const input = makeMatchInputFromSeed(SEED, {
+      homeClubId: 'alpha',
+      awayClubId: 'beta',
+      rosterProvider: (clubId) => (clubId === 'alpha' ? court : rosterForClub(SEED, clubId)),
+      unavailable: partis,
+    });
+
+    expect(input.home.squad.starters).toHaveLength(15);
+  });
+
+  it('et rappelle les sélectionnés avant de rappeler les blessés', () => {
+    const court = effectifCourt();
+    const partis = new Set(court.slice(0, 4).map(p => p.id));
+    const blesse = court[16]!;
+    const avecBlesse = court.map(p => (p.id === blesse.id
+      ? { ...p, dynamic: { ...p.dynamic, injury: { type: 'FRACTURE' as const, startedAt: 1, estimatedReturnAt: 20, hasSequela: false } } }
+      : p));
+
+    const input = makeMatchInputFromSeed(SEED, {
+      homeClubId: 'alpha',
+      awayClubId: 'beta',
+      rosterProvider: (clubId) => (clubId === 'alpha' ? avecBlesse : rosterForClub(SEED, clubId)),
+      unavailable: partis,
+    });
+
+    const alignes = input.home.squad.starters.map(s => s.playerId as string);
+    expect(alignes).toHaveLength(15);
+    expect(alignes).not.toContain(blesse.id as string);
+  });
+});
+
 describe('un seul capitaine sur le terrain', () => {
   it('l\'auto-composition pose un brassard, pas deux', () => {
     const input = makeMatchInputFromSeed(SEED, { homeClubId: 'alpha', awayClubId: 'beta' });
