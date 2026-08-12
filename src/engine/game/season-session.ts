@@ -1606,13 +1606,28 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
     return 'over';
   }
 
+  /**
+   * Les tableaux de phase finale, régénérés en cascade.
+   *
+   * V0.60 : ils ne l'étaient qu'à la journée qui les concerne. Recharger une
+   * sauvegarde en demi-finales trouvait donc des barrages vides, ne pouvait pas
+   * en déduire de qualifiés, ne composait aucune demie et déclarait la saison
+   * terminée sans champion : une carrière perdue au premier rechargement du
+   * mois de juin.
+   *
+   * Rien n'a besoin d'être sauvegardé pour cela. Les barrages se déduisent du
+   * classement, qui l'est, et leurs vainqueurs de l'historique, qui l'est
+   * aussi. Les phases finales ne rapportent aucun point de championnat, donc le
+   * classement dont on les tire ne bouge plus : le tableau reconstruit est
+   * exactement celui qu'on avait quitté.
+   */
   function ensurePlayoffMatches(): void {
     if (!hasPlayoffs) return;
-    if (currentRound === PLAYOFFS.PLAYOFFS && playoffMatches.length === 0) {
+    if (currentRound >= PLAYOFFS.PLAYOFFS && playoffMatches.length === 0) {
       const top6 = rankedStandings(standings).slice(0, 6).map(s => s.clubId);
       playoffMatches = generatePlayoffMatches(top6, calendar.totalRounds);
     }
-    if (currentRound === PLAYOFFS.SEMIFINALS && semifinalMatches.length === 0) {
+    if (currentRound >= PLAYOFFS.SEMIFINALS && semifinalMatches.length === 0) {
       const top2 = rankedStandings(standings).slice(0, 2).map(s => s.clubId);
       const winner1 = winnerOf(playoffMatches[0]);
       const winner2 = winnerOf(playoffMatches[1]);
@@ -1620,10 +1635,15 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
         semifinalMatches = generateSemifinals(top2, winner1, winner2, calendar.totalRounds);
       }
     }
-    if (currentRound === PLAYOFFS.FINAL && finalMatch === undefined) {
+    if (currentRound >= PLAYOFFS.FINAL && finalMatch === undefined) {
       const w1 = winnerOf(semifinalMatches[0]);
       const w2 = winnerOf(semifinalMatches[1]);
       if (w1 && w2) finalMatch = generateFinal(w1, w2, calendar.totalRounds);
+    }
+    // Une finale déjà disputée avant le rechargement a un vainqueur : c'est le
+    // champion, et il ne se redéduit d'aucun classement.
+    if (champion === undefined && finalMatch) {
+      champion = winnerOf(finalMatch);
     }
   }
 
