@@ -641,6 +641,8 @@ export interface SeasonSessionOptions {
     readonly playerStats?: ReadonlyMap<PlayerId, SeasonPlayerStat>;
     /** V0.58 — matchs déjà comptabilisés, dénominateur du temps de jeu. */
     readonly statsMatchCount?: number;
+    /** V0.60 — décisions humaines en attente au moment de la sauvegarde. */
+    readonly pendingEvents?: readonly HumanEvent[];
     /** V0.58 — capes internationales accumulées au fil des saisons. */
     readonly caps?: ReadonlyMap<PlayerId, import('../season/national-team.js').CapRecord>;
   };
@@ -697,7 +699,15 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
   let relations: RelationsState = generateInitialRelations(opts.playerClubRoster, opts.currentSeason, opts.seed);
   let moodDeltasByPlayer: Map<PlayerId, number> = new Map();
   let nextMatchTacticalBonus = 0;
-  let pendingEvents: HumanEvent[] = [];
+  /**
+   * V0.60 : les décisions en attente survivent au rechargement.
+   *
+   * Elles étaient perdues. Un conflit de vestiaire ouvert le vendredi
+   * disparaissait si l'on rechargeait le samedi, avec la décision qu'il
+   * appelait : la question se refermait toute seule, sans qu'on y réponde et
+   * sans que rien n'en découle.
+   */
+  let pendingEvents: HumanEvent[] = [...(opts.restoreFrom?.pendingEvents ?? [])];
   const resolvedEvents: { event: HumanEvent; chosenOptionId: string; resolvedAtRound: number }[] = [];
 
   // V0.6 : décisions de renouvellement de contrat (uniquement pour le club joueur)

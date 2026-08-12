@@ -36,6 +36,7 @@ import type { ActiveLoan } from '../engine/club/loans.js';
 import type { BoardExpectation } from '../engine/season/board-expectations.js';
 import type { HeadToHead } from '../engine/season/rivalries.js';
 import type { PlayerId } from '../engine/types.js';
+import type { HumanEvent } from '../engine/human/events.js';
 
 /**
  * 0.5.0 — V0.31 : ajout des réglages d'entraînement, du scouting, des délais
@@ -183,6 +184,13 @@ export interface SeasonSave extends SeasonSaveMeta {
      */
     readonly pointsPenaltyByClub?: readonly { readonly clubId: ClubId; readonly points: number }[];
   };
+  /**
+   * V0.60 — décisions humaines en attente au moment de la sauvegarde.
+   *
+   * Un conflit de vestiaire ouvert disparaissait au rechargement, avec la
+   * décision qu'il appelait : la question se refermait sans réponse.
+   */
+  readonly pendingEvents?: readonly HumanEvent[];
   /**
    * V0.60 — bancs libres au moment de la sauvegarde.
    *
@@ -654,6 +662,8 @@ export function buildSeasonSaveFromState(
     };
     /** V0.60 — bancs libres. */
     readonly vacancies?: readonly ClubId[];
+    /** V0.60 — décisions humaines en attente. */
+    readonly pendingEvents?: readonly HumanEvent[];
     readonly direction?: {
       readonly facilities: ClubFacilities;
       readonly plan: ClubPlan;
@@ -713,6 +723,7 @@ export function buildSeasonSaveFromState(
     playerOverrides,
     ...(extras.retiredSeedPlayerIds ? { retiredSeedPlayerIds: extras.retiredSeedPlayerIds } : {}),
     ...(extras.vacancies !== undefined ? { vacancies: extras.vacancies } : {}),
+    ...(extras.pendingEvents !== undefined ? { pendingEvents: extras.pendingEvents } : {}),
     financesByClub: [...state.financesByClub.entries()].map(([clubId, finances]) => ({ clubId, finances })),
     careerHistory,
     managerReputation,
