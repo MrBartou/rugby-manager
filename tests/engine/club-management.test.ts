@@ -185,3 +185,39 @@ describe('effets sportifs', () => {
     expect(homeAdvantageBonus(0.55)).toBeLessThan(0);
   });
 });
+
+describe('la billetterie vaut pour tous les clubs', () => {
+  const club = (over: Partial<Club> = {}): Club => ({
+    id: 'c' as ClubId, name: 'Club', shortName: 'CLB', city: 'Ville',
+    tier: 'BUDGET_MOYEN', tacticalIdentity: 'MIXTE',
+    stadiumCapacity: 20_000, annualBudget: 20_000_000,
+    salaryCapUsage: 0, jiffCount: 15, reputation: 60,
+    ...over,
+  });
+
+  const recette = (over: Partial<Club>, winsRatio: number): number => matchdayRevenue({
+    club: club(over),
+    facilities: INITIAL_FACILITIES,
+    plan: DEFAULT_PLAN,
+    winsRatio,
+  }).revenue;
+
+  it('un club sans direction encaisse quand même selon son stade et sa forme', () => {
+    // V0.60 : les clubs IA passaient par une seconde billetterie, billet à
+    // trente euros en dur, aveugle au stade agrandi comme aux derbys.
+    expect(recette({ tier: 'GROS_BUDGET', stadiumCapacity: 30_000 }, 0.7))
+      .toBeGreaterThan(recette({ tier: 'PETIT_BUDGET', stadiumCapacity: 10_000 }, 0.7));
+    expect(recette({}, 0.8)).toBeGreaterThan(recette({}, 0.2));
+  });
+
+  it('et un derby remplit l\'enceinte même en bas de tableau', () => {
+    const ordinaire = matchdayRevenue({
+      club: club(), facilities: INITIAL_FACILITIES, plan: DEFAULT_PLAN, winsRatio: 0.2,
+    });
+    const derby = matchdayRevenue({
+      club: club(), facilities: INITIAL_FACILITIES, plan: DEFAULT_PLAN, winsRatio: 0.2,
+      rivalryBonus: 0.1,
+    });
+    expect(derby.attendance).toBeGreaterThan(ordinaire.attendance);
+  });
+});
