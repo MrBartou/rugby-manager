@@ -44,7 +44,35 @@ import type { PlayerId } from '../engine/types.js';
  * scouting effacés, et délais après refus remis à zéro — il suffisait de
  * recharger pour reproposer une offre qu'un joueur venait de décliner.
  */
-export const SEASON_SCHEMA_VERSION = '0.5.0';
+/**
+ * 0.6.0 — V0.60 : le format avait cessé d'être versionné.
+ *
+ * Tout ce qui a été ajouté depuis la V0.32 (staff, direction du club, promesses,
+ * capitaine, hiérarchie de l'effectif, rivaux, palmarès, prêts, attentes du
+ * board, confrontations, retouches du groupe France, registre de carrière) est
+ * entré dans la sauvegarde sous le tampon `0.5.0`. La migration ne pouvait donc
+ * plus rien distinguer, et une sauvegarde écrite par une version postérieure du
+ * jeu était chargée puis re-tamponnée sans le moindre contrôle.
+ *
+ * Ces champs sont tous facultatifs : une partie 0.5.0 se charge telle quelle,
+ * la session repartant de ses valeurs par défaut pour ce qu'elle ne trouve pas.
+ * Le numéro sert à savoir ce qu'on lit, pas à refuser de le lire.
+ */
+export const SEASON_SCHEMA_VERSION = '0.6.0';
+
+/** Les versions de format que ce build sait ouvrir. */
+const READABLE_SCHEMA_VERSIONS: readonly string[] = ['0.3.0', '0.4.0', '0.5.0', '0.6.0'];
+
+/**
+ * Vrai si la sauvegarde vient d'une version du jeu postérieure à celle-ci.
+ *
+ * La charger reviendrait à en perdre silencieusement tout ce qu'on ne sait pas
+ * lire, puis à la réécrire amputée sous notre propre tampon.
+ */
+export function isFutureSchema(version: string | undefined): boolean {
+  if (version === undefined) return false;
+  return !READABLE_SCHEMA_VERSIONS.includes(version);
+}
 
 export interface SeasonSaveMeta {
   readonly saveId: string;
@@ -275,9 +303,27 @@ export interface StorageHealth {
   readonly corrupted: readonly string[];
   /** Vrai si le bloc entier est illisible, pas seulement une entrée. */
   readonly totalLoss: boolean;
+  /**
+   * Parties écrites par une version plus récente du jeu.
+   *
+   * Elles ne sont ni chargées ni touchées : les ouvrir amputerait tout ce que
+   * ce build ne sait pas lire, et la sauvegarde suivante figerait la perte.
+   */
+  readonly fromFutureVersion: readonly string[];
 }
 
-let lastHealth: StorageHealth = { corrupted: [], totalLoss: false };
+const HEALTHY: StorageHealth = { corrupted: [], totalLoss: false, fromFutureVersion: [] };
+
+let lastHealth: StorageHealth = HEALTHY;
+
+/**
+ * Entrées lues mais non chargées, gardées telles quelles.
+ *
+ * Une partie illisible ou écrite par une version postérieure du jeu ne doit pas
+ * disparaître à la prochaine écriture : `save()` reconstruit le bloc à partir
+ * de ce qu'il a su lire, et tout ce qui n'y figure pas serait effacé.
+ */
+let preservedEntries: Record<string, unknown> = {};
 
 export function storageHealth(): StorageHealth {
   return lastHealth;
@@ -300,11 +346,11 @@ function readStorage(): StorageShape {
   try {
     raw = localStorage.getItem(STORAGE_KEY);
   } catch {
-    lastHealth = { corrupted: [], totalLoss: true };
+    lastHealth = { ...HEALTHY, totalLoss: true };
     return { version: SEASON_SCHEMA_VERSION, saves: {} };
   }
   if (!raw) {
-    lastHealth = { corrupted: [], totalLoss: false };
+    lastHealth = HEALTHY;
     return { version: SEASON_SCHEMA_VERSION, saves: {} };
   }
 
@@ -314,12 +360,19 @@ function readStorage(): StorageShape {
   } catch {
     // Le bloc entier est illisible. On le signale, et surtout on ne le
     // remplace pas : la copie de secours reste la seule chance de le récupérer.
-    lastHealth = { corrupted: [], totalLoss: true };
+    lastHealth = { ...HEALTHY, totalLoss: true };
     return { version: SEASON_SCHEMA_VERSION, saves: {} };
   }
 
   const saves: Record<string, SeasonSave> = {};
+  const fromFutureVersion: string[] = [];
+  const preserved: Record<string, unknown> = {};
   for (const [id, s] of Object.entries(parsed?.saves ?? {})) {
+    if (isFutureSchema((s as Partial<SeasonSave> | undefined)?.schemaVersion)) {
+      fromFutureVersion.push(id);
+      preserved[id] = s;
+      continue;
+    }
     try {
       const migrated = migrateSave(s);
       // Une entrée sans identifiant ni club n'est pas une partie : la charger
@@ -328,9 +381,11 @@ function readStorage(): StorageShape {
       saves[id] = migrated;
     } catch {
       corrupted.push(id);
+      preserved[id] = s;
     }
   }
-  lastHealth = { corrupted, totalLoss: false };
+  preservedEntries = preserved;
+  lastHealth = { corrupted, totalLoss: false, fromFutureVersion };
   return { version: SEASON_SCHEMA_VERSION, saves };
 }
 
@@ -401,7 +456,12 @@ function isQuotaError(e: unknown): boolean {
  * chose à récupérer.
  */
 function writeStorage(s: StorageShape): void {
-  const payload = JSON.stringify(s);
+  const payload = JSON.stringify({
+    ...s,
+    // Ce qu'on n'a pas su lire repart tel quel : on ne réécrit jamais le bloc
+    // en n'y remettant que ce qu'on a compris.
+    saves: { ...preservedEntries, ...s.saves },
+  });
   try {
     const previous = localStorage.getItem(STORAGE_KEY);
     if (previous) localStorage.setItem(BACKUP_KEY, previous);
