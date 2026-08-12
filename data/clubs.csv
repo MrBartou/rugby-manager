@@ -1,0 +1,15 @@
+id,name,shortName,city,tier,tacticalIdentity,stadiumCapacity,annualBudget,reputation
+toulouse,Stade Toulousain,Toulouse,Toulouse,GROS_BUDGET,GRAND_ECART,19000,42000000,95
+ubb,Union Bordeaux Bègles,UBB,Bordeaux,GROS_BUDGET,GRAND_ECART,32000,32000000,82
+larochelle,Stade Rochelais,La Rochelle,La Rochelle,GROS_BUDGET,JEU_AVANTS,16000,30000000,85
+toulon,RC Toulonnais,Toulon,Toulon,GROS_BUDGET,JEU_AVANTS,17500,28000000,78
+racing,Racing 92,Racing,Paris,GROS_BUDGET,GRAND_ECART,32000,29000000,80
+stade,Stade Français Paris,Stade,Paris,GROS_BUDGET,GRAND_ECART,20000,26000000,75
+clermont,ASM Clermont,Clermont,Clermont,GROS_BUDGET,MIXTE,19000,25000000,76
+lyon,LOU Rugby,Lyon,Lyon,BUDGET_MOYEN,MIXTE,29000,22000000,70
+montpellier,Montpellier Hérault,MHR,Montpellier,BUDGET_MOYEN,MIXTE,15600,21000000,65
+castres,Castres Olympique,Castres,Castres,BUDGET_MOYEN,JEU_AVANTS,11500,18000000,68
+pau,Section Paloise,Pau,Pau,BUDGET_MOYEN,MIXTE,14000,17000000,62
+bayonne,Aviron Bayonnais,Bayonne,Bayonne,BUDGET_MOYEN,JEU_AVANTS,17000,16000000,60
+usap,USA Perpignan,USAP,Perpignan,PETIT_BUDGET,JEU_AVANTS,14600,14000000,55
+vannes,RC Vannes,Vannes,Vannes,PETIT_BUDGET,DEFENSE_DE_FER,11400,12000000,50
