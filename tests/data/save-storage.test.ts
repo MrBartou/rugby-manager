@@ -14,6 +14,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  SEASON_SCHEMA_VERSION,
   SaveWriteError,
   restoreBackup,
   seasonSaveRepository,
@@ -48,7 +49,7 @@ const partie = (saveId: string) => ({
   saveId,
   displayName: `Partie ${saveId}`,
   savedAt: '2026-08-12T20:00:00.000Z',
-  schemaVersion: '0.5.0',
+  schemaVersion: SEASON_SCHEMA_VERSION,
   playerClubId: 'toulouse',
   seed: 's',
   currentRound: 12,
@@ -145,5 +146,35 @@ describe('le stockage plein le dit', () => {
       expect((e as SaveWriteError).cause_).toBe('QUOTA');
       expect((e as SaveWriteError).message).toMatch(/place|plein/i);
     }
+  });
+});
+
+describe('ce qu\'on ne sait pas lire, on ne l\'efface pas', () => {
+  const futur = (saveId: string) => ({ ...partie(saveId), schemaVersion: '99.0.0' });
+
+  it('une partie d\'une version plus récente n\'est pas chargée', async () => {
+    // La charger amputerait tout ce que ce build ignore, puis la réécrirait
+    // amputée sous son propre tampon.
+    ecrireBrut({ ancienne: partie('ancienne'), demain: futur('demain') });
+
+    expect((await seasonSaveRepository.list()).map(s => s.saveId)).toEqual(['ancienne']);
+    expect(storageHealth().fromFutureVersion).toEqual(['demain']);
+  });
+
+  it('et elle survit à la sauvegarde suivante', async () => {
+    ecrireBrut({ demain: futur('demain') });
+    await seasonSaveRepository.save(partie('nouvelle') as never);
+
+    const brut = JSON.parse(localStorage.getItem(KEY) ?? '{}') as { saves: Record<string, { schemaVersion: string }> };
+    expect(Object.keys(brut.saves).sort()).toEqual(['demain', 'nouvelle']);
+    expect(brut.saves.demain!.schemaVersion).toBe('99.0.0');
+  });
+
+  it('une entrée abîmée survit elle aussi', async () => {
+    ecrireBrut({ cassee: { saveId: 'cassee' }, bonne: partie('bonne') });
+    await seasonSaveRepository.save(partie('nouvelle') as never);
+
+    const brut = JSON.parse(localStorage.getItem(KEY) ?? '{}') as { saves: Record<string, unknown> };
+    expect(Object.keys(brut.saves).sort()).toEqual(['bonne', 'cassee', 'nouvelle']);
   });
 });
