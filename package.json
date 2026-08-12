@@ -1,6 +1,6 @@
 {
   "name": "rugby-manager",
-  "version": "0.1.0",
+  "version": "0.60.0",
   "description": "Le FM du rugby français — focus modélisation match + vie de vestiaire",
   "private": true,
   "type": "module",
@@ -21,10 +21,8 @@
     "calibrate": "tsx tools/calibrate.ts"
   },
   "dependencies": {
-    "pixi.js": "^8.18.1",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "zustand": "^5.0.0"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
