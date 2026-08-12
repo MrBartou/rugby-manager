@@ -14,8 +14,14 @@ import type { ClubId, PlayerId } from '../types.js';
 export interface SeasonRecord {
   /** Année de la saison (ex: 2025 = saison 2025-26). */
   readonly seasonStart: number;
-  /** Champion du Brennus. */
-  readonly champion: ClubId;
+  /**
+   * Champion du Brennus.
+   *
+   * V0.60 : facultatif. Une saison peut se clore sans titre décerné, et tout
+   * le bilan de fin d'année en dépendait : sans champion, ni archive, ni
+   * verdict du président, ni mise à jour de la réputation.
+   */
+  readonly champion?: ClubId;
   /** Finaliste battu (clubId). */
   readonly runnerUp?: ClubId;
   /** Position finale du club joueur (saison régulière, 1-indexée). */

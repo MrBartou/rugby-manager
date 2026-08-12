@@ -1647,17 +1647,42 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
     }
   }
 
+  /**
+   * Le mieux classé des deux à l'issue de la saison régulière.
+   *
+   * C'est la règle des phases finales : à égalité au coup de sifflet final, le
+   * classement départage. Elle est appliquée ici de la même façon partout, au
+   * lieu de trois tranchages différents, dont un qui laissait tout simplement
+   * la finale sans vainqueur.
+   */
+  function betterRanked(a: ClubId, b: ClubId): ClubId {
+    const ranked = rankedStandings(standings).map(s => s.clubId);
+    const ia = ranked.indexOf(a);
+    const ib = ranked.indexOf(b);
+    if (ia < 0) return b;
+    if (ib < 0) return a;
+    return ia <= ib ? a : b;
+  }
+
+  /** Le qualifié d'un match à élimination directe, nul compris. */
+  function knockoutWinner(
+    homeClubId: ClubId,
+    awayClubId: ClubId,
+    homeScore: number,
+    awayScore: number,
+  ): ClubId {
+    if (homeScore > awayScore) return homeClubId;
+    if (awayScore > homeScore) return awayClubId;
+    return betterRanked(homeClubId, awayClubId);
+  }
+
   function winnerOf(match: PlayoffMatch | undefined): ClubId | undefined {
     if (!match) return undefined;
     const played = history.find(h =>
       h.round === match.round && h.homeClubId === match.homeClubId && h.awayClubId === match.awayClubId,
     );
     if (!played) return undefined;
-    if (played.homeScore === played.awayScore) {
-      // En cas d'égalité en V0.3 : on tranche par le seed (le receveur garde l'avantage classement)
-      return match.homeClubId;
-    }
-    return played.homeScore > played.awayScore ? match.homeClubId : match.awayClubId;
+    return knockoutWinner(match.homeClubId, match.awayClubId, played.homeScore, played.awayScore);
   }
 
   function currentRoundMatches(): readonly (ScheduledMatch | PlayoffMatch)[] {
@@ -1827,9 +1852,9 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
       }
       // Si on vient de jouer la finale → désigner le champion
       if (playerMatch.round === PLAYOFFS.FINAL) {
-        if (homeScore > awayScore) champion = playerMatch.homeClubId;
-        else if (awayScore > homeScore) champion = playerMatch.awayClubId;
-        else champion = playerMatch.homeClubId; // tie-break
+        champion = knockoutWinner(
+          playerMatch.homeClubId, playerMatch.awayClubId, homeScore, awayScore,
+        );
       }
 
       // V0.9 : cumul des stats joueurs (essais)
@@ -1948,8 +1973,9 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
           standings = applyMatchToStandings(standings, m, result);
         }
         if (m.round === PLAYOFFS.FINAL) {
-          if (result.homeScore > result.awayScore) champion = m.homeClubId;
-          else if (result.awayScore > result.homeScore) champion = m.awayClubId;
+          // Une finale auto-simulée nulle ne laissait aucun champion, et toute
+          // la fin de saison en dépend.
+          champion = knockoutWinner(m.homeClubId, m.awayClubId, result.homeScore, result.awayScore);
         }
       }
       // V0.6 : finances de la journée
