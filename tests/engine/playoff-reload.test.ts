@@ -167,3 +167,41 @@ describe('une partie rechargée en phases finales continue', () => {
     expect(rechargée.getState().champion).toBe(titre);
   });
 });
+
+describe('une finale nulle désigne quand même un champion', () => {
+  const roundOf = (): number => newSession().getState().playoffRounds.FINAL;
+
+  /** Amène une session jusqu'à la finale, joueur qualifié ou non. */
+  function jusquALaFinale(): SeasonSession {
+    const session = newSession();
+    playUntil(session, roundOf());
+    return session;
+  }
+
+  it('le mieux classé de la saison régulière l\'emporte', () => {
+    // Le règlement des phases finales tranche par le classement. Sans cela, une
+    // finale nulle laissait le titre vacant et, avec lui, tout le bilan de fin
+    // de saison : archives, verdict du président, réputation.
+    const session = jusquALaFinale();
+    const finale = session.getState().playerNextMatch;
+    expect(finale, 'le club dirigé doit disputer la finale de ce scénario').toBeDefined();
+    if (!finale) return;
+
+    const résultat = simulateMatch(buildInput(finale.homeClubId, finale.awayClubId), 'finale');
+    session.commitPlayerMatch(20, 20, résultat);
+
+    const state = session.getState();
+    expect(state.champion).toBeDefined();
+
+    const classement = [...state.standings.values()]
+      .sort((a, b) => b.leaguePoints - a.leaguePoints)
+      .map(s => s.clubId as string);
+    const rangDe = (id: string): number => classement.indexOf(id);
+    expect(rangDe(state.champion as string))
+      .toBeLessThan(rangDe(
+        state.champion === finale.homeClubId
+          ? finale.awayClubId as string
+          : finale.homeClubId as string,
+      ));
+  });
+});
