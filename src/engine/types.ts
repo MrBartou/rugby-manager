@@ -154,14 +154,20 @@ export interface HiddenAttributes {
   adaptabilite: StatValue;
 }
 
-/** Contrat. */
+/**
+ * Contrat.
+ *
+ * V0.60 : `performanceBonus` et `releaseClause` sont retirés. Déclarés en V0.1,
+ * jamais renseignés, jamais lus : le mercato les ignorait, la masse salariale ne
+ * les comptait pas, aucun écran ne les affichait. Un champ qui existe sans
+ * exister est pire qu'un champ absent, parce qu'on croit pouvoir s'y fier.
+ * Ils reviendront avec la clause libératoire, prévue en V0.64.
+ */
 export interface Contract {
   startSeason: number;
   endSeason: number;
   annualSalary: number;                // en euros
   signingBonus?: number;
-  performanceBonus?: number;
-  releaseClause?: number;
 }
 
 /** Le joueur (entité complète). */
