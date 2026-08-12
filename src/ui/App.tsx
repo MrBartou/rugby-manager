@@ -231,6 +231,7 @@ import {
 } from '../engine/club/academy.js';
 import { appendSeason, EMPTY_HISTORY, type CareerHistory, type SeasonRecord } from '../engine/season/records.js';
 import {
+  compactBook,
   EMPTY_BOOK,
   fromLegacyTotals,
   recordSeason,
@@ -252,6 +253,7 @@ import { createRng } from '../engine/rng.js';
 import {
   buildSeasonSaveFromState,
   pruneRetiredOverrides,
+  RETIREMENT_GRACE_SEASONS,
   SaveWriteError,
   generateSeasonSaveId,
   seasonSaveRepository,
@@ -1222,7 +1224,15 @@ export function App() {
           managerContract: contractRef.current,
           prospects: prospectsRef.current,
           divisions: divisionsRef.current,
-          careerBook: [...careerBookRef.current].map(([playerId, career]) => ({ playerId, career })),
+          // V0.60 : les carrières achevées sont repliées en une ligne par club.
+          // Leur détail saison par saison ne s'affiche plus nulle part, et les
+          // totaux comme les records se dérivent de la somme des lignes, qui
+          // est préservée à l'unité près.
+          careerBook: [...compactBook(
+            careerBookRef.current,
+            state.currentSeason,
+            RETIREMENT_GRACE_SEASONS,
+          )].map(([playerId, career]) => ({ playerId, career })),
           nationalPicks: nationalPicksRef.current,
           regulation: {
             sanctionedLastSeason: sanctionedLastSeasonRef.current,
