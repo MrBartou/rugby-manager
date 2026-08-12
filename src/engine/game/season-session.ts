@@ -132,6 +132,7 @@ import {
 } from '../club/development.js';
 import { coachingQualityFromStaff, generateStaffForClub, type StaffMember } from '../club/staff.js';
 import { matchdayRevenue } from '../club/club-management.js';
+import { loanWageReliefPerRound } from '../club/loans.js';
 import { canRegister, type SigningCheck } from '../club/regulations.js';
 import { attendanceBonus, rivalryBetween } from '../season/rivalries.js';
 import {
@@ -587,6 +588,14 @@ export interface SeasonSessionOptions {
    * fonctionnalité, morte depuis sa livraison.
    */
   readonly freeAgentPool?: () => readonly Player[];
+  /**
+   * V0.60 — les prêts en cours du club dirigé.
+   *
+   * Le club d'accueil prend en charge une part du salaire. Sans cette vue, le
+   * moteur facturait au prêteur la totalité de la masse salariale et la part
+   * négociée ne servait qu'à l'affichage.
+   */
+  readonly activeLoans?: () => readonly import('../club/loans.js').ActiveLoan[];
   /**
    * V0.59 — retouches du sélectionneur, quand c'est le manager qui l'est.
    *
@@ -1471,9 +1480,18 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
       for (const clubId of financesByClub.keys()) {
         const roster = opts.rosterByClub(clubId);
         const payroll = computeRoundPayroll(roster, calendar.totalRounds);
+        // Les prêts allègent la feuille de paie de celui qui prête, et de lui
+        // seul : ce sont ses joueurs qui sont partis.
+        const relief = clubId === opts.playerClubId
+          ? loanWageReliefPerRound(
+            opts.activeLoans?.() ?? [],
+            (playerId) => playerClubRoster.find(p => p.id === playerId)?.contract.annualSalary,
+            calendar.totalRounds,
+          )
+          : 0;
         applyClubMovement(clubId, {
           kind: 'PAYROLL',
-          amount: -payroll,
+          amount: -Math.max(0, payroll - relief),
           round,
           note: `Salaires J${round}`,
         });

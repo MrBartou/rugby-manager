@@ -154,6 +154,28 @@ export function loanCost(loan: ActiveLoan, annualSalary: number): number {
 }
 
 /**
+ * Ce que les clubs d'accueil paient à notre place, pour une journée.
+ *
+ * V0.60 : `wageShare` n'était qu'un chiffre d'affichage. Le club prêteur
+ * continuait de verser cent pour cent des salaires, ce qui retirait au prêt sa
+ * seule contrepartie immédiate et le rendait toujours perdant.
+ */
+export function loanWageReliefPerRound(
+  loans: readonly ActiveLoan[],
+  annualSalaryOf: (playerId: PlayerId) => number | undefined,
+  regularRounds: number,
+): number {
+  if (regularRounds <= 0) return 0;
+  let total = 0;
+  for (const loan of loans) {
+    const salary = annualSalaryOf(loan.playerId);
+    if (salary === undefined) continue;
+    total += salary * loan.wageShare;
+  }
+  return Math.round(total / regularRounds);
+}
+
+/**
  * Le bilan qu'on lit à son retour.
  *
  * On dit ce qu'il a fait, pas ce qu'il vaut : c'est le développement qui
