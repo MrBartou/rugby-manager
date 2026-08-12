@@ -1,14 +1,46 @@
-# Rugby Manager — Documentation de design
+# Rugby Manager
 
 > Un rugby manager qui prend enfin au sérieux la tactique du sport et la vie du vestiaire.
+>
+> **Le FM du rugby français**, avec un focus sur la modélisation rugby-spécifique du match et la vie de vestiaire émergente.
 
-## Pitch en une phrase
+## État du projet
 
-Le FM du rugby français, avec un focus sur la modélisation rugby-spécifique du match et la vie de vestiaire émergente.
+**V0.5** — toutes les mécaniques de fond sont en place. Prêt pour la bêta privée.
 
-## Public cible
+| Jalon | Statut |
+|---|---|
+| V0.1 — Proto moteur match | ✅ |
+| V0.2 — Vertical slice "1 match jouable" | ✅ |
+| V0.3 — Saison Top 14 + boucle hebdo | ✅ |
+| V0.4 — Système humain v0 | ✅ |
+| V0.5 — Polish + UI | ✅ |
+| V0.9 — Bêta privée | ⬜ |
+| V1.0 — Release | ⬜ |
 
-Hardcore **et** casual — un fan de rugby qui n'a jamais joué à FM doit s'amuser en 2 heures, mais la maîtrise prend des mois.
+## 📚 Documentation
+
+Toute la documentation est dans **[docs/](./docs/)**.
+
+- [docs/README.md](./docs/README.md) — index principal
+- [docs/STATUS.md](./docs/STATUS.md) — tableau de bord d'implémentation
+- [docs/CHANGELOG.md](./docs/CHANGELOG.md) — historique V0.1 → V0.5
+- [docs/design/](./docs/design/) — 14 documents de design produit
+- [docs/dev/setup.md](./docs/dev/setup.md) — guide développeur
+
+## 🚀 Démarrage rapide
+
+```bash
+npm install
+npm run test              # 71/71 tests verts
+npm run dev               # http://localhost:5173
+
+# CLI
+npm run play -- list                        # liste des 14 clubs
+npm run play -- 42 toulouse usap            # match précis
+npm run play:stats -- toulouse usap 500     # stats agrégées
+npm run calibrate                           # 1000 matchs vs cibles V1
+```
 
 ## Les deux moteurs de retour
 
@@ -17,71 +49,10 @@ Le joueur revient parce qu'il a deux fils ouverts qu'il veut tirer :
 - **Moteur A** — le match qui arrive (ponctuel, programmé)
 - **Moteur B** — l'histoire humaine en cours (continu, émergent)
 
-Les deux se nourrissent mutuellement : ce qui se passe humainement influence le match, et le match crée les événements qui font évoluer l'humain.
+Les deux se nourrissent mutuellement.
 
 ## Test de validation permanent
 
-À tout moment, le joueur doit pouvoir répondre à *"pourquoi tu joues encore une heure de plus ?"* par une phrase concrète mentionnant soit un match, soit un joueur, soit les deux.
+> *"Pourquoi tu joues encore une heure de plus ?"*
 
-Si la réponse est *"je sais pas, j'avance"*, le système est cassé.
-
-## État du projet
-
-| # | Section | Statut |
-|---|---------|--------|
-| 1 | Vision et concept | ✅ Validée |
-| 2 | Game Design Document (GDD) | 🟡 En cours (MVP + modes décidés) |
-| 3 | Modèle joueur | 🟡 Cadrage avancé (échelle, traits, mood, relations) |
-| 4 | Modèle équipe et club | 🟡 Staff (8 NPCs voix) |
-| 5 | Compétitions | 🟡 Calendrier réel Top 14 |
-| 6 | Moteur de match | 🟡 Cadrage (2D, par phase, 5-15 moments) |
-| 7 | Tactique et préparation | 🟡 3 niveaux (philo + pré-match + live) |
-| 8 | Stack technique | 🟡 Cadré (TS+React+Tauri+SQLite) |
-| 9 | Architecture logicielle | 🟡 Patterns définis (event sourcing + repo + pure engine) |
-| 10 | UI / UX | 🟡 4 écrans MVP priorisés |
-| 11 | Contenu et données | 🟡 Sourcing scraping + procédural |
-| 12 | Juridique | ⚠️ Critique — décisions à reconfirmer (licence + scraping) |
-| 13 | Gestion de projet | 🟡 Vertical slice + roadmap V0.1→V2.0 |
-| 14 | Tests et validation | 🟡 Pyramide complète + bêta privée |
-| 15 | Distribution | 🟡 Steam + Itch.io |
-
-## Structure des fichiers
-
-```
-Rugby Manager/
-├── README.md                      ← ce fichier (index + état du projet)
-├── 01-vision-concept.md           ← vision validée, piliers, positionnement
-├── 02-gdd.md                      ← boucles de jeu, modes, MVP (en cours)
-├── 03-modele-joueur.md            ← attributs, progression, traits
-├── 04-modele-equipe-club.md       ← staff, finances, infrastructures
-├── 05-competitions.md             ← Top 14, Pro D2, coupes
-├── 06-moteur-match.md             ← simulation, mêlée, touche, jeu courant
-├── 07-tactique-preparation.md     ← système tactique, entraînement
-├── 08-stack-technique.md          ← choix techniques
-├── 09-architecture-logicielle.md  ← séparation moteur/UI, modules
-├── 10-ui-ux.md                    ← wireframes, charte graphique
-├── 11-contenu-donnees.md          ← joueurs, données initiales
-├── 12-juridique.md                ← licences, droits
-├── 13-gestion-projet.md           ← roadmap, jalons
-├── 14-tests-validation.md         ← tests unitaires, plans de bêta
-├── 15-distribution.md             ← plateforme, communauté
-├── decisions.md                   ← journal des décisions (date + raison)
-├── balancing/                     ← fichiers Excel de calibrage
-├── wireframes/                    ← maquettes UI
-└── data/                          ← données initiales (CSV/JSON)
-```
-
-## Méthode de travail
-
-1. **GDD d'abord** — sans ça le reste flotte
-2. **Modèle joueur + moteur de match** — la matière du jeu
-3. **Stack et architecture** — une fois qu'on sait ce qu'on simule
-4. **Le reste** — en parallèle, itérativement
-
-## Erreurs à ne pas reproduire
-
-- Sortir un produit non fini (PRM 2015)
-- Empiler les menus sans repenser l'expérience (FM moderne)
-- Bâcler le vestiaire (tous les concurrents directs)
-- Sacrifier la profondeur sur l'autel de l'accessibilité (Rugby Manager mobile) — ou l'inverse (FM)
-- Architecturer proprement avant d'avoir validé que le jeu est *fun*
+Le joueur doit pouvoir répondre par une phrase concrète mentionnant soit un match, soit un joueur, soit les deux. Si la réponse est *"je sais pas, j'avance"*, le système est cassé.
