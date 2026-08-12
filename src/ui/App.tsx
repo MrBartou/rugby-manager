@@ -4251,7 +4251,13 @@ export function App() {
       {screen.kind === 'title' && (
         <TitleScreen
           onNewCareer={() => setScreen({ kind: 'season-setup' })}
-          onContinue={(saveId) => loadSeason(saveId)}
+          onContinue={(saveId) => {
+            // Une promesse sans `catch` casse le rendu sans rien dire : le
+            // joueur reste sur l'écran titre, persuadé que son clic est passé.
+            void loadSeason(saveId).catch(() => {
+              notify('Cette partie n\'a pas pu être chargée.', 'warn');
+            });
+          }}
           onFreeMatch={() => setScreen({ kind: 'match-setup' })}
         />
       )}
