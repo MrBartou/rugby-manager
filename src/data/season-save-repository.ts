@@ -251,19 +251,76 @@ interface StorageShape {
   readonly saves: Record<string, SeasonSave>;
 }
 
+/** Clé de la copie de secours, écrite avant tout écrasement. */
+const BACKUP_KEY = `${STORAGE_KEY}_backup`;
+
+/**
+ * Parties illisibles rencontrées à la dernière lecture.
+ *
+ * Exposé pour que l'interface puisse le dire au joueur au lieu de faire comme
+ * si ces parties n'avaient jamais existé.
+ */
+export interface StorageHealth {
+  readonly corrupted: readonly string[];
+  /** Vrai si le bloc entier est illisible, pas seulement une entrée. */
+  readonly totalLoss: boolean;
+}
+
+let lastHealth: StorageHealth = { corrupted: [], totalLoss: false };
+
+export function storageHealth(): StorageHealth {
+  return lastHealth;
+}
+
+/**
+ * Lecture défensive du stockage : v0.60.
+ *
+ * L'ancienne version avalait **toute** erreur dans un `catch` qui renvoyait un
+ * objet vide. Une seule entrée mal formée faisait donc disparaître la totalité
+ * des parties, et la sauvegarde automatique suivante réécrivait le bloc entier
+ * par-dessus : la perte devenait définitive en une journée de jeu.
+ *
+ * On lit désormais **entrée par entrée**. Une partie illisible est mise de côté
+ * et signalée, les autres sont chargées normalement. Rien n'est effacé.
+ */
 function readStorage(): StorageShape {
+  const corrupted: string[] = [];
+  let raw: string | null = null;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { version: SEASON_SCHEMA_VERSION, saves: {} };
-    const parsed = JSON.parse(raw) as StorageShape;
-    const migratedSaves: Record<string, SeasonSave> = {};
-    for (const [id, s] of Object.entries(parsed.saves ?? {})) {
-      migratedSaves[id] = migrateSave(s);
-    }
-    return { version: SEASON_SCHEMA_VERSION, saves: migratedSaves };
+    raw = localStorage.getItem(STORAGE_KEY);
   } catch {
+    lastHealth = { corrupted: [], totalLoss: true };
     return { version: SEASON_SCHEMA_VERSION, saves: {} };
   }
+  if (!raw) {
+    lastHealth = { corrupted: [], totalLoss: false };
+    return { version: SEASON_SCHEMA_VERSION, saves: {} };
+  }
+
+  let parsed: Partial<StorageShape> | undefined;
+  try {
+    parsed = JSON.parse(raw) as Partial<StorageShape>;
+  } catch {
+    // Le bloc entier est illisible. On le signale, et surtout on ne le
+    // remplace pas : la copie de secours reste la seule chance de le récupérer.
+    lastHealth = { corrupted: [], totalLoss: true };
+    return { version: SEASON_SCHEMA_VERSION, saves: {} };
+  }
+
+  const saves: Record<string, SeasonSave> = {};
+  for (const [id, s] of Object.entries(parsed?.saves ?? {})) {
+    try {
+      const migrated = migrateSave(s);
+      // Une entrée sans identifiant ni club n'est pas une partie : la charger
+      // ferait planter l'écran de reprise plus loin, sans indice sur la cause.
+      if (!migrated.saveId || !migrated.playerClubId) throw new Error('entrée incomplète');
+      saves[id] = migrated;
+    } catch {
+      corrupted.push(id);
+    }
+  }
+  lastHealth = { corrupted, totalLoss: false };
+  return { version: SEASON_SCHEMA_VERSION, saves };
 }
 
 /**
@@ -302,8 +359,77 @@ export function migrateSave(raw: unknown): SeasonSave {
   return { ...merged, schemaVersion: SEASON_SCHEMA_VERSION };
 }
 
+/**
+ * Erreur d'écriture, avec une cause exploitable par l'interface : v0.60.
+ *
+ * `QuotaExceededError` était avalé et rendu au joueur sous la forme d'un
+ * « Échec de la sauvegarde » sans cause ni remède, alors que le dépôt des
+ * matchs, lui, le gérait déjà.
+ */
+export class SaveWriteError extends Error {
+  constructor(
+    readonly cause_: 'QUOTA' | 'INDISPONIBLE',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'SaveWriteError';
+  }
+}
+
+function isQuotaError(e: unknown): boolean {
+  if (!(e instanceof Error)) return false;
+  return e.name === 'QuotaExceededError'
+    || e.name === 'NS_ERROR_DOM_QUOTA_REACHED';
+}
+
+/**
+ * Écriture protégée par une copie de secours.
+ *
+ * On conserve l'état précédent avant d'écraser. Si l'écriture échoue à
+ * mi-chemin ou si le contenu se révèle illisible ensuite, il reste quelque
+ * chose à récupérer.
+ */
 function writeStorage(s: StorageShape): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+  const payload = JSON.stringify(s);
+  try {
+    const previous = localStorage.getItem(STORAGE_KEY);
+    if (previous) localStorage.setItem(BACKUP_KEY, previous);
+  } catch {
+    // Pas de copie de secours possible : on tente quand même l'écriture, mais
+    // on ne masque pas l'échec s'il vient ensuite.
+  }
+
+  try {
+    localStorage.setItem(STORAGE_KEY, payload);
+  } catch (e) {
+    if (isQuotaError(e)) {
+      throw new SaveWriteError(
+        'QUOTA',
+        'Stockage plein. Supprimez une partie ancienne pour libérer de la place.',
+      );
+    }
+    throw new SaveWriteError('INDISPONIBLE', 'Le stockage du navigateur est inaccessible.');
+  }
+}
+
+/**
+ * Restaure la copie de secours prise avant la dernière écriture.
+ *
+ * Dernier recours quand le bloc principal est illisible. Renvoie le nombre de
+ * parties récupérées, zéro s'il n'y a rien à récupérer.
+ */
+export function restoreBackup(): number {
+  try {
+    const backup = localStorage.getItem(BACKUP_KEY);
+    if (!backup) return 0;
+    const parsed = JSON.parse(backup) as Partial<StorageShape>;
+    const count = Object.keys(parsed?.saves ?? {}).length;
+    if (count === 0) return 0;
+    localStorage.setItem(STORAGE_KEY, backup);
+    return count;
+  } catch {
+    return 0;
+  }
 }
 
 class LocalStorageSeasonRepository implements SeasonSaveRepository {
