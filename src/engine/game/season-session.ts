@@ -132,6 +132,7 @@ import {
 } from '../club/development.js';
 import { coachingQualityFromStaff, generateStaffForClub, type StaffMember } from '../club/staff.js';
 import { matchdayRevenue } from '../club/club-management.js';
+import { canRegister, type SigningCheck } from '../club/regulations.js';
 import { attendanceBonus, rivalryBetween } from '../season/rivalries.js';
 import {
   EMPTY_SCOUTING,
@@ -566,6 +567,26 @@ export interface SeasonSessionOptions {
    * les effectifs bougent en cours de saison.
    */
   readonly nationalPool?: () => readonly Player[];
+  /**
+   * V0.60 — le règlement, tel qu'il s'applique au club dirigé.
+   *
+   * L'interdiction de recruter ne barrait que la signature d'un agent libre,
+   * parce qu'elle n'était testée que dans l'écran qui la propose. Une offre
+   * payante ou un joker médical passait sans rien croiser. Le moteur la lit
+   * donc lui-même, à toutes les portes d'entrée d'un joueur.
+   */
+  readonly recruitment?: () => {
+    readonly division: 'TOP14' | 'PRO_D2';
+    readonly transferBan: boolean;
+  };
+  /**
+   * V0.60 — les joueurs sans club, vus par l'interface.
+   *
+   * Le joker médical les cherchait dans les effectifs des clubs, d'où ils sont
+   * par définition absents : la liste des candidats était toujours vide et la
+   * fonctionnalité, morte depuis sa livraison.
+   */
+  readonly freeAgentPool?: () => readonly Player[];
   /**
    * V0.59 — retouches du sélectionneur, quand c'est le manager qui l'est.
    *
@@ -1086,6 +1107,23 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
     ?? defaultAcademyState(clubsById.get(opts.playerClubId) ?? {
       tier: 'BUDGET_MOYEN', annualBudget: 20_000_000,
     } as Club);
+
+  /**
+   * V0.60 : une arrivée se contrôle au moteur, pas à l'écran qui la propose.
+   *
+   * Les prêts n'y figurent pas : ils ne vont que dans un sens, du club vers
+   * l'extérieur, et une interdiction de recruter n'a rien à y redire.
+   */
+  function registrationCheck(annualSalary: number): SigningCheck | undefined {
+    const rules = opts.recruitment?.();
+    if (!rules) return undefined;
+    return canRegister({
+      roster: playerClubRoster.filter(p => !p.retired),
+      division: rules.division,
+      annualSalary,
+      transferBan: rules.transferBan,
+    });
+  }
 
   function affordabilityFor(terms: BidTerms): AffordabilityCheck {
     const club = clubsById.get(opts.playerClubId);
@@ -2047,6 +2085,13 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
     },
 
     submitBid(player: Player, terms: BidTerms): BidOutcome {
+      // Le règlement d'abord : une interdiction de recruter se constate sans
+      // rien savoir du joueur convoité ni de son club.
+      const registration = registrationCheck(terms.annualSalary);
+      if (registration && !registration.allowed) {
+        return { kind: 'BLOCKED', reason: registration.reason ?? 'Signature refusée par la commission.' };
+      }
+
       const preview = buildBidPreview(player);
       if (preview.blocked) return { kind: 'BLOCKED', reason: preview.blocked };
       if (preview.cooldownRounds > 0) {
@@ -2181,7 +2226,9 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
     },
 
     getJokerOptions() {
-      const freeAgents = [...(opts.allClubs ?? []).flatMap(c => opts.rosterByClub?.(c.id) ?? [])]
+      // Les effectifs de clubs ne contiennent aucun joueur libre : c'est ce qui
+      // les définit. Le vivier vient donc de la base complète.
+      const freeAgents = (opts.freeAgentPool?.() ?? [])
         .filter(p => p.freeAgent && !p.retired);
 
       return jokerCandidates(playerClubRoster, currentRound, jokersUsedFor).map(injured => ({
@@ -2202,6 +2249,11 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
 
       const check = canBeJoker(injured, candidate);
       if (!check.allowed) return { ok: false as const, reason: check.reason ?? 'Joker impossible.' };
+
+      const registration = registrationCheck(annualSalary);
+      if (registration && !registration.allowed) {
+        return { ok: false as const, reason: registration.reason ?? 'Signature refusée par la commission.' };
+      }
 
       const affordability = affordabilityFor({ fee: 0, annualSalary, years: 1 });
       if (!affordability.canAfford) {
