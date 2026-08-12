@@ -9777,3 +9777,15 @@ button:active:not(:disabled) { transform: scale(0.97); }
   white-space: pre-wrap;
   overflow-x: auto;
 }
+
+/* V0.60 — le retrait de points, affiché là où il se subit. */
+.penalty-badge {
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.3rem;
+  border: 1px solid var(--red);
+  border-radius: 4px;
+  color: var(--red);
+  font-size: 0.62rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
