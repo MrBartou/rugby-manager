@@ -112,7 +112,7 @@ export function TitleScreen({ onNewCareer, onContinue, onFreeMatch }: Props) {
 
       <div className="title-content">
         <div className="title-meta-top">
-          <span className="title-version">V0.10 · ALPHA</span>
+          <span className="title-version">v{__APP_VERSION__} · ALPHA</span>
         </div>
 
         <div className="title-hero">

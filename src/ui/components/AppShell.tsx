@@ -131,7 +131,9 @@ export function AppShell({
         <div className="hud-brand">
           <IconBall size={13} />
           <span>Le Quinze</span>
-          <span className="hud-version">Alpha</span>
+          <span className="hud-version" title={`Version ${__APP_VERSION__}`}>
+            Alpha v{__APP_VERSION__}
+          </span>
         </div>
       </header>
 
