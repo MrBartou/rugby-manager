@@ -29,15 +29,33 @@ export interface Rng {
 }
 
 /**
+ * Hash FNV-1a 32 bits — utilisé pour mapper un seed string non-numérique vers un état RNG.
+ * On NE veut PAS de qualité crypto, on veut juste qu'un changement minime du seed donne un état différent.
+ */
+function hashString(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/**
  * Crée un RNG déterministe à partir d'un seed.
- * Le seed peut être numérique (initial) ou la chaîne sérialisée d'un Rng précédent.
+ * Le seed peut être :
+ *   - un nombre (cas initial)
+ *   - une chaîne d'entier (round-trip via serialize())
+ *   - n'importe quelle autre chaîne, hashée en FNV-1a
  */
 export function createRng(seed: number | string): Rng {
   let state: number;
   if (typeof seed === 'number') {
     state = seed >>> 0; // unsigned 32-bit
-  } else {
+  } else if (/^-?\d+$/.test(seed)) {
     state = parseInt(seed, 10) >>> 0;
+  } else {
+    state = hashString(seed);
   }
 
   function nextRaw(): number {

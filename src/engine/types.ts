@@ -30,6 +30,22 @@ export type Position =
   | 'AILIER_GAUCHE' | 'AILIER_DROIT'
   | 'ARRIERE';
 
+/**
+ * Les quinze postes, dans l'ordre des numéros de maillot.
+ *
+ * Source unique dès qu'il faut *parcourir* les postes plutôt qu'en typer un —
+ * chaque module qui redéclarait sa propre liste risquait d'en oublier un au
+ * prochain ajout, sans que le compilateur s'en aperçoive.
+ */
+export const ALL_POSITIONS: readonly Position[] = [
+  'PILIER_GAUCHE', 'TALONNEUR', 'PILIER_DROIT',
+  'DEUXIEME_LIGNE_GAUCHE', 'DEUXIEME_LIGNE_DROITE',
+  'TROISIEME_LIGNE_AILE_GAUCHE', 'TROISIEME_LIGNE_AILE_DROITE', 'NUMERO_8',
+  'DEMI_DE_MELEE', 'OUVREUR',
+  'AILIER_GAUCHE', 'CENTRE_INTERIEUR', 'CENTRE_EXTERIEUR', 'AILIER_DROIT',
+  'ARRIERE',
+];
+
 /** Catégorie large pour la composition. */
 export type PositionCategory = 'AVANT' | 'TROISQUART' | 'DEMI';
 
@@ -121,6 +137,15 @@ export interface PlayerDynamicState {
   mood: StatValue;                     // 0-100 (calculé via modifiers)
   moodModifiers: readonly MoodModifier[];
   injury?: Injury;
+  /** V0.8 — round (currentRound) jusqu'auquel le joueur est suspendu (carton rouge). */
+  suspendedUntilRound?: number;
+  /**
+   * V0.55 — journée à laquelle il a rejoint son club actuel.
+   *
+   * Absent pour l'effectif d'origine et pour toute sauvegarde antérieure : on
+   * considère alors qu'il est là depuis toujours, donc parfaitement installé.
+   */
+  joinedAtRound?: number;
 }
 
 /** Caractéristiques cachées (révélées progressivement par scouting — M3). */
@@ -163,6 +188,12 @@ export interface Player {
 
   readonly dynamic: PlayerDynamicState;
   readonly contract: Contract;
+
+  /** V0.6 — joueur retiré du circuit (carrière terminée). Filtré des rosters. */
+  readonly retired?: boolean;
+  readonly retirementSeason?: number;
+  /** V0.6 — joueur libre (contrat expiré non renouvelé). Filtré du roster du club d'origine. */
+  readonly freeAgent?: boolean;
 }
 
 // =============================================================================
