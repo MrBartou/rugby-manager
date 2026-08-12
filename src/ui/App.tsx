@@ -1255,8 +1255,13 @@ export function App() {
     const state = session.getState();
     if (state.phase !== 'over') return;
 
-    // V0.9 — Archive la saison qui se termine dans l'historique de carrière
-    if (state.champion) {
+    // V0.9 — Archive la saison qui se termine dans l'historique de carrière.
+    //
+    // V0.60 : tout ce bloc était sous un `if (state.champion)`. Une saison
+    // close sans titre décerné ne laissait donc aucune trace : ni ligne au
+    // parcours, ni verdict du président, ni réputation mise à jour, ni mail. Le
+    // manager passait une année entière pour rien, sans que rien ne l'explique.
+    {
       const ranking = [...state.standings.values()].sort((a, b) => {
         if (b.leaguePoints !== a.leaguePoints) return b.leaguePoints - a.leaguePoints;
         return (b.pointsFor - b.pointsAgainst) - (a.pointsFor - a.pointsAgainst);
@@ -1265,8 +1270,11 @@ export function App() {
       // Détecter le runner-up : finale = dernière entrée history avec round = FINAL
       const finalMatches = state.history.filter(h => h.round === state.playoffRounds.FINAL);
       const finalMatch = finalMatches.length > 0 ? finalMatches[finalMatches.length - 1] : undefined;
-      const runnerUp = finalMatch
-        ? (finalMatch.homeScore > finalMatch.awayScore ? finalMatch.awayClubId : finalMatch.homeClubId)
+      // Le finaliste, c'est celui des deux qui n'a pas le titre : le déduire du
+      // score se trompait sur une finale nulle, que le règlement tranche au
+      // classement de la saison régulière.
+      const runnerUp = finalMatch && state.champion
+        ? (finalMatch.homeClubId === state.champion ? finalMatch.awayClubId : finalMatch.homeClubId)
         : undefined;
       // Top scorer de la saison côté club joueur
       const playerRoster = state.playerClubRoster;
@@ -1279,7 +1287,7 @@ export function App() {
       const topScorerPlayer = topScorerEntry ? playerRoster.find(p => p.id === topScorerEntry!.playerId) : undefined;
       const seasonRecord: SeasonRecord = {
         seasonStart: state.currentSeason,
-        champion: state.champion,
+        ...(state.champion !== undefined ? { champion: state.champion } : {}),
         ...(runnerUp ? { runnerUp } : {}),
         playerClubFinalRank: playerRank > 0 ? playerRank : 0,
         playerClubReachedFinal: state.history.some(h => h.round === state.playoffRounds.FINAL && (h.homeClubId === state.playerClubId || h.awayClubId === state.playerClubId)),
@@ -1309,7 +1317,7 @@ export function App() {
       // V0.9 Phase 2 — update réputation manager
       reputationRef.current = updateReputation(reputationRef.current, {
         playerClubId: state.playerClubId,
-        champion: state.champion,
+        ...(state.champion !== undefined ? { champion: state.champion } : {}),
         playerClubReachedFinal: seasonRecord.playerClubReachedFinal,
         playerClubFinalRank: seasonRecord.playerClubFinalRank,
         objectiveMet,
