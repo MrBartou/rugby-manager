@@ -38,6 +38,11 @@ export interface PlayerSeasonLine {
   readonly honours: readonly string[];
   /** Vrai si la saison s'est jouée ailleurs, en prêt. */
   readonly onLoan?: boolean;
+  /**
+   * V0.60 — nombre de saisons couvertes par la ligne, quand elle en replie
+   * plusieurs. Absent vaut une : une ligne ordinaire est une saison.
+   */
+  readonly seasons?: number;
 }
 
 export interface PlayerCareer {
@@ -49,6 +54,75 @@ export interface PlayerCareer {
 export type CareerBook = ReadonlyMap<PlayerId, PlayerCareer>;
 
 export const EMPTY_BOOK: CareerBook = new Map();
+
+/**
+ * Le tassement d'une carrière achevée : v0.60.
+ *
+ * Le registre garde une ligne par saison et par joueur, pour tout le rugby
+ * français. Sur vingt saisons, cela finit par peser autant que la base joueurs
+ * elle-même dans une sauvegarde qui tient sous les cinq mégaoctets du
+ * navigateur, toutes parties confondues.
+ *
+ * Une carrière terminée depuis longtemps ne s'ouvre plus : son détail
+ * saison par saison n'est plus lu par personne. On la replie donc en une ligne
+ * par club, ce qui ne change rien à ce qui reste consultable : les totaux et
+ * les records de club se dérivent de la somme des lignes, et cette somme est
+ * exactement préservée. Le repli garde la première saison sous chaque maillot,
+ * qui est la seule date qu'on affiche encore.
+ *
+ * On ne touche jamais aux carrières en cours : c'est leur détail qui fait
+ * l'intérêt de la fiche.
+ */
+export function compactCareer(career: PlayerCareer): PlayerCareer {
+  if (career.lines.length <= 1) return career;
+
+  const byClub = new Map<ClubId, PlayerSeasonLine>();
+  for (const line of career.lines) {
+    const current = byClub.get(line.clubId);
+    if (!current) {
+      byClub.set(line.clubId, line);
+      continue;
+    }
+    byClub.set(line.clubId, {
+      season: Math.min(current.season, line.season),
+      clubId: line.clubId,
+      seasons: (current.seasons ?? 1) + (line.seasons ?? 1),
+      matches: current.matches + line.matches,
+      minutes: current.minutes + line.minutes,
+      tries: current.tries + line.tries,
+      caps: current.caps + line.caps,
+      honours: [...current.honours, ...line.honours],
+      ...(current.onLoan === true || line.onLoan === true ? { onLoan: true } : {}),
+    });
+  }
+
+  return {
+    ...career,
+    lines: [...byClub.values()].sort((a, b) => a.season - b.season),
+  };
+}
+
+/**
+ * Replie les carrières qui n'ont plus rien produit depuis un moment.
+ *
+ * Le seuil se compte en saisons sans la moindre ligne : un joueur qui n'a plus
+ * rien joué depuis trois ans a raccroché, ou n'est plus dans le monde du jeu.
+ */
+export function compactBook(
+  book: CareerBook,
+  currentSeason: number,
+  idleSeasons: number,
+): CareerBook {
+  const next = new Map<PlayerId, PlayerCareer>();
+  for (const [playerId, career] of book) {
+    const derniere = career.lines.reduce((max, l) => Math.max(max, l.season), 0);
+    next.set(
+      playerId,
+      currentSeason - derniere >= idleSeasons ? compactCareer(career) : career,
+    );
+  }
+  return next;
+}
 
 // =============================================================================
 // Écriture
@@ -129,8 +203,9 @@ export function careerTotals(career: PlayerCareer | undefined): CareerTotals {
   if (!career) return empty;
 
   const clubs: ClubId[] = [];
-  let matches = 0, minutes = 0, tries = 0, caps = 0, honours = 0;
+  let matches = 0, minutes = 0, tries = 0, caps = 0, honours = 0, seasons = 0;
   for (const l of career.lines) {
+    seasons += l.seasons ?? 1;
     matches += l.matches;
     minutes += l.minutes;
     tries += l.tries;
@@ -138,7 +213,7 @@ export function careerTotals(career: PlayerCareer | undefined): CareerTotals {
     honours += l.honours.length;
     if (!clubs.includes(l.clubId)) clubs.push(l.clubId);
   }
-  return { seasons: career.lines.length, matches, minutes, tries, caps, honours, clubs };
+  return { seasons, matches, minutes, tries, caps, honours, clubs };
 }
 
 /** Ce qu'un joueur a fait sous un maillot donné — la mémoire du club. */
