@@ -9744,3 +9744,36 @@ button:active:not(:disabled) { transform: scale(0.97); }
 
 .title-alert strong { font-size: 0.84rem; }
 .title-alert span { color: var(--text-dim); }
+
+/* V0.60 — l'écran d'interruption, quand le rendu s'arrête. Sobre : il ne sert
+   qu'à dire ce qui s'est passé et à proposer de recharger. */
+.crash-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: var(--bg-0);
+}
+
+.crash-card {
+  max-width: 32rem;
+  padding: 1.75rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-1);
+}
+
+.crash-card h2 { margin: 0.4rem 0 0.75rem; }
+.crash-card p { color: var(--text-dim); line-height: 1.5; }
+
+.crash-detail {
+  margin: 1rem 0;
+  padding: 0.7rem;
+  border-radius: 8px;
+  background: var(--bg-0);
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
