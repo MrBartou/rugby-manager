@@ -3551,21 +3551,47 @@ export function App() {
   };
 
   /** Pour V0.4 phase 1 : ratio simplifié — supposé 1.0 pour titulaires auto-pickés. */
+  /**
+   * Part de matchs réellement disputés, par joueur.
+   *
+   * V0.60 : ce ratio était **factice**. Il valait 0,85 pour un titulaire de la
+   * composition automatique du jour, 0,45 pour un remplaçant et 0,1 pour les
+   * autres, alors que le compte réel des matchs existe depuis la v0.9 et
+   * survit au rechargement depuis la v0.58.
+   *
+   * Ce n'était pas un détail d'affichage : ce nombre décide du moral (source
+   * « statut dans l'équipe »), des verdicts de hiérarchie, du pronostic d'une
+   * conversation, de l'agenda du manager et de qui peut partir en prêt. Un
+   * cadre blessé six mois passait pour un titulaire heureux parce qu'il
+   * figurait dans la compo auto du jour.
+   *
+   * Le dénominateur est le nombre de matchs du club effectivement comptabilisés,
+   * pas la journée courante : une trêve ou un report ne doit pas faire passer
+   * tout le monde pour un remplaçant.
+   */
   const playRatioByPlayerForPlayerClub = (): ReadonlyMap<string, number> => {
-    // V0.4 phase 1 : on n'a pas encore le tracking de qui a joué chaque match.
-    // On retourne un ratio uniforme de 0.6 (rotation "moyenne") + bump pour les
-    // joueurs qui sont dans l'auto-lineup actuel.
     const map = new Map<string, number>();
     if (!seasonState) return map;
-    const lineup = autoLineup(seasonState.playerClubId);
-    const starterIds = new Set(lineup.starters.map(s => s.playerId));
-    const subIds = new Set(lineup.substitutes);
+    const played = seasonState.statsMatchCount;
     const roster = listRoster(seasonState.playerClubId);
+
+    // Avant le premier match de la saison, aucun temps de jeu n'est constaté.
+    // On se rabat alors sur l'intention du manager, faute de mieux : la
+    // composition automatique dit qui il compte aligner.
+    if (played === 0) {
+      const lineup = autoLineup(seasonState.playerClubId);
+      const starterIds = new Set(lineup.starters.map(s => s.playerId));
+      const subIds = new Set(lineup.substitutes);
+      for (const p of roster) {
+        const id = p.id as string;
+        map.set(id, starterIds.has(id) ? 0.85 : subIds.has(id) ? 0.45 : 0.1);
+      }
+      return map;
+    }
+
     for (const p of roster) {
-      const id = p.id as string;
-      if (starterIds.has(id)) map.set(id, 0.85);
-      else if (subIds.has(id)) map.set(id, 0.45);
-      else map.set(id, 0.1);
+      const matches = seasonState.seasonPlayerStats.get(p.id)?.matches ?? 0;
+      map.set(p.id as string, Math.min(1, matches / played));
     }
     return map;
   };
