@@ -928,6 +928,13 @@ export function App() {
       rosterByClub: (cid) => listRoster(cid),
       // V0.58 — le XV de France se recrute dans les deux divisions.
       nationalPool: () => listAllPlayersWithOverrides(),
+      // V0.60 — le vivier des agents libres et le règlement en vigueur, lus par
+      // le moteur à chaque arrivée de joueur.
+      freeAgentPool: () => listAllPlayersWithOverrides().filter(p => p.freeAgent && !p.retired),
+      recruitment: () => ({
+        division: playerDivisionRef.current,
+        transferBan: transferBanRef.current,
+      }),
       nationalPicks: () => nationalPicksRef.current,
       clubDirection: () => ({ facilities: facilitiesRef.current, plan: clubPlanRef.current }),
       wantAwayIds: () => transferRequestsRef.current
@@ -1023,6 +1030,13 @@ export function App() {
       rosterByClub: (cid) => listRoster(cid),
       // V0.58 — le XV de France se recrute dans les deux divisions.
       nationalPool: () => listAllPlayersWithOverrides(),
+      // V0.60 — le vivier des agents libres et le règlement en vigueur, lus par
+      // le moteur à chaque arrivée de joueur.
+      freeAgentPool: () => listAllPlayersWithOverrides().filter(p => p.freeAgent && !p.retired),
+      recruitment: () => ({
+        division: playerDivisionRef.current,
+        transferBan: transferBanRef.current,
+      }),
       nationalPicks: () => nationalPicksRef.current,
       clubDirection: () => ({ facilities: facilitiesRef.current, plan: clubPlanRef.current }),
       wantAwayIds: () => transferRequestsRef.current
@@ -1798,6 +1812,13 @@ export function App() {
       rosterByClub: (cid) => listRoster(cid),
       // V0.58 — le XV de France se recrute dans les deux divisions.
       nationalPool: () => listAllPlayersWithOverrides(),
+      // V0.60 — le vivier des agents libres et le règlement en vigueur, lus par
+      // le moteur à chaque arrivée de joueur.
+      freeAgentPool: () => listAllPlayersWithOverrides().filter(p => p.freeAgent && !p.retired),
+      recruitment: () => ({
+        division: playerDivisionRef.current,
+        transferBan: transferBanRef.current,
+      }),
       nationalPicks: () => nationalPicksRef.current,
       clubDirection: () => ({ facilities: facilitiesRef.current, plan: clubPlanRef.current }),
       wantAwayIds: () => transferRequestsRef.current
@@ -3811,6 +3832,13 @@ export function App() {
       rosterByClub: (cid) => listRoster(cid),
       // V0.58 — le XV de France se recrute dans les deux divisions.
       nationalPool: () => listAllPlayersWithOverrides(),
+      // V0.60 — le vivier des agents libres et le règlement en vigueur, lus par
+      // le moteur à chaque arrivée de joueur.
+      freeAgentPool: () => listAllPlayersWithOverrides().filter(p => p.freeAgent && !p.retired),
+      recruitment: () => ({
+        division: playerDivisionRef.current,
+        transferBan: transferBanRef.current,
+      }),
       nationalPicks: () => nationalPicksRef.current,
       clubDirection: () => ({ facilities: facilitiesRef.current, plan: clubPlanRef.current }),
       wantAwayIds: () => transferRequestsRef.current
