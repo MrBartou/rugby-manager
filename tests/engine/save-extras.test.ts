@@ -103,6 +103,7 @@ describe('tout ce qu\'on confie à la sauvegarde en ressort', () => {
     loans: [],
     expectations: [],
     headToHead: [],
+    nationalPicks: { added: ['a_9' as PlayerId], removed: ['a_1' as PlayerId] },
     careerBook: [{
       playerId: 'a_0' as PlayerId,
       career: {
