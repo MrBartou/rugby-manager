@@ -225,6 +225,17 @@ export interface SeasonSave extends SeasonSaveMeta {
     readonly playerId: PlayerId;
     readonly career: PlayerCareer;
   }[];
+  /**
+   * V0.60 : retouches du sélectionneur sur le groupe France.
+   *
+   * Elles vivaient en mémoire vive seulement. Un manager qui composait son
+   * groupe puis rechargeait retrouvait la liste du sélectionneur automatique,
+   * sans trace de ses choix.
+   */
+  readonly nationalPicks?: {
+    readonly added: readonly PlayerId[];
+    readonly removed: readonly PlayerId[];
+  };
   /** V0.45 — installations, chantier en cours et politique commerciale. */
   readonly direction?: {
     readonly facilities: ClubFacilities;
@@ -533,6 +544,11 @@ export function buildSeasonSaveFromState(
       readonly playerId: PlayerId;
       readonly career: PlayerCareer;
     }[];
+    /** V0.60 — retouches du sélectionneur sur le groupe France. */
+    readonly nationalPicks?: {
+      readonly added: readonly PlayerId[];
+      readonly removed: readonly PlayerId[];
+    };
   } = {},
 ): SeasonSave {
   const ranked = [...state.standings.values()].sort((a, b) => {
@@ -595,6 +611,7 @@ export function buildSeasonSaveFromState(
     ...(extras.squadStatuses !== undefined ? { squadStatuses: extras.squadStatuses } : {}),
     ...(extras.rivals !== undefined ? { rivals: extras.rivals } : {}),
     ...(extras.careerBook !== undefined ? { careerBook: extras.careerBook } : {}),
+    ...(extras.nationalPicks !== undefined ? { nationalPicks: extras.nationalPicks } : {}),
     ...(extras.honours !== undefined ? { honours: extras.honours } : {}),
     ...(extras.loans !== undefined ? { loans: extras.loans } : {}),
     ...(extras.expectations !== undefined ? { expectations: extras.expectations } : {}),

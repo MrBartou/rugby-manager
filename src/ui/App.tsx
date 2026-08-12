@@ -1099,6 +1099,9 @@ export function App() {
     // reconstitue, plutôt que de laisser le championnat anonyme.
     honoursRef.current = save.honours ?? [];
     // V0.59 — le registre, ou sa reconstitution depuis l'ancien cumul.
+    nationalPicksRef.current = save.nationalPicks
+      ? { added: [...save.nationalPicks.added], removed: [...save.nationalPicks.removed] }
+      : { added: [], removed: [] };
     careerBookRef.current = save.careerBook
       ? new Map(save.careerBook.map(e => [e.playerId, e.career]))
       : fromLegacyTotals(
@@ -1174,6 +1177,7 @@ export function App() {
           prospects: prospectsRef.current,
           divisions: divisionsRef.current,
           careerBook: [...careerBookRef.current].map(([playerId, career]) => ({ playerId, career })),
+          nationalPicks: nationalPicksRef.current,
           regulation: {
             sanctionedLastSeason: sanctionedLastSeasonRef.current,
             transferBan: transferBanRef.current,
