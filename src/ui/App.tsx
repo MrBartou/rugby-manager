@@ -1421,7 +1421,14 @@ export function App() {
     // V0.39 — le centre du club utilisateur suit son investissement ; les clubs
     // IA gardent le niveau dicté par leur taille.
     const playerAcademy = academyRef.current;
-    for (const club of clubs) {
+    // V0.60 : les deux divisions reçoivent leur promotion de jeunes.
+    //
+    // La boucle ne parcourait que la division du manager, alors que le
+    // vieillissement et les retraites frappent tout le monde. La division qu'on
+    // ne joue pas perdait donc des joueurs chaque saison sans jamais en
+    // recevoir : au bout de quelques années elle était exsangue, et la remontée
+    // se jouait contre des fantômes.
+    for (const club of allClubs) {
       const isMine = club.id === state.playerClubId;
       const intake = generateYouthIntake({
         club,
@@ -1617,17 +1624,44 @@ export function App() {
     // trésorerie de l'an dernier. Et après la promotion des jeunes, pour qu'un
     // club qui vient de faire monter un espoir n'aille pas acheter un doublon
     // au même poste.
-    const aiMarket = runAiMarket({
-      players: playersAfterIntake,
-      clubs,
-      playerClubId: state.playerClubId,
-      balanceByClub: new Map([...closedFinances].map(([id, f]) => [id, f.balance])),
-      currentSeason: rollover.newSeason,
-      rankedClubIds: session.getRanking().map(s => s.clubId),
-      seed: seasonSeedRef.current,
-      division: playerDivisionRef.current,
-      transferBannedClubs: bannedClubs,
-    });
+    // V0.60 : le mercato tourne dans les deux divisions, chacune avec son
+    // plafond salarial. Une seule passe sur trente clubs appliquerait le
+    // plafond du Top 14 à la Pro D2, et l'inverse.
+    const balances = new Map([...closedFinances].map(([id, f]) => [id, f.balance]));
+    const classement = session.getRanking().map(s => s.clubId);
+    let joueursApresMercato: readonly Player[] = playersAfterIntake;
+    const transfertsToutesDivisions: AiTransfer[] = [];
+    // Les soldes évoluent d'une division à l'autre : la seconde passe part de
+    // ce que la première a laissé.
+    let soldesApresMercato: ReadonlyMap<ClubId, number> = balances;
+
+    for (const division of ['TOP14', 'PRO_D2'] as const) {
+      const clubsDeLaDivision = clubsOfDivision(divisionsRef.current, division)
+        .map(id => allClubs.find(c => c.id === id))
+        .filter((c): c is Club => c !== undefined);
+      if (clubsDeLaDivision.length === 0) continue;
+
+      const passe = runAiMarket({
+        players: joueursApresMercato,
+        clubs: clubsDeLaDivision,
+        playerClubId: state.playerClubId,
+        balanceByClub: soldesApresMercato,
+        currentSeason: rollover.newSeason,
+        rankedClubIds: classement,
+        seed: `${seasonSeedRef.current}_${division}`,
+        division,
+        transferBannedClubs: bannedClubs,
+      });
+      joueursApresMercato = passe.players;
+      soldesApresMercato = passe.balanceByClub;
+      transfertsToutesDivisions.push(...passe.transfers);
+    }
+
+    const aiMarket = {
+      players: joueursApresMercato,
+      transfers: transfertsToutesDivisions,
+      balanceByClub: soldesApresMercato,
+    };
     commitRoster(aiMarket.players);
     aiMarketRef.current = aiMarket.transfers;
     publish(newsFromMarket(
@@ -1672,10 +1706,24 @@ export function App() {
       if (p.retired || p.freeAgent) continue;
       countByClub.set(p.clubId as string, (countByClub.get(p.clubId as string) ?? 0) + 1);
     }
+    /**
+     * Force moyenne d'un club, pour le championnat qu'on ne joue pas.
+     *
+     * V0.60 : le repli valait 50, soit un club parfaitement moyen. Il masquait
+     * exactement le défaut corrigé plus haut : une division privée de jeunes et
+     * de mercato finissait par se vider, et ses clubs sans joueur continuaient
+     * d'afficher un niveau honorable au classement fantôme.
+     *
+     * On garde un repli, car un effectif vide donnerait une division par zéro
+     * et un classement de `NaN`, mais il vient désormais de la réputation du
+     * club. Un club exsangue ne se fait plus passer pour un club moyen. Depuis
+     * que les deux divisions sont alimentées, ce repli ne devrait plus servir.
+     */
     const strengthOf = (clubId: ClubId): number => {
       const total = playersByClub.get(clubId as string);
       const n = countByClub.get(clubId as string);
-      return total !== undefined && n ? total / n : 50;
+      if (total !== undefined && n) return total / n;
+      return allClubs.find(c => c.id === clubId)?.reputation ?? 40;
     };
 
     const shadowRanking = shadowSeason(
