@@ -346,7 +346,10 @@ function pickStartingFifteen(
     let pick = candidates[0];
     if (!pick) {
       const isFwdSlot = FORWARDS.has(position);
-      const fallback = players
+      // V0.60 : le repli puise dans les **disponibles**, pas dans l'effectif
+      // brut. Il alignait blessés, suspendus, retraités et internationaux
+      // partis en sélection dès qu'un poste manquait de titulaire.
+      const fallback = available
         .filter(p => !used.has(p.id) && FORWARDS.has(p.position) === isFwdSlot)
         .sort((a, b) => playerOverall(b) - playerOverall(a));
       pick = fallback[0];
@@ -360,13 +363,13 @@ function pickStartingFifteen(
       // Aligner un joueur hors de son poste est mauvais pour l'équipe ; c'est
       // exactement ce qu'un vrai club ferait, et c'est infiniment préférable à
       // une saison qui se fige.
-      pick = players
+      pick = available
         .filter(p => !used.has(p.id))
         .sort((a, b) => playerOverall(b) - playerOverall(a))[0];
     }
     if (!pick) {
       throw new Error(
-        `pickStartingFifteen: effectif insuffisant (${players.length} joueurs) pour aligner un XV`,
+        `pickStartingFifteen: effectif insuffisant (${available.length} joueurs disponibles sur ${players.length}) pour aligner un XV`,
       );
     }
     used.add(pick.id);
@@ -406,6 +409,15 @@ export interface MatchSeedOptions {
    * libre ou une rencontre auto-simulée ne doit pas hériter d'un stade plein.
    */
   readonly homeFans?: import('../engine/match/crowd.js').CrowdLevel;
+  /**
+   * V0.60 — joueurs qu'on ne peut pas aligner : sélection nationale, prêt.
+   *
+   * Le champ manquait, et la composition automatique d'une journée de trêve
+   * alignait donc vos internationaux partis avec le XV de France. Simuler la
+   * journée au lieu de la jouer était un avantage net, ce qui est la définition
+   * d'un exploit.
+   */
+  readonly unavailable?: ReadonlySet<PlayerId>;
   /** Compo override pour HOME (15 titulaires + 8 remplaçants). Sinon auto-pick. */
   readonly homeLineup?: ManualLineup;
   /** Compo override pour AWAY (utilisé pour replay). Sinon auto-pick. */
@@ -520,12 +532,13 @@ export function makeMatchInputFromSeed(
   const homePlayers = rosterOf(opts.homeClubId);
   const awayPlayers = rosterOf(opts.awayClubId);
 
+  const indisponibles = opts.unavailable ?? new Set<PlayerId>();
   const homePicks = opts.homeLineup
     ? buildSquadFromManualLineup(homePlayers, opts.homeLineup)
-    : pickStartingFifteen(homePlayers);
+    : pickStartingFifteen(homePlayers, indisponibles);
   const awayPicks = opts.awayLineup
     ? buildSquadFromManualLineup(awayPlayers, opts.awayLineup)
-    : pickStartingFifteen(awayPlayers);
+    : pickStartingFifteen(awayPlayers, indisponibles);
 
   const playersById = new Map<PlayerId, Player>();
   for (const p of homePlayers) playersById.set(p.id, p);
