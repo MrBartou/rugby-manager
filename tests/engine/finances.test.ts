@@ -7,7 +7,6 @@ import {
   applyMovement,
   closeSeason,
   computeAnnualPayroll,
-  computeMatchRevenue,
   computeRoundPayroll,
   emptyFinances,
   initFinancesForAllClubs,
@@ -87,18 +86,10 @@ describe('finances — calculs', () => {
     expect(computeRoundPayroll(players, 0)).toBe(computeRoundPayroll(players));
   });
 
-  it('match revenue dépend du tier et du form', () => {
-    const small = makeClub({ tier: 'PETIT_BUDGET', stadiumCapacity: 10_000 });
-    const big = makeClub({ tier: 'GROS_BUDGET', stadiumCapacity: 30_000 });
-    expect(computeMatchRevenue(big, 0.7)).toBeGreaterThan(computeMatchRevenue(small, 0.7));
-  });
-
-  it('match revenue augmente avec les victoires', () => {
-    const club = makeClub();
-    const losing = computeMatchRevenue(club, 0.2);
-    const winning = computeMatchRevenue(club, 0.8);
-    expect(winning).toBeGreaterThan(losing);
-  });
+  // V0.60 : la billetterie a quitté ce fichier. Elle vivait ici pour les clubs
+  // IA et dans `club-management.ts` pour le club dirigé, avec des taux de
+  // remplissage et un prix du billet différents. Elle est désormais testée là
+  // où elle est calculée, une fois, pour tout le monde.
 });
 
 describe('finances — mutations', () => {
