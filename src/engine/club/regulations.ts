@@ -263,6 +263,21 @@ export function reviewSeason(input: {
   return sanctions;
 }
 
+/**
+ * Cette sanction compte-t-elle comme un antécédent ? V0.60.
+ *
+ * La récidive était armée par **n'importe quel verdict**, y compris un simple
+ * avertissement JIFF sans point retiré ni amende. Un club prévenu une fois se
+ * retrouvait récidiviste l'année suivante, avec les sanctions aggravées qui vont
+ * avec, et le retrait de points qui en découlait déclenchait le défaut de
+ * classement corrigé par ailleurs dans cette version.
+ *
+ * Un avertissement avertit. Il ne condamne pas.
+ */
+export function countsAsOffence(sanction: Sanction): boolean {
+  return sanction.pointsDeducted > 0 || sanction.fine > 0 || sanction.transferBan;
+}
+
 /** Résumé lisible d'une sanction, pour le courrier et le fil d'actualité. */
 export function sanctionSummary(sanction: Sanction): string {
   const parts: string[] = [];
