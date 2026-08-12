@@ -1095,6 +1095,7 @@ export function App() {
           : {}),
         ...(save.statsMatchCount !== undefined ? { statsMatchCount: save.statsMatchCount } : {}),
         ...(save.caps ? { caps: new Map(save.caps.map(e => [e.playerId, e.record])) } : {}),
+        ...(save.pendingEvents ? { pendingEvents: save.pendingEvents } : {}),
       },
     });
     aiMarketRef.current = save.aiMarket ?? [];
@@ -1242,6 +1243,7 @@ export function App() {
               .map(([clubId, points]) => ({ clubId, points })),
           },
           vacancies: vacanciesRef.current,
+          pendingEvents: state.pendingEvents,
           expectations: expectationsRef.current,
           headToHead: [...headToHeadRef.current].map(([clubId, record]) => ({
             clubId: clubId as ClubId, record,
