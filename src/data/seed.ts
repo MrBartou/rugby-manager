@@ -373,11 +373,25 @@ function pickStartingFifteen(
       );
     }
     used.add(pick.id);
-    starters.push({
-      playerId: pick.id,
-      position,
-      captainArmband: position === 'OUVREUR' || position === 'DEMI_DE_MELEE',
-    });
+    starters.push({ playerId: pick.id, position, captainArmband: false });
+  }
+
+  // V0.60 : un seul brassard, et il va au meneur d'hommes.
+  //
+  // L'auto-composition en posait **deux**, à l'ouvreur et au demi de mêlée, ce
+  // qui n'existe pas sur un terrain. Elle ignorait au passage le capitaine
+  // désigné par le manager, alors que la composition manuelle le respecte
+  // depuis la v0.50. Le moteur lit l'autorité du porteur du brassard : deux
+  // capitaines, c'est une donnée que rien ne sait interpréter.
+  const capitaine = suggestCaptain(
+    starters
+      .map(e => players.find(p => p.id === e.playerId))
+      .filter((p): p is Player => p !== undefined),
+  );
+  if (capitaine) {
+    const index = starters.findIndex(e => e.playerId === capitaine.id);
+    const entree = starters[index];
+    if (entree) starters[index] = { ...entree, captainArmband: true };
   }
 
   const remaining = available
