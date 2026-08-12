@@ -25,7 +25,11 @@ import {
   type SeasonState,
 } from '../engine/game/season-session.js';
 import { rolloverSeason } from '../engine/season/rollover.js';
-import { runAiMarket, type AiTransfer } from '../engine/club/ai-market.js';
+import {
+  runAiMarket,
+  runAiMarketAcrossDivisions,
+  type AiTransfer,
+} from '../engine/club/ai-market.js';
 import {
   applyBoardVerdict,
   clubStature,
@@ -1625,43 +1629,24 @@ export function App() {
     // club qui vient de faire monter un espoir n'aille pas acheter un doublon
     // au même poste.
     // V0.60 : le mercato tourne dans les deux divisions, chacune avec son
-    // plafond salarial. Une seule passe sur trente clubs appliquerait le
-    // plafond du Top 14 à la Pro D2, et l'inverse.
-    const balances = new Map([...closedFinances].map(([id, f]) => [id, f.balance]));
-    const classement = session.getRanking().map(s => s.clubId);
-    let joueursApresMercato: readonly Player[] = playersAfterIntake;
-    const transfertsToutesDivisions: AiTransfer[] = [];
-    // Les soldes évoluent d'une division à l'autre : la seconde passe part de
-    // ce que la première a laissé.
-    let soldesApresMercato: ReadonlyMap<ClubId, number> = balances;
-
-    for (const division of ['TOP14', 'PRO_D2'] as const) {
-      const clubsDeLaDivision = clubsOfDivision(divisionsRef.current, division)
-        .map(id => allClubs.find(c => c.id === id))
-        .filter((c): c is Club => c !== undefined);
-      if (clubsDeLaDivision.length === 0) continue;
-
-      const passe = runAiMarket({
-        players: joueursApresMercato,
-        clubs: clubsDeLaDivision,
+    // plafond salarial. La logique vit dans le moteur, où elle est testable.
+    const aiMarket = runAiMarketAcrossDivisions({
+      seed: seasonSeedRef.current,
+      base: {
+        players: playersAfterIntake,
         playerClubId: state.playerClubId,
-        balanceByClub: soldesApresMercato,
+        balanceByClub: new Map([...closedFinances].map(([id, f]) => [id, f.balance])),
         currentSeason: rollover.newSeason,
-        rankedClubIds: classement,
-        seed: `${seasonSeedRef.current}_${division}`,
-        division,
+        rankedClubIds: session.getRanking().map(s => s.clubId),
         transferBannedClubs: bannedClubs,
-      });
-      joueursApresMercato = passe.players;
-      soldesApresMercato = passe.balanceByClub;
-      transfertsToutesDivisions.push(...passe.transfers);
-    }
-
-    const aiMarket = {
-      players: joueursApresMercato,
-      transfers: transfertsToutesDivisions,
-      balanceByClub: soldesApresMercato,
-    };
+      },
+      byDivision: (['TOP14', 'PRO_D2'] as const).map(division => ({
+        division,
+        clubs: clubsOfDivision(divisionsRef.current, division)
+          .map(id => allClubs.find(c => c.id === id))
+          .filter((c): c is Club => c !== undefined),
+      })),
+    });
     commitRoster(aiMarket.players);
     aiMarketRef.current = aiMarket.transfers;
     publish(newsFromMarket(
