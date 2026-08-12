@@ -150,6 +150,22 @@ export function TitleScreen({ onNewCareer, onContinue, onFreeMatch }: Props) {
           </div>
         )}
 
+        {/* V0.60 : une partie écrite par une version plus récente du jeu se
+            signale au lieu de disparaître de la liste sans un mot. */}
+        {health.fromFutureVersion.length > 0 && (
+          <div className="title-alert">
+            <strong>
+              {health.fromFutureVersion.length > 1
+                ? `${health.fromFutureVersion.length} parties viennent d'une version plus récente.`
+                : 'Une partie vient d\'une version plus récente du jeu.'}
+            </strong>
+            <span>
+              Elle n'est pas ouverte ici : ce qu'elle contient de nouveau serait
+              perdu. Elle reste intacte et attend sa version.
+            </span>
+          </div>
+        )}
+
         <div className="title-actions">
           {lastSave && (
             <button type="button" className="title-cta primary" onClick={() => onContinue(lastSave.saveId)}>
