@@ -634,12 +634,24 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
   if (opts.restoreFrom) {
     currentRound = opts.restoreFrom.currentRound;
     for (const h of opts.restoreFrom.history) history.push(h);
-    // V0.9 fix : ne pas écraser le classement initialisé si restoreFrom.standings est vide
-    if (opts.restoreFrom.standings.length > 0) {
-      const restoredStandings = new Map<ClubId, ClubStanding>();
-      for (const s of opts.restoreFrom.standings) restoredStandings.set(s.clubId, s);
-      standings = restoredStandings;
+    // V0.60 : le classement restauré se **superpose** au classement vide, il ne
+    // le remplace pas.
+    //
+    // L'intersaison ne transmet que les clubs frappés d'un retrait de points,
+    // ce qui est une entrée légitime : « voici les ajustements ». En remplaçant
+    // la table entière par cette liste partielle, la session perdait tous les
+    // autres clubs. `applyMatchToStandings` sort sans rien faire quand un des
+    // deux clubs manque : tous les matchs de la saison suivante étaient donc
+    // ignorés en silence, et la J27 plantait sur un « top 6 incomplet » faute
+    // de six clubs classés.
+    const restoredStandings = new Map<ClubId, ClubStanding>(standings);
+    for (const s of opts.restoreFrom.standings) {
+      // Un club qui ne fait plus partie de la division n'a rien à y faire :
+      // une sanction suit un club relégué, elle ne le ramène pas.
+      if (!restoredStandings.has(s.clubId)) continue;
+      restoredStandings.set(s.clubId, s);
     }
+    standings = restoredStandings;
   }
 
   // Phases finales : matchs générés à la fin de la saison régulière puis après chaque tour
