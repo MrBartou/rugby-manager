@@ -4263,7 +4263,7 @@ export function App() {
             Le Quinze
           </h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span className="alpha-tag">Alpha V0.10</span>
+            <span className="alpha-tag">Alpha v{__APP_VERSION__}</span>
           </div>
         </header>
       )}
