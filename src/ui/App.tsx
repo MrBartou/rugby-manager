@@ -1989,12 +1989,17 @@ export function App() {
     refillVacantBenches(state.currentSeason, offers.map(o => o.clubId));
     setPendingOffers(offers);
 
-    // V0.59 — la fédération, elle, n'écrit pas tous les ans. Le poste ne se
-    // cumule pas : la lettre le dit franchement, sans quoi ce serait un piège
-    // et non une proposition.
+    // La fédération n'écrit pas tous les ans. Le poste ne se cumule pas : la
+    // lettre le dit franchement, sans quoi ce serait un piège et non une
+    // proposition.
+    //
+    // V0.60 : le banc s'ouvre une saison sur deux, contre une sur quatre
+    // auparavant. Avec quatre saisons de métier et un titre exigés, la première
+    // fenêtre atteignable tombait en 2032, soit huit saisons de carrière. Un
+    // poste qu'on ne voit jamais n'existe pas.
     if (federationApproaches({
       reputation: reputationRef.current,
-      vacant: (state.currentSeason - 2024) % 4 === 0,
+      vacant: (state.currentSeason - 2024) % 2 === 0,
       alreadyInPost: careerRef.current.kind === 'SELECTIONNEUR',
     })) {
       const clubActuel = careerRef.current.kind === 'EN_POSTE'
@@ -3407,30 +3412,6 @@ export function App() {
       if (offers.length > 0) {
         setPendingOffers(offers);
 
-    // V0.59 — la fédération, elle, n'écrit pas tous les ans. Le poste ne se
-    // cumule pas : la lettre le dit franchement, sans quoi ce serait un piège
-    // et non une proposition.
-    if (federationApproaches({
-      reputation: reputationRef.current,
-      vacant: (state.currentSeason - 2024) % 4 === 0,
-      alreadyInPost: careerRef.current.kind === 'SELECTIONNEUR',
-    })) {
-      const clubActuel = careerRef.current.kind === 'EN_POSTE'
-        ? allClubs.find(c => c.id === (careerRef.current as { clubId: ClubId }).clubId)?.name
-        : undefined;
-      setNationalOffer({
-        season: state.currentSeason,
-        letter: federationLetter(reputationRef.current, clubActuel),
-      });
-      sendMail([{
-        season: state.currentSeason,
-        round: 0,
-        sender: 'FEDERATION',
-        subject: 'Le banc du XV de France vous est proposé',
-        body: federationLetter(reputationRef.current, clubActuel),
-        importance: 'HAUTE',
-      }]);
-    }
         sendMail([mailJobOffers({
           season: state.currentSeason,
           clubNames: offers.map(o => o.clubName),
