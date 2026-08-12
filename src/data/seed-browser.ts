@@ -116,6 +116,43 @@ export function listAllPlayersWithOverrides(): readonly Player[] {
   return all;
 }
 
+/** Vrai si le joueur vient des données de base, et non d'une génération en partie. */
+export function isSeedPlayer(playerId: PlayerId): boolean {
+  return SEED_PLAYER_IDS.has(playerId as string);
+}
+
+const SEED_PLAYER_IDS: ReadonlySet<string> = new Set(
+  [...SEED.clubs.keys()].flatMap(clubId =>
+    rosterForClub(SEED, clubId).map(p => p.id as string)),
+);
+
+/**
+ * Les retraités de longue date, reconstruits depuis les données de base.
+ *
+ * La sauvegarde ne garde que leur identifiant : conserver la fiche entière d'un
+ * joueur qui ne rejouera jamais faisait grossir le stockage saison après saison
+ * jusqu'au quota du navigateur.
+ */
+export function retiredSeedPlayers(
+  ids: readonly PlayerId[],
+  retirementSeason: number,
+): readonly Player[] {
+  const wanted = new Set(ids as readonly string[]);
+  const out: Player[] = [];
+  for (const clubId of SEED.clubs.keys()) {
+    for (const p of rosterForClub(SEED, clubId)) {
+      if (!wanted.has(p.id as string)) continue;
+      out.push({
+        ...p,
+        retired: true,
+        retirementSeason,
+        dynamic: { forme: 0, fatigue: 0, mood: 0, moodModifiers: [] },
+      });
+    }
+  }
+  return out;
+}
+
 export function autoLineup(clubId: string, unavailable: ReadonlySet<PlayerId> = new Set()): ManualLineup {
   return autoLineupForClub(SEED, clubId, unavailable, listRoster);
 }

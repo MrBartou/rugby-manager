@@ -94,6 +94,11 @@ export interface SeasonSave extends SeasonSaveMeta {
   readonly clubIds: readonly ClubId[];            // pour reconstruire la session
   /** V0.4 — joueurs modifiés (retraites, contrats à venir). Vide = utiliser le CSV. */
   readonly playerOverrides: readonly Player[];
+  /**
+   * V0.60 — retraités de longue date des données de base, réduits à leur
+   * identifiant. Reconstruits au chargement : voir `pruneRetiredOverrides`.
+   */
+  readonly retiredSeedPlayerIds?: readonly PlayerId[];
   /** V0.6 — finances par club (sérialisé comme tableau de paires). */
   readonly financesByClub: readonly { readonly clubId: ClubId; readonly finances: ClubFinances }[];
   /** V0.9 — historique de carrière (records + palmarès). */
@@ -426,6 +431,57 @@ export function migrateSave(raw: unknown): SeasonSave {
 }
 
 /**
+ * L'élagage des retraités : v0.60.
+ *
+ * `playerOverrides` porte la base joueurs entière, et les retraités y restaient
+ * à vie. Un joueur pèse environ 880 octets une fois sérialisé ; vingt saisons de
+ * retraites et de générations de jeunes suffisaient à faire dériver la
+ * sauvegarde vers le quota de `localStorage`, cinq mégaoctets pour toutes les
+ * parties confondues. La partie mourait alors d'un stockage plein, sans que le
+ * joueur ait rien fait de particulier.
+ *
+ * Deux sorts, selon d'où vient le joueur.
+ *
+ * - **Il figure dans les données de base** : on ne garde que son identifiant,
+ *   huit octets au lieu de huit cents. Au chargement, il est reconstruit depuis
+ *   ces données et remarqué comme retraité.
+ * - **Il a été généré en cours de partie** (jeune du centre de formation) : rien
+ *   ne permettrait de le reconstruire, mais rien n'y renvoie non plus. Il sort
+ *   de la sauvegarde. Ce qu'il a fait sur le terrain reste au registre de
+ *   carrière, qui garde ses propres lignes et son nom.
+ *
+ * Le délai de grâce évite de toucher aux retraites récentes, qui s'affichent
+ * encore dans le bilan d'intersaison.
+ */
+export const RETIREMENT_GRACE_SEASONS = 3;
+
+export interface PrunedOverrides {
+  readonly overrides: readonly Player[];
+  /** Retraités des données de base, réduits à leur identifiant. */
+  readonly retiredSeedPlayerIds: readonly PlayerId[];
+}
+
+export function pruneRetiredOverrides(
+  overrides: readonly Player[],
+  currentSeason: number,
+  isSeedPlayer: (playerId: PlayerId) => boolean,
+): PrunedOverrides {
+  const kept: Player[] = [];
+  const retiredSeedPlayerIds: PlayerId[] = [];
+  for (const p of overrides) {
+    const retiredLongAgo = p.retired === true
+      && p.retirementSeason !== undefined
+      && currentSeason - p.retirementSeason >= RETIREMENT_GRACE_SEASONS;
+    if (!retiredLongAgo) {
+      kept.push(p);
+      continue;
+    }
+    if (isSeedPlayer(p.id)) retiredSeedPlayerIds.push(p.id);
+  }
+  return { overrides: kept, retiredSeedPlayerIds };
+}
+
+/**
  * Erreur d'écriture, avec une cause exploitable par l'interface : v0.60.
  *
  * `QuotaExceededError` était avalé et rendu au joueur sous la forme d'un
@@ -604,6 +660,8 @@ export function buildSeasonSaveFromState(
       readonly playerId: PlayerId;
       readonly career: PlayerCareer;
     }[];
+    /** V0.60 — retraités de longue date, réduits à leur identifiant. */
+    readonly retiredSeedPlayerIds?: readonly PlayerId[];
     /** V0.60 — retouches du sélectionneur sur le groupe France. */
     readonly nationalPicks?: {
       readonly added: readonly PlayerId[];
@@ -634,6 +692,7 @@ export function buildSeasonSaveFromState(
     standings: [...state.standings.values()],
     clubIds,
     playerOverrides,
+    ...(extras.retiredSeedPlayerIds ? { retiredSeedPlayerIds: extras.retiredSeedPlayerIds } : {}),
     financesByClub: [...state.financesByClub.entries()].map(([clubId, finances]) => ({ clubId, finances })),
     careerHistory,
     managerReputation,
