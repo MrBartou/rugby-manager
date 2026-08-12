@@ -174,7 +174,23 @@ export interface SeasonSave extends SeasonSaveMeta {
     readonly transferBan: boolean;
     /** V0.47 — clubs déjà sanctionnés la saison passée, récidive comprise. */
     readonly repeatOffenders?: readonly ClubId[];
+    /**
+     * V0.60 — retraits de points en vigueur cette saison, par club.
+     *
+     * Ils étaient calculés à l'intersaison puis oubliés au rechargement. Le
+     * classement, lui, portait bien la sanction : le club apparaissait à moins
+     * six points sans que rien ne dise pourquoi.
+     */
+    readonly pointsPenaltyByClub?: readonly { readonly clubId: ClubId; readonly points: number }[];
   };
+  /**
+   * V0.60 — bancs libres au moment de la sauvegarde.
+   *
+   * Sans eux, recharger effaçait la liste des clubs sans entraîneur : les
+   * offres en attente disparaissaient, et les postes se pourvoyaient tout seuls
+   * à la journée suivante.
+   */
+  readonly vacancies?: readonly ClubId[];
   /**
    * V0.48 — promesses en cours, avec le nombre de matchs déjà disputés au
    * moment où elles ont été faites. Sans cette référence, un rechargement
@@ -634,7 +650,10 @@ export function buildSeasonSaveFromState(
       readonly sanctionedLastSeason: boolean;
       readonly transferBan: boolean;
       readonly repeatOffenders?: readonly ClubId[];
+      readonly pointsPenaltyByClub?: readonly { readonly clubId: ClubId; readonly points: number }[];
     };
+    /** V0.60 — bancs libres. */
+    readonly vacancies?: readonly ClubId[];
     readonly direction?: {
       readonly facilities: ClubFacilities;
       readonly plan: ClubPlan;
@@ -693,6 +712,7 @@ export function buildSeasonSaveFromState(
     clubIds,
     playerOverrides,
     ...(extras.retiredSeedPlayerIds ? { retiredSeedPlayerIds: extras.retiredSeedPlayerIds } : {}),
+    ...(extras.vacancies !== undefined ? { vacancies: extras.vacancies } : {}),
     financesByClub: [...state.financesByClub.entries()].map(([clubId, finances]) => ({ clubId, finances })),
     careerHistory,
     managerReputation,

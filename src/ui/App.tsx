@@ -1109,14 +1109,18 @@ export function App() {
     prospectsRef.current = save.prospects ?? EMPTY_PROSPECTS;
     // V0.44 — une sauvegarde antérieure aux deux étages repart d'un Top 14
     // complet : ses quatorze clubs sont exactement ceux du CSV.
-    vacanciesRef.current = [];
+    vacanciesRef.current = save.vacancies ?? [];
     sanctionedLastSeasonRef.current = save.regulation?.sanctionedLastSeason ?? false;
     transferBanRef.current = save.regulation?.transferBan ?? false;
     repeatOffendersRef.current = new Set(
       (save.regulation?.repeatOffenders ?? []).map(id => id as string),
     );
-    pointsPenaltyByClubRef.current = new Map();
-    pointsPenaltyRef.current = 0;
+    // V0.60 : le retrait de points survit au rechargement. Le classement portait
+    // la sanction, mais plus rien ne disait d'où venaient les points manquants.
+    pointsPenaltyByClubRef.current = new Map(
+      (save.regulation?.pointsPenaltyByClub ?? []).map(e => [e.clubId, e.points]),
+    );
+    pointsPenaltyRef.current = pointsPenaltyByClubRef.current.get(save.playerClubId) ?? 0;
     expectationsRef.current = save.expectations ?? [];
     headToHeadRef.current = new Map(
       (save.headToHead ?? []).map(e => [e.clubId as string, e.record]),
@@ -1224,7 +1228,10 @@ export function App() {
             sanctionedLastSeason: sanctionedLastSeasonRef.current,
             transferBan: transferBanRef.current,
             repeatOffenders: [...repeatOffendersRef.current].map(id => id as ClubId),
+            pointsPenaltyByClub: [...pointsPenaltyByClubRef.current]
+              .map(([clubId, points]) => ({ clubId, points })),
           },
+          vacancies: vacanciesRef.current,
           expectations: expectationsRef.current,
           headToHead: [...headToHeadRef.current].map(([clubId, record]) => ({
             clubId: clubId as ClubId, record,
@@ -4393,7 +4400,14 @@ export function App() {
       )}
 
       {screen.kind === 'standings' && seasonState && renderInGame(
-        <StandingsScreen state={seasonState} clubs={clubs} division={playerDivisionRef.current} />
+        <StandingsScreen
+          state={seasonState}
+          clubs={clubs}
+          division={playerDivisionRef.current}
+          pointsPenalties={new Map(
+            [...pointsPenaltyByClubRef.current].map(([clubId, points]) => [clubId as string, points]),
+          )}
+        />
       )}
 
       {screen.kind === 'squad' && seasonState && renderInGame(
