@@ -427,13 +427,22 @@ describe('Season flow — joker médical', () => {
         injury: { type: 'LIGAMENTAIRE', startedAt: 1, estimatedReturnAt: 18, hasSequela: false },
       },
     };
-    const libre: Player = {
-      ...makePlayer('a' as ClubId, 'PILIER_GAUCHE', 900, 60),
-      id: 'libre_pilier' as PlayerId,
-      freeAgent: true,
-    };
-    return [blessé, ...base.slice(1), libre];
+    return [blessé, ...base.slice(1)];
   }
+
+  /**
+   * Le vivier des sans-club, à part.
+   *
+   * Il vivait auparavant dans l'effectif du club, ce que la couche de données
+   * ne produit jamais : `listRoster` écarte les agents libres. Le test validait
+   * donc une situation impossible, pendant que la fonctionnalité était morte en
+   * jeu faute de candidats. Corrigé en v0.60.
+   */
+  const agentsLibres = (): readonly Player[] => [{
+    ...makePlayer('a' as ClubId, 'PILIER_GAUCHE', 900, 60),
+    id: 'libre_pilier' as PlayerId,
+    freeAgent: true,
+  }];
 
   function makeSession(): SeasonSession {
     return createSeasonSession({
@@ -450,6 +459,7 @@ describe('Season flow — joker médical', () => {
         salaryCapUsage: 0, jiffCount: 0, reputation: 60,
       })),
       rosterByClub: rosterFor,
+      freeAgentPool: agentsLibres,
       restoreFrom: {
         currentRound: 5,
         history: [],
