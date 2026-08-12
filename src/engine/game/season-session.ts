@@ -1432,7 +1432,7 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
     if (round <= calendar.totalRounds) {
       for (const clubId of financesByClub.keys()) {
         const roster = opts.rosterByClub(clubId);
-        const payroll = computeRoundPayroll(roster);
+        const payroll = computeRoundPayroll(roster, calendar.totalRounds);
         applyClubMovement(clubId, {
           kind: 'PAYROLL',
           amount: -payroll,

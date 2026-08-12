@@ -74,6 +74,19 @@ describe('finances — calculs', () => {
     expect(computeRoundPayroll(players)).toBe(2_600_000 / REGULAR_ROUNDS);
   });
 
+  it('la Pro D2 étale le même salaire sur ses trente journées', () => {
+    // V0.60 : le 26 en dur ne facturait que 26 des 30 journées de Pro D2, soit
+    // 15 % de masse salariale offerte à toute la division.
+    const players = [makePlayer(3_000_000)];
+    expect(computeRoundPayroll(players, 30)).toBe(100_000);
+    expect(computeRoundPayroll(players, 30) * 30).toBe(3_000_000);
+  });
+
+  it('et un nombre de journées absurde retombe sur la valeur par défaut', () => {
+    const players = [makePlayer(2_600_000)];
+    expect(computeRoundPayroll(players, 0)).toBe(computeRoundPayroll(players));
+  });
+
   it('match revenue dépend du tier et du form', () => {
     const small = makeClub({ tier: 'PETIT_BUDGET', stadiumCapacity: 10_000 });
     const big = makeClub({ tier: 'GROS_BUDGET', stadiumCapacity: 30_000 });

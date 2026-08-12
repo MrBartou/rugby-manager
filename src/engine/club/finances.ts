@@ -5,14 +5,20 @@
  *  - une enveloppe annuelle (sponsors + TV, prise sur club.annualBudget)
  *  - des recettes de billetterie à chaque match à domicile
  * et débité par
- *  - la masse salariale (payroll), répartie sur les 26 journées de saison régulière
+ *  - la masse salariale (payroll), répartie sur les journées de saison régulière
  *
  * Pas de banqueroute en V0.6 — le solde peut devenir négatif, c'est juste un warning.
  */
 
 import type { Club, ClubId, ClubTier, Player } from '../types.js';
 
-/** Nombre de journées de saison régulière sur lesquelles répartir le payroll. */
+/**
+ * Nombre de journées de saison régulière sur lesquelles répartir le payroll.
+ *
+ * C'est le calendrier du Top 14. La Pro D2 en joue trente : lui appliquer ce
+ * chiffre laissait quatre journées de salaires jamais facturées, soit un cadeau
+ * de 15 % de masse salariale à chaque club de la division.
+ */
 export const REGULAR_ROUNDS = 26;
 
 /** Prix moyen du billet (euros). Constante V0.6, évoluera plus tard. */
@@ -64,9 +70,17 @@ export function computeAnnualPayroll(playersOfClub: readonly Player[]): number {
   return total;
 }
 
-/** Charge salariale pour une journée de saison régulière (annuel / 26). */
-export function computeRoundPayroll(playersOfClub: readonly Player[]): number {
-  return Math.round(computeAnnualPayroll(playersOfClub) / REGULAR_ROUNDS);
+/**
+ * Charge salariale d'une journée de saison régulière : annuel divisé par le
+ * nombre de journées de la division, et non par un 26 valable pour le seul
+ * Top 14.
+ */
+export function computeRoundPayroll(
+  playersOfClub: readonly Player[],
+  regularRounds: number = REGULAR_ROUNDS,
+): number {
+  const rounds = regularRounds > 0 ? regularRounds : REGULAR_ROUNDS;
+  return Math.round(computeAnnualPayroll(playersOfClub) / rounds);
 }
 
 /** Recette annuelle "sponsor + TV" — V0.6 : prise sur annualBudget du club. */
