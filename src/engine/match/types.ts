@@ -40,7 +40,10 @@ export interface PreMatchTacticalPlan {
   readonly occupation: 'HAUTE' | 'MEDIANE' | 'BASSE';
   readonly defensiveLine: 'MONTANTE' | 'RIDEAU' | 'STAND_OFF';
   readonly setPiecesFocus: readonly ('MELEE' | 'TOUCHE' | 'MAUL' | 'NONE')[];
-  readonly targetingStrategy?: string;                 // ex : "exploiter centre adverse faible"
+  // V0.60 : `targetingStrategy` retiré. C'était une chaîne libre, jamais
+  // renseignée et que le moteur n'aurait de toute façon pas su interpréter.
+  // Cibler un adversaire précis relève du dossier d'avant-match, qui existe et
+  // qui, lui, produit de vrais effets.
 }
 
 export type LiveMomentChoice = string;
