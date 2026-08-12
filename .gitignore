@@ -47,5 +47,5 @@ saves/
 ~$*.xlsx
 *.tmp
 
-# Agent local settings
-.claude/
+# Fichiers de verrou LibreOffice
+.~lock.*#
