@@ -216,7 +216,7 @@ import {
   newsFromInternationalWindow,
   type NewsFeed,
 } from '../engine/season/news.js';
-import { isWindowOpeningRound } from '../engine/season/transfer-window.js';
+import { isWindowOpeningRound, transferWindowStatus } from '../engine/season/transfer-window.js';
 import { applyMovement as applyFinancesMovement, closeSeason as closeSeasonFinances, initFinancesForAllClubs } from '../engine/club/finances.js';
 import { defaultAcademyLevel, generateFreeAgentPool, generateYouthIntake } from '../engine/club/youth-generation.js';
 import { EMPTY_PROSPECTS, trackProspects, type ProspectRecord } from '../engine/club/academy.js';
@@ -935,6 +935,7 @@ export function App() {
         division: playerDivisionRef.current,
         transferBan: transferBanRef.current,
       }),
+      activeLoans: () => loansRef.current,
       nationalPicks: () => nationalPicksRef.current,
       clubDirection: () => ({ facilities: facilitiesRef.current, plan: clubPlanRef.current }),
       wantAwayIds: () => transferRequestsRef.current
@@ -1037,6 +1038,7 @@ export function App() {
         division: playerDivisionRef.current,
         transferBan: transferBanRef.current,
       }),
+      activeLoans: () => loansRef.current,
       nationalPicks: () => nationalPicksRef.current,
       clubDirection: () => ({ facilities: facilitiesRef.current, plan: clubPlanRef.current }),
       wantAwayIds: () => transferRequestsRef.current
@@ -1819,6 +1821,7 @@ export function App() {
         division: playerDivisionRef.current,
         transferBan: transferBanRef.current,
       }),
+      activeLoans: () => loansRef.current,
       nationalPicks: () => nationalPicksRef.current,
       clubDirection: () => ({ facilities: facilitiesRef.current, plan: clubPlanRef.current }),
       wantAwayIds: () => transferRequestsRef.current
@@ -3741,6 +3744,15 @@ export function App() {
     if (!session) return;
     const state = session.getState();
 
+    // V0.60 : un prêt est un mouvement de joueur comme un autre. Le conclure
+    // pendant les barrages, quand le marché est fermé depuis des mois, était
+    // une porte de sortie que personne n'a jamais eue.
+    const marché = transferWindowStatus(state.currentRound, state.calendar.totalRounds);
+    if (!marché.open) {
+      notify(`Prêt impossible : ${marché.summary.toLowerCase()}.`, 'warn');
+      return;
+    }
+
     loansRef.current = [
       ...loansRef.current.filter(l => l.playerId !== player.id),
       {
@@ -3839,6 +3851,7 @@ export function App() {
         division: playerDivisionRef.current,
         transferBan: transferBanRef.current,
       }),
+      activeLoans: () => loansRef.current,
       nationalPicks: () => nationalPicksRef.current,
       clubDirection: () => ({ facilities: facilitiesRef.current, plan: clubPlanRef.current }),
       wantAwayIds: () => transferRequestsRef.current
