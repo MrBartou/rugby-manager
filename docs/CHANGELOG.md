@@ -28,6 +28,9 @@ clair ne pouvait pas fonctionner.
   étroit. C'est ce qui lui donnait son air compressé.
 - **L'aide s'ouvrait sous les fenêtres d'événement**, alors qu'on l'ouvre
   justement quand on ne comprend pas ce qu'une fenêtre demande.
+- **Le numéro de version affiché ne bougeait pas en développement** : il est
+  figé au chargement de la configuration de Vite, qui ne surveille que son
+  propre fichier. Le `package.json` est désormais surveillé aussi.
 
 ### Modifié
 
