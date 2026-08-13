@@ -13,6 +13,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   DELEGATION_OWNER,
+  EARLIEST_SUBSTITUTION_MINUTE,
+  adviseSubstitution,
   NO_DELEGATION,
   NO_STAFF_QUALITY,
   decideMinorOffer,
@@ -20,6 +22,7 @@ import {
   delegationPenalty,
   focusForPlayer,
   isDelegated,
+  lineupMistakes,
   summarise,
   toggleDelegation,
 } from '@/engine/club/delegation.js';
@@ -174,5 +177,99 @@ describe('ce que l\'adjoint fait d\'une offre reçue', () => {
   it('et accepte une offre correcte sur un joueur qui ne joue pas', () => {
     expect(decideMinorOffer({ isKeyPlayer: false, playRatio: 0.1, offerRatio: 1.2 }))
       .toBe('ACCEPTER');
+  });
+});
+
+describe('le banc que l\'adjoint fait entrer', () => {
+  const surLeTerrain = (fatigue: number, id = 'titulaire') => ({
+    playerId: id as PlayerId, position: 'PILIER_GAUCHE' as const, fatigue,
+  });
+  const surLeBanc = (overall: number, id = 'remplacant') => ({
+    playerId: id as PlayerId, fatigue: 0, covers: ['PILIER_GAUCHE' as const], overall,
+  });
+
+  const base = {
+    minute: 60,
+    onField: [surLeTerrain(85)],
+    bench: [surLeBanc(70)],
+    substitutionsUsed: 0,
+    substitutionsAllowed: 8,
+    quality: 70,
+  };
+
+  it('personne ne sort avant l\'heure de jeu', () => {
+    // Le match se joue : vider son banc à la vingtième minute n'est pas une
+    // délégation, c'est un sabotage.
+    expect(adviseSubstitution({ ...base, minute: EARLIEST_SUBSTITUTION_MINUTE - 1 }))
+      .toBeUndefined();
+  });
+
+  it('sort le joueur le plus cuit', () => {
+    const conseil = adviseSubstitution({
+      ...base,
+      onField: [surLeTerrain(70, 'frais'), surLeTerrain(92, 'cuit')],
+    });
+    expect(conseil?.off).toBe('cuit');
+  });
+
+  it('et fait entrer le meilleur qui couvre le poste', () => {
+    const conseil = adviseSubstitution({
+      ...base,
+      bench: [surLeBanc(58, 'faible'), surLeBanc(76, 'bon')],
+    });
+    expect(conseil?.on).toBe('bon');
+  });
+
+  it('un adjoint dépassé laisse ses joueurs s\'épuiser plus longtemps', () => {
+    const fatigueMoyenne = { ...base, onField: [surLeTerrain(70)] };
+    expect(adviseSubstitution({ ...fatigueMoyenne, quality: 90 })).toBeDefined();
+    expect(adviseSubstitution({ ...fatigueMoyenne, quality: 20 })).toBeUndefined();
+  });
+
+  it('ne fait rien quand le quota est épuisé', () => {
+    expect(adviseSubstitution({ ...base, substitutionsUsed: 8 })).toBeUndefined();
+  });
+
+  it('ni quand personne au banc ne couvre le poste', () => {
+    expect(adviseSubstitution({
+      ...base,
+      bench: [{ playerId: 'ailier' as PlayerId, fatigue: 0, covers: ['AILIER_GAUCHE'], overall: 90 }],
+    })).toBeUndefined();
+  });
+
+  it('et ne bouge pas tant que personne n\'est fatigué', () => {
+    // Une délégation qui changerait quelque chose à chaque phase serait
+    // insupportable à regarder.
+    expect(adviseSubstitution({ ...base, onField: [surLeTerrain(20)] })).toBeUndefined();
+  });
+});
+
+describe('la compo que rend l\'adjoint', () => {
+  const rng = (suite: readonly number[]) => {
+    let i = 0;
+    return { nextInt: (): number => suite[i++ % suite.length]! };
+  };
+
+  it('un adjoint excellent ne se trompe pas', () => {
+    expect(lineupMistakes(95, 15, 8, rng([0]))).toEqual([]);
+  });
+
+  it('un adjoint correct se trompe une fois', () => {
+    expect(lineupMistakes(75, 15, 8, rng([3, 2]))).toHaveLength(1);
+  });
+
+  it('un adjoint dépassé se trompe plusieurs fois', () => {
+    expect(lineupMistakes(40, 15, 8, rng([1, 0, 2, 1, 3, 2])).length).toBeGreaterThan(1);
+  });
+
+  it('et ne se trompe jamais deux fois sur le même joueur', () => {
+    // Échanger deux fois le même titulaire le remettrait sur le terrain : une
+    // erreur qui s'annule n'est pas une erreur.
+    const swaps = lineupMistakes(40, 15, 8, rng([5, 1, 5, 2, 5, 3]));
+    expect(new Set(swaps.map(s => s.starterIndex)).size).toBe(swaps.length);
+  });
+
+  it('sans banc, personne ne peut se tromper', () => {
+    expect(lineupMistakes(20, 15, 0, rng([0]))).toEqual([]);
   });
 });

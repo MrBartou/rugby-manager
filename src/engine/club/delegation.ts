@@ -24,7 +24,7 @@
  * partie, et il se perd quand on change de club.
  */
 
-import type { Player } from '../types.js';
+import type { Player, PlayerId, Position } from '../types.js';
 import type { TrainingFocus } from './development.js';
 import type { StaffMember, StaffRole } from './staff.js';
 
@@ -212,4 +212,108 @@ export function decideMinorOffer(input: MinorOfferInput): MinorOfferDecision {
   // En dessous de la valeur estimée, on refuse : un adjoint ne brade pas.
   if (input.offerRatio < 0.9) return 'REFUSER';
   return 'ACCEPTER';
+}
+
+/**
+ * Le remplacement que l'adjoint décide, s'il en décide un.
+ *
+ * Un entraîneur ne vide pas son banc d'un coup : il sort le joueur le plus
+ * cuit, à partir du moment où l'usure commence à peser, et il garde des
+ * cartouches pour la fin. La compétence joue sur le **seuil** : un adjoint
+ * dépassé laisse ses titulaires s'épuiser plus longtemps avant de réagir.
+ *
+ * Rend `undefined` quand il n'y a rien à faire, ce qui est le cas le plus
+ * fréquent : une délégation qui changerait quelque chose à chaque phase serait
+ * insupportable à regarder.
+ */
+export interface SubstitutionAdviceInput {
+  readonly minute: number;
+  readonly onField: readonly {
+    readonly playerId: PlayerId;
+    readonly position: Position;
+    readonly fatigue: number;
+  }[];
+  readonly bench: readonly {
+    readonly playerId: PlayerId;
+    readonly fatigue: number;
+    readonly covers: readonly Position[];
+    /** Niveau approximatif du remplaçant, pour ne pas affaiblir le quinze. */
+    readonly overall: number;
+  }[];
+  readonly substitutionsUsed: number;
+  readonly substitutionsAllowed: number;
+  /** Compétence de celui qui décide, de 0 à 100. */
+  readonly quality: number;
+}
+
+export interface SubstitutionAdvice {
+  readonly off: PlayerId;
+  readonly on: PlayerId;
+}
+
+/** Minute avant laquelle personne ne sort, sauf blessure : le match se joue. */
+export const EARLIEST_SUBSTITUTION_MINUTE = 45;
+
+export function adviseSubstitution(
+  input: SubstitutionAdviceInput,
+): SubstitutionAdvice | undefined {
+  if (input.minute < EARLIEST_SUBSTITUTION_MINUTE) return undefined;
+  if (input.substitutionsUsed >= input.substitutionsAllowed) return undefined;
+
+  // Un adjoint de confiance réagit à 62 de fatigue, un adjoint dépassé attend 80.
+  const borne = Math.max(0, Math.min(100, input.quality));
+  const seuil = 80 - (borne / 100) * 18;
+
+  const candidat = [...input.onField]
+    .filter(p => p.fatigue >= seuil)
+    .sort((a, b) => b.fatigue - a.fatigue)[0];
+  if (!candidat) return undefined;
+
+  const remplacant = [...input.bench]
+    .filter(b => b.covers.includes(candidat.position))
+    .sort((a, b) => b.overall - a.overall)[0];
+  if (!remplacant) return undefined;
+
+  return { off: candidat.playerId, on: remplacant.playerId };
+}
+
+/**
+ * La composition que l'adjoint rend, avec ses propres limites.
+ *
+ * Le quinze proposé par défaut a toujours été le meilleur possible : déléguer
+ * la composition n'aurait donc rien changé, et la case à cocher aurait été un
+ * décor. Un adjoint n'est pas vous : plus sa compétence est basse, plus il se
+ * trompe de joueur.
+ *
+ * L'erreur est un échange entre un titulaire et un remplaçant du même groupe,
+ * pas un joueur hors de son poste : un entraîneur professionnel se trompe sur
+ * la hiérarchie, pas sur le poste. Et le manager garde la main pour corriger,
+ * ce qui rend la délégation confortable sans être gratuite.
+ */
+export interface LineupSwap {
+  readonly starterIndex: number;
+  readonly substituteIndex: number;
+}
+
+export function lineupMistakes(
+  quality: number,
+  starterCount: number,
+  substituteCount: number,
+  rng: { nextInt: (min: number, max: number) => number },
+): readonly LineupSwap[] {
+  if (starterCount === 0 || substituteCount === 0) return [];
+
+  const borne = Math.max(0, Math.min(100, quality));
+  // 90 et plus : aucune erreur. 45, la valeur sans staff : deux échanges.
+  const erreurs = borne >= 90 ? 0 : borne >= 70 ? 1 : borne >= 50 ? 2 : 3;
+
+  const swaps: LineupSwap[] = [];
+  const dejaPris = new Set<number>();
+  for (let i = 0; i < erreurs; i++) {
+    const starterIndex = rng.nextInt(0, starterCount - 1);
+    if (dejaPris.has(starterIndex)) continue;
+    dejaPris.add(starterIndex);
+    swaps.push({ starterIndex, substituteIndex: rng.nextInt(0, substituteCount - 1) });
+  }
+  return swaps;
 }

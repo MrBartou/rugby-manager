@@ -6,6 +6,8 @@ import { MatchPitch } from '../components/MatchPitch.js';
 import { PhaseTimeline } from '../components/PhaseTimeline.js';
 import { MatchSummary } from '../components/MatchSummary.js';
 import type { MatchSpeed } from '../settings.js';
+import { adviseSubstitution } from '../../engine/club/delegation.js';
+import { approximateOverall } from '../../engine/club/development.js';
 import { LiveMomentModal } from '../components/LiveMomentModal.js';
 import { createMatchSession, type MatchSession } from '../../engine/match/session.js';
 import { BenchPanel } from '../components/BenchPanel.js';
@@ -42,6 +44,13 @@ interface Props {
    * un réglage par défaut n'est pas un verrou.
    */
   readonly defaultSpeed?: MatchSpeed;
+  /**
+   * V0.62 — les remplacements confiés à l'adjoint.
+   *
+   * Absent, le manager décide de tout, comme avant : rien n'est délégué tant
+   * qu'on ne l'a pas demandé.
+   */
+  readonly delegatedSubstitutions?: { readonly quality: number };
 }
 
 /** Correspondance entre le réglage et l'échelle interne du lecteur. */
@@ -64,7 +73,9 @@ const SPEEDS = [
  *   - dès que la session est `awaiting-decision` et qu'on a tout révélé, on affiche le modal
  *   - dès que `finished` et qu'on a tout révélé, on affiche le summary
  */
-export function MatchScreen({ setup, onBack, onMatchFinished, defaultSpeed = 'x1' }: Props) {
+export function MatchScreen({
+  setup, onBack, onMatchFinished, defaultSpeed = 'x1', delegatedSubstitutions,
+}: Props) {
   // Session est créée une fois par setup (matchInput + seed [+ replay])
   const sessionRef = useRef<MatchSession | null>(null);
   if (sessionRef.current === null) {
@@ -105,6 +116,31 @@ export function MatchScreen({ setup, onBack, onMatchFinished, defaultSpeed = 'x1
         // Encore des phases produites mais pas révélées
         setDisplayedCount(c => c + 1);
       } else if (s.status === 'in-progress') {
+        // V0.62 — l'adjoint gère le banc, si on le lui a confié. On le consulte
+        // avant de produire la phase suivante : un remplacement décidé après
+        // coup ne servirait plus à rien.
+        if (delegatedSubstitutions) {
+          const squad = session.getLiveSquad();
+          const conseil = adviseSubstitution({
+            // La session expose déjà des minutes : le compteur en secondes est
+            // interne. Diviser ici une seconde fois aurait figé l'adjoint à la
+            // première minute, et le banc ne serait jamais entré.
+            minute: s.minute,
+            onField: squad.onField.map(p => ({
+              playerId: p.player.id, position: p.position, fatigue: p.fatigue,
+            })),
+            bench: squad.bench.map(b => ({
+              playerId: b.player.id,
+              fatigue: b.fatigue,
+              covers: b.covers,
+              overall: approximateOverall(b.player),
+            })),
+            substitutionsUsed: squad.substitutionsUsed,
+            substitutionsAllowed: squad.substitutionsAllowed,
+            quality: delegatedSubstitutions.quality,
+          });
+          if (conseil) session.substitute(conseil.off, conseil.on);
+        }
         // Tout révélé, plus de phases en réserve : produire la suite
         session.advance();
         forceRerender();
@@ -114,7 +150,7 @@ export function MatchScreen({ setup, onBack, onMatchFinished, defaultSpeed = 'x1
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [playing, displayedCount, speedIdx, session, showModal, showSummary, state.status, state.phases.length]);
+  }, [playing, displayedCount, speedIdx, session, showModal, showSummary, state.status, state.phases.length, delegatedSubstitutions]);
 
   // Reset si on change de setup
   useEffect(() => {
