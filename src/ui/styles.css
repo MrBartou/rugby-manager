@@ -9845,3 +9845,34 @@ button:active:not(:disabled) { transform: scale(0.97); }
   color: var(--text-dim);
   font-size: 0.82rem;
 }
+
+/* V0.61 — bascule entre les deux lectures de l'effectif, et la note de saison. */
+.squad-view-switch {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.squad-view-switch button {
+  padding: 0.3rem 0.7rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.76rem;
+}
+
+.squad-view-switch button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.squad-table td.sq-note {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.squad-table td.sq-note.haute { color: var(--accent); }
+.squad-table td.sq-note.basse { color: var(--red); }
+.squad-table td.sq-note.dim { color: var(--text-muted); }
