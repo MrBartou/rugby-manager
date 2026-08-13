@@ -271,6 +271,7 @@ import { DashboardScreen } from './screens/DashboardScreen.js';
 import { StandingsScreen } from './screens/StandingsScreen.js';
 import { ClubScreen } from './screens/ClubScreen.js';
 import { allLeaderboards } from '../engine/season/leaderboards.js';
+import { buildShortlist } from '../engine/club/shortlist.js';
 import { PreMatchScreen } from './screens/PreMatchScreen.js';
 import { SquadScreen } from './screens/SquadScreen.js';
 import { PlayerScreen } from './screens/PlayerScreen.js';
@@ -542,6 +543,12 @@ export function App() {
    * l'attente n'a rien à quoi se raccrocher.
    */
   const vacanciesRef = useRef<readonly ClubId[]>([]);
+  /**
+   * V0.61 — les joueurs qu'on garde à l'œil, et le club qu'ils occupaient au
+   * moment où on les a mis en liste. Le second sert à signaler un départ.
+   */
+  const shortlistRef = useRef<ReadonlyMap<PlayerId, string>>(new Map());
+  const [shortlistEpoch, setShortlistEpoch] = useState(0);
   /**
    * V0.53 — les entraîneurs des autres clubs.
    *
@@ -877,6 +884,7 @@ export function App() {
     contractRef.current = defaultContract(2025);
     prospectsRef.current = EMPTY_PROSPECTS;
     vacanciesRef.current = [];
+    shortlistRef.current = new Map();
     sanctionedLastSeasonRef.current = false;
     transferBanRef.current = false;
     repeatOffendersRef.current = new Set();
@@ -1124,6 +1132,10 @@ export function App() {
     // V0.44 — une sauvegarde antérieure aux deux étages repart d'un Top 14
     // complet : ses quatorze clubs sont exactement ceux du CSV.
     vacanciesRef.current = save.vacancies ?? [];
+    // V0.61 — la liste de suivi, avec le club de chacun au moment où on l'y a mis.
+    shortlistRef.current = new Map(
+      (save.shortlist ?? []).map(e => [e.playerId, e.clubId as string]),
+    );
     sanctionedLastSeasonRef.current = save.regulation?.sanctionedLastSeason ?? false;
     transferBanRef.current = save.regulation?.transferBan ?? false;
     repeatOffendersRef.current = new Set(
@@ -1255,6 +1267,9 @@ export function App() {
           },
           vacancies: vacanciesRef.current,
           pendingEvents: state.pendingEvents,
+          shortlist: [...shortlistRef.current].map(([playerId, clubId]) => ({
+            playerId, clubId: clubId as ClubId,
+          })),
           expectations: expectationsRef.current,
           headToHead: [...headToHeadRef.current].map(([clubId, record]) => ({
             clubId: clubId as ClubId, record,
@@ -4729,6 +4744,37 @@ export function App() {
               p => !p.retired && !p.freeAgent && p.clubId !== seasonState.playerClubId,
             )}
             clubNameById={(id) => allClubs.find(c => c.id === id)?.name ?? id}
+            onOpenPlayer={(player) => setScreen({ kind: 'player', player })}
+            {...(() => {
+              // V0.61 — la liste de suivi. Elle n'apprend rien sur un joueur :
+              // c'est le scouting qui observe, elle ne fait que veiller.
+              void shortlistEpoch;
+              const tous = listAllPlayersWithOverrides();
+              return {
+                shortlist: {
+                  entries: buildShortlist(
+                    [...shortlistRef.current.keys()],
+                    new Map(tous.map(p => [p.id, p])),
+                    {
+                      currentSeason: seasonState.currentSeason,
+                      currentRound: seasonState.currentRound,
+                      clubWhenAdded: shortlistRef.current,
+                    },
+                  ),
+                  watched: new Set([...shortlistRef.current.keys()].map(id => id as string)),
+                  onToggle: (playerId: PlayerId) => {
+                    const next = new Map(shortlistRef.current);
+                    if (next.has(playerId)) next.delete(playerId);
+                    else {
+                      const joueur = tous.find(p => p.id === playerId);
+                      next.set(playerId, (joueur?.clubId ?? '') as string);
+                    }
+                    shortlistRef.current = next;
+                    setShortlistEpoch(e => e + 1);
+                  },
+                },
+              };
+            })()}
             scouting={seasonState.scouting}
             scoutingSlots={seasonState.scoutingSlots}
             onAssignScout={(id) => {
