@@ -201,8 +201,7 @@ import {
   canRegister,
   capReport,
   jiffReport,
-  reviewSeason,
-  countsAsOffence,
+  reviewLeague,
   sanctionSummary,
 } from '../engine/club/regulations.js';
 import {
@@ -1599,36 +1598,35 @@ export function App() {
     const rosterAtSeasonEnd = (clubId: ClubId): readonly Player[] =>
       playersAfterIntake.filter(p => p.clubId === clubId && !p.retired && !p.freeAgent);
 
-    const bannedClubs = new Set<ClubId>();
-    const penalties = new Map<ClubId, number>();
-    const nextRepeat = new Set<string>();
+    // V0.62 : la revue de la commission est calculée par le moteur.
+    //
+    // Elle décidait ici, en pleine intersaison, des points retirés, des
+    // interdictions et des amendes de toute une division, mêlée à la
+    // publication des actualités et à l'écriture d'une demi-douzaine de
+    // références. L'interface n'en garde que les conséquences visibles.
+    const revue = reviewLeague({
+      clubs,
+      division: divisionPlayed,
+      rosterOf: rosterAtSeasonEnd,
+      repeatOffenders: new Set(
+        clubs
+          .map(c => c.id)
+          .filter(id => (id === state.playerClubId
+            ? sanctionedLastSeasonRef.current
+            : repeatOffendersRef.current.has(id as string))),
+      ),
+    });
 
-    for (const club of clubs) {
-      const roster = rosterAtSeasonEnd(club.id);
-      if (roster.length === 0) continue;
+    for (const bilan of revue.reviews) {
+      const club = clubs.find(c => c.id === bilan.clubId);
+      if (!club) continue;
 
-      const verdicts = reviewSeason({
-        cap: capReport(roster, divisionPlayed),
-        jiff: jiffReport(roster),
-        repeatOffender: club.id === state.playerClubId
-          ? sanctionedLastSeasonRef.current
-          : repeatOffendersRef.current.has(club.id as string),
-      });
-      if (verdicts.length === 0) continue;
-
-      // V0.60 : seul un verdict qui sanctionne vraiment fait un antécédent.
-      if (verdicts.some(countsAsOffence)) nextRepeat.add(club.id as string);
-      const points = verdicts.reduce((n, x) => n + x.pointsDeducted, 0);
-      if (points > 0) penalties.set(club.id, points);
-      if (verdicts.some(x => x.transferBan)) bannedClubs.add(club.id);
-
-      const fine = verdicts.reduce((n, x) => n + x.fine, 0);
-      if (fine > 0) {
+      if (bilan.fine > 0) {
         const f = closedFinances.get(club.id);
         if (f) {
           closedFinances.set(club.id, applyFinancesMovement(f, {
             kind: 'TRANSFER_OUT',
-            amount: -fine,
+            amount: -bilan.fine,
             note: 'Amende de la commission',
           }));
         }
@@ -1636,7 +1634,7 @@ export function App() {
 
       // Le championnat apprend chaque sanction : un club qui démarre la saison
       // suivante avec six points de retard doit avoir une raison lisible.
-      for (const verdict of verdicts) {
+      for (const verdict of bilan.verdicts) {
         publish([{
           season: state.currentSeason,
           round: 0,
@@ -1653,16 +1651,16 @@ export function App() {
           season: state.currentSeason,
           clubId: club.id,
           clubName: club.name,
-          sanctions: verdicts.map(x => ({ summary: sanctionSummary(x), reason: x.reason })),
+          sanctions: bilan.verdicts.map(v => ({ summary: sanctionSummary(v), reason: v.reason })),
         })]);
       }
     }
 
-    repeatOffendersRef.current = nextRepeat;
-    sanctionedLastSeasonRef.current = nextRepeat.has(state.playerClubId as string);
-    pointsPenaltyRef.current = penalties.get(state.playerClubId) ?? 0;
-    transferBanRef.current = bannedClubs.has(state.playerClubId);
-    pointsPenaltyByClubRef.current = penalties;
+    repeatOffendersRef.current = new Set([...revue.repeatOffenders].map(id => id as string));
+    sanctionedLastSeasonRef.current = revue.repeatOffenders.has(state.playerClubId);
+    pointsPenaltyRef.current = revue.penaltiesByClub.get(state.playerClubId) ?? 0;
+    transferBanRef.current = revue.bannedClubs.has(state.playerClubId);
+    pointsPenaltyByClubRef.current = revue.penaltiesByClub;
 
     // 2ter. V0.29 — mercato des clubs IA.
     //
@@ -1680,7 +1678,7 @@ export function App() {
         balanceByClub: new Map([...closedFinances].map(([id, f]) => [id, f.balance])),
         currentSeason: rollover.newSeason,
         rankedClubIds: session.getRanking().map(s => s.clubId),
-        transferBannedClubs: bannedClubs,
+        transferBannedClubs: revue.bannedClubs,
       },
       byDivision: (['TOP14', 'PRO_D2'] as const).map(division => ({
         division,
