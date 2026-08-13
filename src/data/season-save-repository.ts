@@ -37,6 +37,7 @@ import type { BoardExpectation } from '../engine/season/board-expectations.js';
 import type { HeadToHead } from '../engine/season/rivalries.js';
 import type { PlayerId } from '../engine/types.js';
 import type { HumanEvent } from '../engine/human/events.js';
+import type { EuropeanWorld } from '../engine/season/european-world.js';
 
 /**
  * 0.5.0 — V0.31 : ajout des réglages d'entraînement, du scouting, des délais
@@ -307,6 +308,22 @@ export interface SeasonSave extends SeasonSaveMeta {
     readonly added: readonly PlayerId[];
     readonly removed: readonly PlayerId[];
   };
+  /**
+   * V0.63 : le monde européen, ses trente-deux clubs, leur niveau et leur palmarès.
+   *
+   * Sans lui, l'Europe redeviendrait ce qu'elle était avant la V0.63 : quatre
+   * inconnus régénérés chaque saison. Absent d'une sauvegarde antérieure : le
+   * monde est alors créé au chargement, avec un palmarès vierge. On ne peut pas
+   * inventer les vainqueurs des saisons déjà jouées.
+   */
+  readonly europeanWorld?: EuropeanWorld;
+  /**
+   * V0.63 : saison du premier jour de la carrière.
+   *
+   * Elle donne son âge aux joueurs des sélections étrangères : sans elle, les
+   * All Blacks auraient vingt-deux ans à chaque saison.
+   */
+  readonly careerStartSeason?: number;
   /** V0.45 — installations, chantier en cours et politique commerciale. */
   readonly direction?: {
     readonly facilities: ClubFacilities;
@@ -714,6 +731,10 @@ export function buildSeasonSaveFromState(
       readonly added: readonly PlayerId[];
       readonly removed: readonly PlayerId[];
     };
+    /** V0.63 : le monde européen persistant et son palmarès. */
+    readonly europeanWorld?: EuropeanWorld;
+    /** V0.63 : saison du début de carrière. */
+    readonly careerStartSeason?: number;
   } = {},
 ): SeasonSave {
   const ranked = [...state.standings.values()].sort((a, b) => {
@@ -786,5 +807,7 @@ export function buildSeasonSaveFromState(
     ...(extras.loans !== undefined ? { loans: extras.loans } : {}),
     ...(extras.expectations !== undefined ? { expectations: extras.expectations } : {}),
     ...(extras.headToHead !== undefined ? { headToHead: extras.headToHead } : {}),
+    ...(extras.europeanWorld !== undefined ? { europeanWorld: extras.europeanWorld } : {}),
+    ...(extras.careerStartSeason !== undefined ? { careerStartSeason: extras.careerStartSeason } : {}),
   };
 }

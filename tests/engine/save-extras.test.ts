@@ -13,6 +13,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { createEuropeanWorld } from '@/engine/season/european-world.js';
 import { buildSeasonSaveFromState } from '@/data/season-save-repository.js';
 import { createSeasonSession } from '@/engine/game/season-session.js';
 import type { ClubId, MatchId, Player, PlayerId, Position } from '@/engine/types.js';
@@ -107,6 +108,10 @@ describe('tout ce qu\'on confie à la sauvegarde en ressort', () => {
     vacancies: ['b' as ClubId],
     shortlist: [{ playerId: 'b_3' as PlayerId, clubId: 'b' as ClubId }],
     retiredSeedPlayerIds: ['a_0' as PlayerId],
+    // V0.63 : le continent et la date de départ de la carrière. Sans eux,
+    // l'Europe redeviendrait quatre inconnus régénérés chaque saison.
+    europeanWorld: createEuropeanWorld('extras', 2025),
+    careerStartSeason: 2025,
     pendingEvents: [{
       id: 'evt_1', type: 'CONFLIT_VESTIAIRE', atRound: 12,
       title: 'Conflit', context: 'Deux joueurs se sont accrochés.',
@@ -135,6 +140,15 @@ describe('tout ce qu\'on confie à la sauvegarde en ressort', () => {
     const manquants = Object.keys(extras as unknown as Record<string, unknown>)
       .filter(key => save[key] === undefined);
     expect(manquants).toEqual([]);
+  });
+
+  it('le monde européen ressort avec ses trente-deux clubs', () => {
+    // Le palmarès européen d'une carrière de dix saisons tient entièrement
+    // là-dedans : un champ oublié, et l'Europe repart de zéro.
+    const monde = save.europeanWorld as { clubs: readonly unknown[]; honours: readonly unknown[] };
+    expect(monde.clubs.length).toBe(32);
+    expect(monde.honours).toEqual([]);
+    expect(save.careerStartSeason).toBe(2025);
   });
 
   it('et le registre de carrière ressort intact', () => {
