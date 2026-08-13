@@ -42,6 +42,8 @@ import { reputationLabel, type ManagerReputation } from '../../engine/season/man
 import { boardConfidenceLabel, type BoardConfidence, type SeasonObjective } from '../../engine/season/board-objective.js';
 import type { ManagerStatus } from '../../engine/season/manager-career.js';
 import { ClubCrest } from '../components/ClubCrest.js';
+import { europeanRollOfHonour, type EuropeanWorld } from '../../engine/season/european-world.js';
+import { COMPETITION_LABEL } from '../../engine/season/european-cup.js';
 
 interface Props {
   readonly career: ManagerCareer;
@@ -77,6 +79,14 @@ interface Props {
     readonly clubName: string | undefined;
     readonly isPlayer: boolean;
   }[];
+  /**
+   * V0.63 : le palmarès européen, saison par saison.
+   *
+   * L'Europe désignait un vainqueur les seules années où le club dirigé y
+   * jouait, et l'oubliait aussitôt. Une carrière de dix ans peut désormais dire
+   * qui a dominé le continent pendant qu'on montait son club.
+   */
+  readonly europeanWorld?: EuropeanWorld;
 }
 
 type Tab = 'mails' | 'parcours' | 'palmares' | 'confreres';
@@ -100,6 +110,7 @@ function rankLabel(rank: number): string {
 export function CareerScreen({
   career, mailbox, reputation, status, confidence, objective, currentSeason,
   clubName, clubShortName, onReadMail, onAnswerMail, onMarkAllRead, contract, expectations, peers,
+  europeanWorld,
 }: Props) {
   const [tab, setTab] = useState<Tab>('mails');
   const unread = unreadCount(mailbox);
@@ -150,10 +161,88 @@ export function CareerScreen({
         <JourneyView career={career} clubShortName={clubShortName} />
       )}
       {tab === 'palmares' && (
-        <HonoursView career={career} totals={totals} clubShortName={clubShortName} />
+        <>
+          <HonoursView career={career} totals={totals} clubShortName={clubShortName} />
+          {europeanWorld && <EuropeanHonoursView world={europeanWorld} />}
+        </>
       )}
       {tab === 'confreres' && <PeersView peers={peers ?? []} />}
     </section>
+  );
+}
+
+// =============================================================================
+// Le palmarès européen
+// =============================================================================
+
+/**
+ * V0.63 : ce que l'Europe a donné pendant la carrière.
+ *
+ * Deux lectures : les finales année par année, et le classement des clubs par
+ * titres. La seconde est celle qui compte au bout de dix saisons : c'est elle
+ * qui dit lequel était le grand club de la décennie, et si on en fait partie.
+ */
+function EuropeanHonoursView({ world }: { readonly world: EuropeanWorld }) {
+  if (world.honours.length === 0) {
+    return (
+      <div className="honours-spells">
+        <h3>Coupes d'Europe</h3>
+        <p className="career-empty">
+          Aucune finale européenne disputée depuis le début de la carrière.
+        </p>
+      </div>
+    );
+  }
+
+  const roll = europeanRollOfHonour(world).slice(0, 8);
+  const finales = [...world.honours].reverse().slice(0, 12);
+
+  return (
+    <div className="honours-spells">
+      <h3>Coupes d'Europe</h3>
+      <table className="peers-table">
+        <thead>
+          <tr>
+            <th>Saison</th>
+            <th>Compétition</th>
+            <th>Vainqueur</th>
+            <th>Finaliste</th>
+          </tr>
+        </thead>
+        <tbody>
+          {finales.map((h, i) => (
+            <tr key={`${h.season}_${h.competition}_${i}`} className={h.frenchWinner ? 'is-player' : ''}>
+              <td>{seasonLabel(h.season)}</td>
+              <td>{COMPETITION_LABEL[h.competition]}</td>
+              <td>{h.winnerName}</td>
+              <td className="peers-club">{h.runnerUpName}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <h3>Les clubs qui comptent</h3>
+      <table className="peers-table">
+        <thead>
+          <tr>
+            <th className="num-head">#</th>
+            <th>Club</th>
+            <th className="num-head">Coupes d'Europe</th>
+            <th className="num-head">Challenges</th>
+          </tr>
+        </thead>
+        <tbody>
+          {roll.map((row, i) => (
+            <tr key={`${row.name}_${i}`}>
+              <td className="num">{i + 1}</td>
+              <td>{row.name}</td>
+              <td className="num">{row.titles > 0 ? row.titles : '-'}</td>
+              <td className="num">{row.challenges > 0 ? row.challenges : '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

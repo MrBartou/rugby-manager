@@ -1,4 +1,6 @@
 import type { SeasonState } from '../../engine/game/season-session.js';
+import { palmaresLabel, type EuropeanWorld } from '../../engine/season/european-world.js';
+import { COUNTRY_LABEL, type ForeignCountry } from '../../engine/season/foreign-players.js';
 import type { Club, Player } from '../../engine/types.js';
 import { matchesForRound } from '../../engine/season/calendar.js';
 import { detectHumanThreads, type HumanThread } from '../../engine/human/threads.js';
@@ -50,6 +52,13 @@ interface Props {
   readonly reputation: ManagerReputation;
   readonly objective: SeasonObjective | null;
   readonly boardConfidence: BoardConfidence;
+  /**
+   * V0.63 : le monde européen, pour dire qui l'on affronte.
+   *
+   * Un club européen a désormais un passé : l'afficher est tout l'intérêt de
+   * l'avoir rendu persistant.
+   */
+  readonly europeanWorld: EuropeanWorld;
 }
 
 function clubName(clubs: readonly Club[], id: string): string {
@@ -64,7 +73,7 @@ export function DashboardScreen({
   state, clubs, division, agenda, onNavigate, playerClubRoster, recentResultsForPlayer, playRatioByPlayer,
   onPlayMatch, onSimRoundOnly, onSkipRound, onStartNextSeason,
   onThreadClick, onPlayEuropeanMatch, developmentReports, rolloverSummary, careerHistory, careerBook, reputation,
-  objective, boardConfidence,
+  objective, boardConfidence, europeanWorld,
 }: Props) {
   const threads = detectHumanThreads({
     clubPlayers: playerClubRoster,
@@ -370,6 +379,14 @@ export function DashboardScreen({
                     {' · '}niveau {fixture.opponent.strength}
                     {fixture.stage !== 'POOL' && ` · ${stageShort(fixture.stage)}`}
                   </span>
+                  {(() => {
+                    // V0.63 : ce club existe en dehors de cette saison, son
+                    // palmarès dit d'un coup d'œil ce qu'on affronte.
+                    const record = europeanWorld.clubs.find(c => c.id === fixture.opponent.id);
+                    const palmares = record ? palmaresLabel(record) : undefined;
+                    if (!palmares) return null;
+                    return <span className="euro-next-meta">{palmares}</span>;
+                  })()}
                   <span className="euro-warning">
                     Semaine double : les joueurs alignés seront fatigués pour la journée de championnat.
                   </span>
@@ -631,14 +648,8 @@ function stageShort(stage: EuropeanStage): string {
 }
 
 /** Libellé lisible du pays d'un adversaire européen. */
-function countryLabel(country: string): string {
-  const map: Record<string, string> = {
-    ANGLETERRE: 'Angleterre',
-    IRLANDE: 'Irlande',
-    ECOSSE: 'Écosse',
-    PAYS_DE_GALLES: 'Pays de Galles',
-    ITALIE: 'Italie',
-    AFRIQUE_DU_SUD: 'Afrique du Sud',
-  };
-  return map[country] ?? country;
+function countryLabel(country: ForeignCountry): string {
+  // V0.63 : la table vivait ici en double. Les pays sont désormais nommés dans
+  // le moteur, qui en connaît neuf depuis que le marché international existe.
+  return COUNTRY_LABEL[country] ?? country;
 }
