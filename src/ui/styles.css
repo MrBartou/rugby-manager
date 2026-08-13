@@ -10131,3 +10131,168 @@ button:active:not(:disabled) { transform: scale(0.97); }
 
 .shortlist-alert { color: var(--text-dim); font-size: 0.8rem; }
 .shortlist-alert.urgent { color: var(--accent); font-weight: 600; }
+
+/* ===========================================================================
+   V0.62 — Accessibilité : palette, thème, animations, taille de texte
+   ===========================================================================
+
+   Tout passe par des attributs posés sur la racine par `settings.ts`. La
+   feuille de style reste seule juge de l'apparence, et un réglage ajouté
+   demain n'aura pas à toucher au rendu de chaque composant. */
+
+/* Le mode daltonien ne change pas les couleurs de marque : il remplace le
+   couple rouge/vert, illisible pour environ un homme sur douze, par un couple
+   bleu/orange discriminable par les deutéranopes comme par les protanopes.
+   Seuls les signaux qui portent une information changent. */
+:root[data-palette='daltonien'] {
+  --green: #4aa3ff;
+  --green-soft: rgba(74, 163, 255, 0.14);
+  --red: #ff9d3d;
+  --red-soft: rgba(255, 157, 61, 0.14);
+  /* L'état intermédiaire doit rester lisible **entre** les deux autres : un
+     jaune trop chaud se confond avec l'orange une fois le vert et le rouge
+     retirés, et l'échelle à trois crans redevient une échelle à deux. */
+  --yellow: #f0e442;
+  --yellow-soft: rgba(240, 228, 66, 0.16);
+}
+
+/* Le thème clair réutilise la même grammaire de surfaces, du plus profond au
+   plus élevé : les composants n'ont pas à savoir dans quel thème ils vivent. */
+:root[data-theme='clair'] {
+  --bg-0: #f4f5f8;
+  --bg-1: #ffffff;
+  --bg-2: #eceef3;
+  --bg-3: #e2e5ec;
+
+  --border: #d5d9e2;
+  --border-strong: #b9bfcc;
+
+  --text: #12151c;
+  --text-dim: #4a5261;
+  --text-muted: #6c7484;
+  --text-on-accent: #04120f;
+
+  --accent: #0f9b83;
+  --accent-soft: rgba(15, 155, 131, 0.12);
+  --accent-strong: #0b7d69;
+  --accent-glow: rgba(15, 155, 131, 0.28);
+
+  --green: #1f9d4d;
+  --green-soft: rgba(31, 157, 77, 0.12);
+  --red: #d62c4d;
+  --red-soft: rgba(214, 44, 77, 0.12);
+  --yellow: #b47600;
+  --yellow-soft: rgba(180, 118, 0, 0.12);
+  --blue: #2264c9;
+  --blue-soft: rgba(34, 100, 201, 0.12);
+}
+
+:root[data-theme='clair'][data-palette='daltonien'] {
+  --green: #0f5fb0;
+  --green-soft: rgba(15, 95, 176, 0.12);
+  --red: #c1440e;
+  --red-soft: rgba(193, 68, 14, 0.12);
+  /* Sur fond clair, l'intermédiaire descend vers l'olive : c'est la seule
+     façon de le distinguer du vermillon sans perdre le contraste du texte. */
+  --yellow: #7a6a00;
+  --yellow-soft: rgba(122, 106, 0, 0.12);
+}
+
+/* Le mal des transports n'est pas une préférence esthétique : quand le système
+   ou le joueur demande moins de mouvement, tout s'arrête, y compris les
+   trente-deux keyframes et les confettis. */
+:root[data-motion='reduit'] *,
+:root[data-motion='reduit'] *::before,
+:root[data-motion='reduit'] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* La taille de texte agrandit toute l'interface, pas seulement les libellés :
+   les espacements exprimés en rem suivent, et la mise en page tient. */
+:root { --text-scale: 1; }
+html { font-size: calc(16px * var(--text-scale)); }
+
+/* --- L'écran de réglages ------------------------------------------------- */
+
+.settings-group {
+  margin-bottom: 1.4rem;
+  padding: 0.9rem 1rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-1);
+}
+
+.setting {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.setting:first-of-type { border-top: 0; }
+
+.setting-label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.setting-label > span:first-child { font-size: 0.92rem; }
+
+.setting-hint {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  line-height: 1.4;
+  max-width: 42ch;
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.segmented button {
+  padding: 0.32rem 0.7rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+
+.segmented button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.palette-preview {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.8rem;
+}
+
+.pp-item {
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.pp-item.good { background: var(--green-soft); color: var(--green); }
+.pp-item.mid { background: var(--yellow-soft); color: var(--yellow); }
+.pp-item.bad { background: var(--red-soft); color: var(--red); }
