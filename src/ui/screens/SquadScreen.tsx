@@ -368,7 +368,7 @@ export function SquadScreen({
                 </>
               ) : (
                 <>
-                  <th className="sortable num-head" onClick={() => toggleSort('note')} title="Note moyenne sur 10, situées dans la distribution du poste">Note{sortMark('note')}</th>
+                  <th className="sortable num-head" onClick={() => toggleSort('note')} title="Note moyenne sur 10, calculée sur les seuls matchs notés. 6 est la médiane du poste, 7,5 le neuvième décile.">Note{sortMark('note')}</th>
                   <th className="sortable num-head" onClick={() => toggleSort('matchs')}>Matchs{sortMark('matchs')}</th>
                   <th className="sortable num-head" onClick={() => toggleSort('minutes')}>Minutes{sortMark('minutes')}</th>
                   <th className="sortable num-head" onClick={() => toggleSort('essais')}>Essais{sortMark('essais')}</th>
