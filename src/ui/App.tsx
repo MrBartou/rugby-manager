@@ -270,6 +270,8 @@ import { DashboardScreen } from './screens/DashboardScreen.js';
 import { StandingsScreen } from './screens/StandingsScreen.js';
 import { SettingsScreen } from './screens/SettingsScreen.js';
 import { applySettings, loadSettings, saveSettings, type Settings } from './settings.js';
+import { Encyclopedia } from './components/Encyclopedia.js';
+import { SCREEN_ENTRY_POINT } from './encyclopedia.js';
 import { ClubScreen } from './screens/ClubScreen.js';
 import { allLeaderboards } from '../engine/season/leaderboards.js';
 import { buildSeasonVerdict, topScorerOf } from '../engine/season/season-verdict.js';
@@ -592,6 +594,14 @@ export function App() {
   /** V0.62 — ce que le manager a confié à son staff. Rien, au départ. */
   const delegationRef = useRef<DelegationState>(NO_DELEGATION);
   const [delegationEpoch, setDelegationEpoch] = useState(0);
+  /**
+   * V0.62 — l'encyclopédie, ouverte par-dessus l'écran courant.
+   *
+   * Elle s'ouvre sur l'entrée qui répond à la question qu'on se pose là où l'on
+   * est : le mercato depuis les transferts, le plafond salarial depuis les
+   * finances.
+   */
+  const [encyclopediaOpen, setEncyclopediaOpen] = useState(false);
   const [shortlistEpoch, setShortlistEpoch] = useState(0);
   /**
    * V0.53 — les entraîneurs des autres clubs.
@@ -4155,6 +4165,7 @@ export function App() {
       onNavigate={navigateTo}
       onExitSeason={exitSeason}
       onOpenSettings={() => setScreen({ kind: 'settings', from: 'game' })}
+      onOpenHelp={() => setEncyclopediaOpen(true)}
       onSave={saveSeasonNow}
       saveStatus={seasonSaveStatus}
       clubName={careerRef.current.kind === 'LIBRE' ? 'Sans club' : playerClubName}
@@ -4398,6 +4409,14 @@ export function App() {
             <span className="alpha-tag">Alpha v{__APP_VERSION__}</span>
           </div>
         </header>
+      )}
+
+      {encyclopediaOpen && (
+        <Encyclopedia
+          {...(navKey && SCREEN_ENTRY_POINT[navKey]
+            ? { initialEntryId: SCREEN_ENTRY_POINT[navKey] } : {})}
+          onClose={() => setEncyclopediaOpen(false)}
+        />
       )}
 
       {screen.kind === 'title' && (

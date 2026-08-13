@@ -10348,3 +10348,92 @@ html { font-size: calc(16px * var(--text-scale)); }
 
 .deleg-owner.ok { color: var(--accent); }
 .deleg-owner.faible { color: var(--yellow); }
+
+/* V0.62 — l'encyclopédie : la liste à gauche, l'entrée à droite. */
+.modal.encyclopedia {
+  max-width: 52rem;
+  width: 94vw;
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.ency-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.ency-body {
+  display: grid;
+  grid-template-columns: 13rem 1fr;
+  gap: 1.2rem;
+  flex: 1;
+  min-height: 0;
+  padding-top: 0.8rem;
+}
+
+.ency-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+}
+
+.ency-list button {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+}
+
+.ency-list button:hover { background: var(--bg-2); }
+.ency-list button.active { background: var(--accent-soft); }
+.ency-list button.active .ency-term { color: var(--accent); }
+
+.ency-term { font-size: 0.86rem; font-weight: 600; }
+.ency-topic { color: var(--text-muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.ency-empty { padding: 0.6rem; color: var(--text-muted); font-size: 0.8rem; }
+
+.ency-entry { overflow-y: auto; padding-right: 0.4rem; }
+.ency-entry h3 { margin: 0 0 0.4rem; font-size: 1.1rem; }
+
+.ency-def {
+  margin: 0 0 1rem;
+  color: var(--text);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.ency-block {
+  margin-bottom: 0.9rem;
+  padding: 0.6rem 0.75rem;
+  border-left: 2px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  background: var(--bg-2);
+}
+
+.ency-block.note { border-left-color: var(--yellow); }
+
+.ency-block p {
+  margin: 0.2rem 0 0;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.ency-label {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
