@@ -10096,3 +10096,21 @@ button:active:not(:disabled) { transform: scale(0.97); }
   color: var(--text-muted);
   font-size: 0.74rem;
 }
+
+/* V0.61 — ce qui s'ouvre se signale : un fil d'actualité et un tableau de
+   salaires sont des points de départ, pas des culs-de-sac. */
+.post-avatar.clickable { cursor: pointer; }
+.post-avatar.clickable:hover { opacity: 0.85; }
+
+.post-link {
+  margin-left: 0.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 0.78rem;
+  text-decoration: underline;
+}
+
+.squad-table tr.clickable { cursor: pointer; }
+.squad-table tr.clickable:hover { background: var(--bg-2); }

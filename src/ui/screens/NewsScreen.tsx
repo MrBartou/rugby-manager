@@ -28,6 +28,7 @@ import {
   type NewsItem,
   type NewsKind,
 } from '../../engine/season/news.js';
+import type { PlayerId } from '../../engine/types.js';
 import { ClubCrest } from '../components/ClubCrest.js';
 import { readableAccent } from '../theme/club-identity.js';
 
@@ -38,6 +39,15 @@ interface Props {
   readonly playerClubId: string;
   readonly clubName: (clubId: string) => string;
   readonly clubShortName: (clubId: string) => string;
+  /**
+   * V0.61 — le fil devient un point de départ.
+   *
+   * On y lisait « Untel out jusqu'à la J18 » et il fallait retrouver le joueur à
+   * la main dans l'effectif. Le club auteur et, quand l'entrée en désigne un, le
+   * joueur concerné s'ouvrent directement.
+   */
+  readonly onSelectClub?: (clubId: string) => void;
+  readonly onSelectPlayer?: (playerId: PlayerId) => void;
 }
 
 const KINDS: readonly NewsKind[] = ['TRANSFERT', 'MERCATO', 'BLESSURE', 'RESULTAT', 'SAISON'];
@@ -64,6 +74,7 @@ function elapsed(item: NewsItem, season: number, round: number): string {
 
 export function NewsScreen({
   feed, currentSeason, currentRound, playerClubId, clubName, clubShortName,
+  onSelectClub, onSelectPlayer,
 }: Props) {
   const [kind, setKind] = useState<NewsKind | 'ALL'>('ALL');
   const [mineOnly, setMineOnly] = useState(false);
@@ -154,7 +165,11 @@ export function NewsScreen({
               className={`post ${item.involvesPlayer ? 'mine' : ''}`}
               {...(accent ? { style: { ['--post-accent' as string]: accent } } : {})}
             >
-              <div className="post-avatar">
+              <div
+                className={`post-avatar ${authorId && onSelectClub ? 'clickable' : ''}`}
+                onClick={authorId && onSelectClub ? () => onSelectClub(authorId) : undefined}
+                title={authorId && onSelectClub ? 'Voir la fiche du club' : undefined}
+              >
                 {authorId
                   ? <ClubCrest clubId={authorId} initials={clubShortName(authorId)} size={38} />
                   : <span className="desk-avatar" aria-hidden>15</span>}
@@ -174,7 +189,18 @@ export function NewsScreen({
                   </span>
                 </div>
 
-                <p className="post-text">{item.headline}</p>
+                <p className="post-text">
+                  {item.headline}
+                  {item.playerId && onSelectPlayer && (
+                    <button
+                      type="button"
+                      className="post-link"
+                      onClick={() => onSelectPlayer(item.playerId!)}
+                    >
+                      voir la fiche
+                    </button>
+                  )}
+                </p>
 
                 {/* Le détail chiffré prend la forme d'une carte jointe : c'est ce
                     qui le distingue du corps du message sans l'enterrer. */}

@@ -1457,6 +1457,7 @@ export function App() {
         headline: `${loan.playerName} revient de prêt`,
         detail: loanReport(loan, minutes),
         clubId: state.playerClubId,
+        playerId: loan.playerId,
         involvesPlayer: true,
       }]);
     }
@@ -2336,6 +2337,7 @@ export function App() {
         season: state.currentSeason,
         round: state.currentRound,
         clubId: state.playerClubId,
+        playerId: player.id,
       })]);
       // Le championnat apprend l'absence ; le manager reçoit le diagnostic.
       sendMail([mailInjury({
@@ -3836,6 +3838,7 @@ export function App() {
       headline: `${player.firstName} ${player.lastName} prêté à ${offer.clubName}`,
       detail: offer.pitch,
       clubId: state.playerClubId,
+      playerId: player.id,
       involvesPlayer: true,
     }]);
     refreshSeason();
@@ -4629,6 +4632,7 @@ export function App() {
             currentRound={seasonState.currentRound}
             totalRounds={seasonState.calendar.totalRounds}
             onBack={() => setScreen({ kind: 'dashboard' })}
+            onSelectPlayer={(player) => setScreen({ kind: 'player', player })}
           />
         );
       })()}
@@ -4641,6 +4645,11 @@ export function App() {
           playerClubId={seasonState.playerClubId as string}
           clubName={id => allClubs.find(c => c.id === id)?.name ?? id}
           clubShortName={id => allClubs.find(c => c.id === id)?.shortName ?? id}
+          onSelectClub={id => setScreen({ kind: 'club', clubId: id as ClubId })}
+          onSelectPlayer={(playerId) => {
+            const joueur = listAllPlayersWithOverrides().find(p => p.id === playerId);
+            if (joueur) setScreen({ kind: 'player', player: joueur });
+          }}
         />
       )}
 

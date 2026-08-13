@@ -25,6 +25,8 @@ interface Props {
   readonly currentRound: number;
   readonly totalRounds: number;
   readonly onBack?: () => void;
+  /** V0.61 — un gros salaire s'ouvre : c'est là qu'on décide de vendre ou de prolonger. */
+  readonly onSelectPlayer?: (player: Player) => void;
 }
 
 function formatEuros(n: number): string {
@@ -40,6 +42,7 @@ const LINE_LABEL: Record<PositionLine, string> = {
 
 export function FinancesScreen({
   club, finances, playerClubRoster, currentSeason, currentRound, totalRounds, onBack,
+  onSelectPlayer,
 }: Props) {
   const active = useMemo(
     () => playerClubRoster.filter(p => !p.retired && !p.freeAgent),
@@ -172,7 +175,12 @@ export function FinancesScreen({
           <table className="squad-table compact">
             <tbody>
               {topEarners.map(p => (
-                <tr key={p.id}>
+                <tr
+                  key={p.id}
+                  className={onSelectPlayer ? 'clickable' : ''}
+                  onClick={onSelectPlayer ? () => onSelectPlayer(p) : undefined}
+                  title={onSelectPlayer ? 'Voir la fiche' : undefined}
+                >
                   <td className="c-pos"><PositionBadge position={p.position} /></td>
                   <td className="c-name"><span className="sq-name">{p.firstName} {p.lastName}</span></td>
                   <td className="num">{currentSeason - Number(p.birthDate.slice(0, 4))} ans</td>
