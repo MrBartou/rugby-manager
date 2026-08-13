@@ -10114,3 +10114,20 @@ button:active:not(:disabled) { transform: scale(0.97); }
 
 .squad-table tr.clickable { cursor: pointer; }
 .squad-table tr.clickable:hover { background: var(--bg-2); }
+
+/* V0.61 — la liste de suivi : veiller sans observer. */
+.watch-star {
+  margin-right: 0.35rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.watch-star.on { color: var(--accent); }
+.watch-star:hover { color: var(--accent-strong); }
+
+.shortlist-alert { color: var(--text-dim); font-size: 0.8rem; }
+.shortlist-alert.urgent { color: var(--accent); font-weight: 600; }
