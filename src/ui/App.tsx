@@ -269,6 +269,7 @@ import { MatchScreen } from './screens/MatchScreen.js';
 import { SeasonSetupScreen } from './screens/SeasonSetupScreen.js';
 import { DashboardScreen } from './screens/DashboardScreen.js';
 import { StandingsScreen } from './screens/StandingsScreen.js';
+import { ClubScreen } from './screens/ClubScreen.js';
 import { allLeaderboards } from '../engine/season/leaderboards.js';
 import { PreMatchScreen } from './screens/PreMatchScreen.js';
 import { SquadScreen } from './screens/SquadScreen.js';
@@ -361,7 +362,15 @@ type Screen =
       homeClubId: string;
       awayClubId: string;
     }
-  | { kind: 'direction' };
+  | { kind: 'direction' }
+  /**
+   * V0.61 — la fiche d'un club, adversaire compris.
+   *
+   * On croisait un club quatorze fois par saison sans jamais pouvoir l'ouvrir.
+   * Porte l'identifiant plutôt que le club : l'effectif et le classement
+   * changent d'une journée à l'autre, et une copie figée mentirait.
+   */
+  | { kind: 'club'; clubId: ClubId };
 
 /**
  * Écran courant, tel que l'introduction le comprend.
@@ -370,6 +379,7 @@ type Screen =
  * tombent sur `autre` : rien ne doit s'afficher par-dessus un match.
  */
 const ONBOARDING_SCREEN: Readonly<Record<Screen['kind'], OnboardingScreen>> = {
+  club: 'autre',
   title: 'autre', 'season-setup': 'autre', 'match-setup': 'autre',
   'pre-match': 'autre', match: 'autre', highlights: 'autre',
   dashboard: 'dashboard', standings: 'standings', squad: 'squad',
@@ -4412,6 +4422,41 @@ export function App() {
         />
       )}
 
+      {screen.kind === 'club' && seasonState && (() => {
+        const club = allClubs.find(c => c.id === screen.clubId);
+        if (!club) return null;
+        const ranked = [...seasonState.standings.values()].sort((a, b) =>
+          b.leaguePoints - a.leaguePoints
+          || (b.pointsFor - b.pointsAgainst) - (a.pointsFor - a.pointsAgainst));
+        const index = ranked.findIndex(r => r.clubId === screen.clubId);
+        // Cinq derniers résultats du club, lus dans l'historique de la saison.
+        const forme = seasonState.history
+          .filter(h => h.homeClubId === screen.clubId || h.awayClubId === screen.clubId)
+          .slice(-5)
+          .map(h => {
+            const chezSoi = h.homeClubId === screen.clubId;
+            const pour = chezSoi ? h.homeScore : h.awayScore;
+            const contre = chezSoi ? h.awayScore : h.homeScore;
+            return pour > contre ? 'V' as const : pour === contre ? 'N' as const : 'D' as const;
+          });
+        return renderInGame(
+          <ClubScreen
+            club={club}
+            isPlayerClub={club.id === seasonState.playerClubId}
+            roster={listRoster(club.id as string)}
+            standing={seasonState.standings.get(screen.clubId)}
+            {...(index >= 0 ? { rank: index + 1 } : {})}
+            currentSeason={seasonState.currentSeason}
+            seasonStats={seasonState.seasonPlayerStats}
+            scouting={seasonState.scouting}
+            headToHead={headToHeadRef.current.get(screen.clubId as string)}
+            form={forme}
+            onSelectPlayer={(player) => setScreen({ kind: 'player', player })}
+            onBack={() => setScreen({ kind: 'standings' })}
+          />,
+        );
+      })()}
+
       {screen.kind === 'standings' && seasonState && renderInGame(
         <StandingsScreen
           state={seasonState}
@@ -4433,6 +4478,7 @@ export function App() {
             const joueur = listAllPlayersWithOverrides().find(p => p.id === playerId);
             if (joueur) setScreen({ kind: 'player', player: joueur });
           }}
+          onSelectClub={(clubId) => setScreen({ kind: 'club', clubId })}
         />
       )}
 
