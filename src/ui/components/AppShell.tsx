@@ -67,6 +67,8 @@ interface AppShellProps {
   readonly onExitSeason?: () => void;
   /** V0.62 — ouvre les réglages, depuis le pied de l'écran. */
   readonly onOpenSettings?: () => void;
+  /** V0.62 — ouvre l'encyclopédie sur l'entrée qui correspond à l'écran courant. */
+  readonly onOpenHelp?: () => void;
   readonly onSave?: () => void;
   readonly saveStatus?: 'idle' | 'saved' | 'error';
   readonly clubName: string;
@@ -82,7 +84,7 @@ interface AppShellProps {
 }
 
 export function AppShell({
-  active, onNavigate, onExitSeason, onSave, saveStatus, onOpenSettings,
+  active, onNavigate, onExitSeason, onSave, saveStatus, onOpenSettings, onOpenHelp,
   clubId, clubName, seasonLabel, phaseLabel, objectiveLabel,
   transfersBadge, mailsBadge, hudStats = [],
   children,
@@ -179,6 +181,18 @@ export function AppShell({
           {onOpenSettings && (
             <button type="button" className="hud-action ghost" onClick={onOpenSettings}>
               Réglages
+            </button>
+          )}
+          {/* V0.62 — l'encyclopédie s'ouvre d'un clic depuis n'importe quel
+              écran, sur le terme qu'on y rencontre. */}
+          {onOpenHelp && (
+            <button
+              type="button"
+              className="hud-action ghost"
+              onClick={onOpenHelp}
+              title="Encyclopédie : JIFF, salary cap, bonus, mercato…"
+            >
+              ? Aide
             </button>
           )}
         </div>
