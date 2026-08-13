@@ -26,7 +26,7 @@ import {
   type SeasonSession,
   type SeasonState,
 } from '../engine/game/season-session.js';
-import { rolloverSeason } from '../engine/season/rollover.js';
+import { planYouthIntake, rolloverSeason } from '../engine/season/rollover.js';
 import {
   runAiMarket,
   runAiMarketAcrossDivisions,
@@ -1460,56 +1460,50 @@ export function App() {
     setLoanEpoch(e => e + 1);
     developmentReportsRef.current = rollover.developmentReports;
 
-    // 1bis. V0.7 — promo de jeunes par club
-    const existingIds = new Set<string>(rollover.players.map(p => p.id as string));
-    const youthByClub: Player[] = [];
-    // V0.39 — le centre du club utilisateur suit son investissement ; les clubs
-    // IA gardent le niveau dicté par leur taille.
-    const playerAcademy = academyRef.current;
-    // V0.60 : les deux divisions reçoivent leur promotion de jeunes.
+    // 1bis. V0.7 — promo de jeunes par club.
     //
-    // La boucle ne parcourait que la division du manager, alors que le
-    // vieillissement et les retraites frappent tout le monde. La division qu'on
-    // ne joue pas perdait donc des joueurs chaque saison sans jamais en
-    // recevoir : au bout de quelques années elle était exsangue, et la remontée
-    // se jouait contre des fantômes.
-    for (const club of allClubs) {
-      const isMine = club.id === state.playerClubId;
-      const intake = generateYouthIntake({
-        club,
-        currentSeason: rollover.newSeason,
-        academyLevel: isMine ? Math.round(playerAcademy.level) : defaultAcademyLevel(club),
-        ...(isMine ? { focus: playerAcademy.focus } : {}),
-        seed: `${seasonSeedRef.current}_youth_${rollover.newSeason}`,
-        existingPlayerIds: existingIds,
-      });
-      for (const p of intake) existingIds.add(p.id as string);
-      youthByClub.push(...intake);
-      // V0.42 — la promotion sortante du club était livrée sans un mot : on
-      // découvrait les jeunes dans la liste d'effectif, sans savoir qu'ils
-      // venaient d'arriver ni lequel valait le coup.
-      if (isMine && intake.length > 0) {
-        // V0.43 — on retient le niveau de sortie : c'est la seule référence qui
-        // permette de mesurer plus tard ce que le jeune est devenu.
-        prospectsRef.current = trackProspects(
-          prospectsRef.current,
-          intake.map(p => ({ playerId: p.id, overall: approximateOverall(p) })),
-          rollover.newSeason,
-          Math.round(playerAcademy.level),
-        );
-        const best = [...intake]
-          .sort((a, b) => approximateOverall(b) - approximateOverall(a))[0]!;
-        sendMail([mailAcademyIntake({
-          season: rollover.newSeason,
-          clubId: club.id,
-          count: intake.length,
-          bestName: `${best.firstName} ${best.lastName}`,
-          bestLevel: Math.round(approximateOverall(best)),
-          academyLevel: Math.round(playerAcademy.level),
-        })]);
-      }
+    // V0.62 : la boucle est passée au moteur. Elle porte deux règles, et non
+    // du câblage : tous les clubs reçoivent leur promotion (V0.60), et seul le
+    // centre du club dirigé suit l'investissement du manager.
+    const promotion = planYouthIntake({
+      clubs: allClubs,
+      playerClubId: state.playerClubId,
+      newSeason: rollover.newSeason,
+      seed: seasonSeedRef.current,
+      existingPlayerIds: new Set(rollover.players.map(p => p.id as string)),
+      playerAcademy: {
+        level: academyRef.current.level,
+        ...(academyRef.current.focus ? { focus: academyRef.current.focus } : {}),
+      },
+      defaultAcademyLevel,
+      generate: generateYouthIntake,
+    });
+
+    // V0.42 — la promotion sortante du club était livrée sans un mot : on
+    // découvrait les jeunes dans la liste d'effectif, sans savoir qu'ils
+    // venaient d'arriver ni lequel valait le coup.
+    if (promotion.forPlayerClub.length > 0) {
+      // V0.43 — on retient le niveau de sortie : c'est la seule référence qui
+      // permette de mesurer plus tard ce que le jeune est devenu.
+      prospectsRef.current = trackProspects(
+        prospectsRef.current,
+        promotion.forPlayerClub.map(p => ({ playerId: p.id, overall: approximateOverall(p) })),
+        rollover.newSeason,
+        Math.round(academyRef.current.level),
+      );
+      const best = [...promotion.forPlayerClub]
+        .sort((a, b) => approximateOverall(b) - approximateOverall(a))[0]!;
+      sendMail([mailAcademyIntake({
+        season: rollover.newSeason,
+        clubId: state.playerClubId,
+        count: promotion.forPlayerClub.length,
+        bestName: `${best.firstName} ${best.lastName}`,
+        bestLevel: Math.round(approximateOverall(best)),
+        academyLevel: Math.round(academyRef.current.level),
+      })]);
     }
-    const playersAfterIntake = [...rollover.players, ...youthByClub];
+
+    const playersAfterIntake = [...rollover.players, ...promotion.all];
 
     // 2. Clôture des finances de la saison écoulée + nouvel encaissement sponsor pour chaque club
     const closedFinances = new Map<ClubId, import('../engine/club/finances.js').ClubFinances>();
@@ -2147,7 +2141,7 @@ export function App() {
     setRolloverSummary({
       retiredCount: rollover.retired.length,
       freeAgentCount: rollover.freeAgents.length,
-      youthCount: youthByClub.length,
+      youthCount: promotion.all.length,
       newSeason: rollover.newSeason,
     });
     winterMarketRef.current = null;
