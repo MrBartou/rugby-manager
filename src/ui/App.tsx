@@ -216,7 +216,11 @@ import {
   type NewsFeed,
 } from '../engine/season/news.js';
 import { isWindowOpeningRound, transferWindowStatus } from '../engine/season/transfer-window.js';
-import { applyMovement as applyFinancesMovement, closeSeason as closeSeasonFinances, initFinancesForAllClubs } from '../engine/club/finances.js';
+import {
+  applyMovement as applyFinancesMovement,
+  closeSeasonForAllClubs,
+  initFinancesForAllClubs,
+} from '../engine/club/finances.js';
 import { defaultAcademyLevel, generateFreeAgentPool, generateYouthIntake } from '../engine/club/youth-generation.js';
 import { EMPTY_PROSPECTS, trackProspects, type ProspectRecord } from '../engine/club/academy.js';
 import {
@@ -1505,47 +1509,34 @@ export function App() {
 
     const playersAfterIntake = [...rollover.players, ...promotion.all];
 
-    // 2. Clôture des finances de la saison écoulée + nouvel encaissement sponsor pour chaque club
-    const closedFinances = new Map<ClubId, import('../engine/club/finances.js').ClubFinances>();
-    for (const [clubId, prev] of state.financesByClub.entries()) {
-      const club = allClubs.find(c => c.id === clubId);
-      if (!club) continue;
-      let next = closeSeasonFinances(prev, rollover.newSeason);
-      // V0.45 — le club de l'utilisateur encaisse selon sa politique
-      // commerciale : sponsors majorés par la campagne, recettes de boutique,
-      // et coût de cette même campagne. Les clubs IA gardent l'enveloppe sèche.
-      if (clubId === state.playerClubId) {
-        const standing = state.standings.get(clubId);
-        const winsRatio = standing && standing.played > 0 ? standing.wins / standing.played : 0.5;
-        next = applyFinancesMovement(next, {
-          kind: 'SPONSOR',
-          amount: sponsorRevenue(club, clubPlanRef.current),
-          note: 'Sponsors + TV (saison)',
-        });
-        next = applyFinancesMovement(next, {
-          kind: 'SPONSOR',
-          amount: merchandisingRevenue({
-            club, facilities: facilitiesRef.current, plan: clubPlanRef.current, winsRatio,
+    // 2. Clôture des finances de la saison écoulée, et nouvel encaissement.
+    //
+    // V0.62 : la boucle est passée au moteur. Elle porte une règle, et non du
+    // câblage : le club dirigé encaisse selon sa politique commerciale, les
+    // autres gardent l'enveloppe sèche de leur budget annuel.
+    const myClubForFinances = allClubs.find(c => c.id === state.playerClubId);
+    const myStanding = state.standings.get(state.playerClubId);
+    const myWinsRatio = myStanding && myStanding.played > 0
+      ? myStanding.wins / myStanding.played
+      : 0.5;
+    const closedFinances = closeSeasonForAllClubs({
+      previous: state.financesByClub,
+      clubs: allClubs,
+      playerClubId: state.playerClubId,
+      newSeason: rollover.newSeason,
+      playerClubCommercial: myClubForFinances
+        ? {
+          sponsors: sponsorRevenue(myClubForFinances, clubPlanRef.current),
+          merchandising: merchandisingRevenue({
+            club: myClubForFinances,
+            facilities: facilitiesRef.current,
+            plan: clubPlanRef.current,
+            winsRatio: myWinsRatio,
           }),
-          note: 'Boutique et merchandising',
-        });
-        const campaign = commercialCost(clubPlanRef.current);
-        if (campaign > 0) {
-          next = applyFinancesMovement(next, {
-            kind: 'TRANSFER_OUT',
-            amount: -campaign,
-            note: 'Campagne marketing',
-          });
+          campaignCost: commercialCost(clubPlanRef.current),
         }
-      } else {
-        next = applyFinancesMovement(next, {
-          kind: 'SPONSOR',
-          amount: club.annualBudget,
-          note: 'Sponsors + TV (saison)',
-        });
-      }
-      closedFinances.set(clubId, next);
-    }
+        : { sponsors: 0, merchandising: 0, campaignCost: 0 },
+    });
 
     // V0.48 — le président fait le point sur ce qu'il avait demandé en plus du
     // classement, puis fixe la feuille de route de l'exercice qui s'ouvre.
