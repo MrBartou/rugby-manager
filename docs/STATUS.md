@@ -1,6 +1,6 @@
-# Statut global — V0.61
+# Statut global — V0.62
 
-> Dernière mise à jour : V0.61 livrée. **1314/1314 tests verts. Calibration 12/12 cibles atteintes (8000 matchs par scénario).**
+> Dernière mise à jour : V0.62 livrée. **1391/1391 tests verts. Calibration 12/12 cibles atteintes (8000 matchs par scénario).**
 >
 > Ce document a longtemps annoncé V0.5 alors que le code était déjà en V0.10+ : les jalons
 > V0.6 à V0.12 (carrière, transferts, finances, JIFF, formation, internationaux, records)
@@ -327,6 +327,13 @@
 - [x] Classements, fil d'actualité, salaires et classement mènent aux fiches
 - [x] Verdict de fin de saison extrait vers le moteur et testé
 - [ ] Extraction complète de l'intersaison, reportée en V0.62 (voir le CHANGELOG)
+
+### ✅ V0.62 : Réglages, accessibilité, délégation
+- [x] Écran de réglages : vitesse de match, sauvegarde automatique, confirmations, volume
+- [x] Accessibilité : animations réduites, taille de texte, palette daltonienne, thème clair
+- [x] Délégation au staff : composition, remplacements, entraînement, offres mineures
+- [x] Encyclopédie contextuelle, ouverte sur le terme de l'écran courant
+- [x] Commission, promotion des jeunes et clôture financière extraites vers le moteur
 
 ### ⬜ V0.9 — Bêta privée
 - [ ] Init Tauri (binaire desktop)
