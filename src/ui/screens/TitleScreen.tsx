@@ -18,9 +18,11 @@ interface Props {
   readonly onNewCareer: () => void;
   readonly onContinue: (saveId: string) => void;
   readonly onFreeMatch: () => void;
+  /** V0.62 — les réglages, avant même d'avoir commencé. */
+  readonly onOpenSettings?: () => void;
 }
 
-export function TitleScreen({ onNewCareer, onContinue, onFreeMatch }: Props) {
+export function TitleScreen({ onNewCareer, onContinue, onFreeMatch, onOpenSettings }: Props) {
   const [saves, setSaves] = useState<readonly SeasonSaveMeta[]>([]);
   const [replayed, setReplayed] = useState(false);
 
@@ -192,6 +194,11 @@ export function TitleScreen({ onNewCareer, onContinue, onFreeMatch }: Props) {
           <button type="button" className="title-foot-link" onClick={replayIntro}>
             {replayed ? 'Explications réactivées' : 'Revoir les explications'}
           </button>
+          {onOpenSettings && (
+            <button type="button" className="title-foot-link" onClick={onOpenSettings}>
+              Réglages
+            </button>
+          )}
         </div>
       </div>
     </div>
