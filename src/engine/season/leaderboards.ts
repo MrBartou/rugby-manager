@@ -116,7 +116,13 @@ export function leaderboard(
     if (input.clubIds && !input.clubIds.has(player.clubId)) continue;
 
     const stat = input.stats.get(player.id);
-    if (!stat || stat.matches < seuil) continue;
+    if (!stat) continue;
+    // Le seuil porte sur ce qui **fait** la moyenne, pas sur les matchs joués.
+    // Vu en jeu sur une sauvegarde reprise : les notes n'existaient que depuis
+    // une journée, le compteur de matchs en affichait treize, et une moyenne
+    // tirée d'une seule rencontre trônait en tête du classement.
+    const disputes = kind === 'NOTE' ? (stat.ratedMatches ?? 0) : stat.matches;
+    if (disputes < seuil) continue;
 
     const value = valueOf(kind, stat);
     if (value === undefined || value <= 0) continue;

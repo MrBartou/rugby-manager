@@ -114,6 +114,18 @@ describe('la note se classe en moyenne', () => {
     expect(rows[0]!.value).toBe(7.4);
   });
 
+  it('exige que la présence se compte en matchs **notés**', () => {
+    // Vu en jeu, sur une partie reprise : les notes n'existaient que depuis une
+    // journée, le compteur de matchs en affichait treize, et une moyenne tirée
+    // d'une seule rencontre trônait en tête. Le seuil doit porter sur ce qui
+    // fait la moyenne, pas sur ce qui l'entoure.
+    const rows = leaderboard('NOTE', contexte(
+      [player('repris')],
+      [['repris', stat({ matches: 13, ratingSum: 9, ratedMatches: 1 })]],
+    ));
+    expect(rows).toEqual([]);
+  });
+
   it('ignore un joueur qu\'aucun match n\'a noté', () => {
     // Sauvegardes antérieures à la V0.61 : le cumul existe, les notes non.
     const rows = leaderboard('NOTE', contexte(
