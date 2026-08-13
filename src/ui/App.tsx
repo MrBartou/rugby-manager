@@ -269,6 +269,7 @@ import { MatchScreen } from './screens/MatchScreen.js';
 import { SeasonSetupScreen } from './screens/SeasonSetupScreen.js';
 import { DashboardScreen } from './screens/DashboardScreen.js';
 import { StandingsScreen } from './screens/StandingsScreen.js';
+import { allLeaderboards } from '../engine/season/leaderboards.js';
 import { PreMatchScreen } from './screens/PreMatchScreen.js';
 import { SquadScreen } from './screens/SquadScreen.js';
 import { PlayerScreen } from './screens/PlayerScreen.js';
@@ -4419,6 +4420,19 @@ export function App() {
           pointsPenalties={new Map(
             [...pointsPenaltyByClubRef.current].map(([clubId, points]) => [clubId as string, points]),
           )}
+          // V0.61 — les classements se calculent sur le championnat qu'on joue,
+          // clubs adverses compris : c'est tout leur intérêt.
+          leaderboards={allLeaderboards({
+            players: listAllPlayersWithOverrides(),
+            stats: seasonState.seasonPlayerStats,
+            roundsPlayed: Math.max(1, seasonState.currentRound - 1),
+            clubNameOf: p => allClubs.find(c => c.id === p.clubId)?.name ?? '—',
+            clubIds: new Set(seasonState.standings.keys()),
+          })}
+          onSelectPlayer={(playerId) => {
+            const joueur = listAllPlayersWithOverrides().find(p => p.id === playerId);
+            if (joueur) setScreen({ kind: 'player', player: joueur });
+          }}
         />
       )}
 
