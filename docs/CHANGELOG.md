@@ -2,6 +2,86 @@
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/). Versions sémantiques.
 
+## [V0.62.1] : La passe de rattrapage sur le design
+
+Les trois nouveautés de la V0.62 ont été livrées fonctionnelles et laides. Ce
+correctif reprend leur mise en forme, et surtout la cause commune : le thème
+clair ne pouvait pas fonctionner.
+
+### Corrigé
+
+- **185 couleurs étaient écrites en dur** dans la feuille de style, en valeurs
+  du thème sombre : surfaces, ombres, voiles d'élévation, teintes des deux
+  camps, or des trophées. Le thème clair repeignait les variables, mais la
+  moitié de l'interface ne les lisait pas. Tout passe désormais par elles.
+- **Le voile des fenêtres modales s'éclaircissait avec le thème** : il lavait la
+  page au lieu de la mettre en retrait, et la fenêtre ne ressortait plus. Un
+  voile reste sombre dans les deux thèmes.
+- **Le titre de chaque écran devenait invisible en thème clair** : son dégradé
+  allait du blanc au gris, pensé pour un fond sombre.
+- **Le bandeau de club restait noir** au-dessus d'une page blanche.
+- **Deux teintes tombaient sous le seuil de contraste AA** en thème clair,
+  mesurées : les libellés secondaires à 4,31 et l'accent employé comme texte à
+  3,19. Corrigées à 4,69 et 5,23.
+- **L'écran de réglages se réduisait à 359 pixels de large** sur un écran de
+  1280 : dans une colonne flex, il prenait la largeur de son contenu le plus
+  étroit. C'est ce qui lui donnait son air compressé.
+- **L'aide s'ouvrait sous les fenêtres d'événement**, alors qu'on l'ouvre
+  justement quand on ne comprend pas ce qu'une fenêtre demande.
+- **Le numéro de version affiché ne bougeait pas en développement** : il est
+  figé au chargement de la configuration de Vite, qui ne surveille que son
+  propre fichier. Le `package.json` est désormais surveillé aussi.
+
+- **L'écran d'entraînement plaçait ses panneaux dans l'ordre du code.** Cinq
+  d'entre eux y avaient été ajoutés au fil de six versions sans que personne ne
+  resitue les suivants : l'effectif, tableau de vingt-huit lignes qui est le
+  travail même de l'écran, avait fini dans la colonne étroite, à 270 pixels de
+  large et 1428 de haut, sous un panneau de délégation qui occupait la hauteur
+  d'un écran entier.
+- **Quatre couleurs du thème clair étaient sous le seuil AA** dans leur emploi
+  réel, mesurées : le vert des indicateurs à 2,66, le jaune à 2,89, le rouge et
+  le bleu à peine au-dessus de 4. Les libellés secondaires retombaient à 4,05
+  sur les fonds enfoncés, que la première correction n'avait pas regardés.
+
+### Modifié
+
+- **L'écran de réglages** : des groupes titrés qui se distinguent, de l'air
+  entre les lignes, une colonne de contrôles alignée, et des interrupteurs
+  dessinés à la place des cases à cocher natives.
+- **L'encyclopédie** passe de dix à vingt entrées, rangées par thème. Chaque
+  entrée s'ouvre sur une phrase avant le paragraphe, et renvoie aux notions
+  voisines d'un clic.
+- **L'entraînement** est rangé en zones nommées : le tableau tient la colonne
+  large, les décisions se rangent dans une colonne latérale, les espoirs passent
+  en pleine largeur. Le tableau gagne un bilan de rotation en tête (bien
+  employés, trop peu joué, hors rotation, au repos), un en-tête qui reste
+  visible, une jauge de temps de jeu avec son repère à 1200 minutes, et le même
+  interrupteur que les réglages pour le repos.
+- **Le marché des techniciens** s'ouvre en fenêtre, où les fiches se comparent
+  côte à côte, au lieu d'un accordéon dans un panneau de trois cents pixels.
+
+### Notes de modélisation
+
+- **Un glossaire s'ouvre pour débloquer une décision, pas pour s'instruire.**
+  D'où la phrase courte en tête de chaque entrée, avant la définition. Et d'où
+  les renvois : un terme de rugby en appelle toujours un autre.
+- **Redessiner un contrôle ne doit pas revenir à en construire un qui n'obéit
+  qu'à la souris.** L'interrupteur garde l'`input` natif sous le rail dessiné :
+  il porte le clavier, le libellé et l'état coché.
+- **Une grille qui laisse tomber ses enfants là où ils viennent se dérègle à
+  chaque ajout.** Une grille nommée refuse le nouvel arrivant tant qu'on ne lui
+  a pas dit où il va : c'est la seule raison pour laquelle l'écran
+  d'entraînement a pu dériver pendant six versions sans que rien ne casse.
+- **Le pire cas d'une couleur n'est pas le fond blanc.** Un indicateur s'affiche
+  presque toujours en pastille, c'est-à-dire en texte plein sur une teinte à
+  12 % de lui-même : le fond se rapproche alors du texte au lieu de s'en
+  éloigner. Un test refait le calcul du WCAG sur les quatre fonds du thème et
+  leurs quatre pastilles, palette daltonienne comprise.
+- **Une mesure prise dans le même tick qu'un changement de thème ne vaut
+  rien**, et une mesure de géométrie prise pendant que le panneau du navigateur
+  est masqué non plus : la fenêtre fait alors zéro pixel de large. Deux fausses
+  pistes suivies avant de m'en apercevoir.
+
 ## [V0.62] : Réglages, accessibilité, délégation
 
 Aucun écran de réglages n'existait. Les trente-deux animations tournaient pour
