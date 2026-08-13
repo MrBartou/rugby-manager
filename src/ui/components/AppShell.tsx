@@ -65,6 +65,10 @@ interface AppShellProps {
   readonly active: NavKey;
   readonly onNavigate: (key: NavKey) => void;
   readonly onExitSeason?: () => void;
+  /** V0.62 — ouvre les réglages, depuis le pied de l'écran. */
+  readonly onOpenSettings?: () => void;
+  /** V0.62 — ouvre l'encyclopédie sur l'entrée qui correspond à l'écran courant. */
+  readonly onOpenHelp?: () => void;
   readonly onSave?: () => void;
   readonly saveStatus?: 'idle' | 'saved' | 'error';
   readonly clubName: string;
@@ -80,7 +84,7 @@ interface AppShellProps {
 }
 
 export function AppShell({
-  active, onNavigate, onExitSeason, onSave, saveStatus,
+  active, onNavigate, onExitSeason, onSave, saveStatus, onOpenSettings, onOpenHelp,
   clubId, clubName, seasonLabel, phaseLabel, objectiveLabel,
   transfersBadge, mailsBadge, hudStats = [],
   children,
@@ -169,6 +173,26 @@ export function AppShell({
             <button type="button" className="hud-action ghost" onClick={onExitSeason}>
               <IconFlag size={13} />
               Quitter la carrière
+            </button>
+          )}
+          {/* V0.62 — les réglages se prennent au pied de l'écran plutôt que dans
+              la navigation : on y va rarement, et une dixième vignette aurait
+              coûté de la place à ce qu'on ouvre tous les jours. */}
+          {onOpenSettings && (
+            <button type="button" className="hud-action ghost" onClick={onOpenSettings}>
+              Réglages
+            </button>
+          )}
+          {/* V0.62 — l'encyclopédie s'ouvre d'un clic depuis n'importe quel
+              écran, sur le terme qu'on y rencontre. */}
+          {onOpenHelp && (
+            <button
+              type="button"
+              className="hud-action ghost"
+              onClick={onOpenHelp}
+              title="Encyclopédie : JIFF, salary cap, bonus, mercato…"
+            >
+              ? Aide
             </button>
           )}
         </div>

@@ -22,6 +22,12 @@ import {
 } from '../../engine/club/development.js';
 import { staffRoleLabel, type StaffMember } from '../../engine/club/staff.js';
 import {
+  DELEGATION_DESCRIPTION,
+  DELEGATION_LABEL,
+  type DelegationArea,
+  type DelegationSummary,
+} from '../../engine/club/delegation.js';
+import {
   ROLE_EFFECT,
   staffPayroll,
   type HireVerdict,
@@ -82,6 +88,16 @@ interface Props {
   readonly prospects: readonly ProspectRecord[];
   /** V0.44 — techniciens disponibles cette saison. */
   readonly staffMarket: readonly StaffCandidate[];
+  /**
+   * V0.62 — la délégation au staff.
+   *
+   * Troisième pilier du GDD, jamais implémenté : le staff se recrutait, pesait
+   * sur la progression, et ne décidait jamais rien.
+   */
+  readonly delegation?: {
+    readonly summaries: readonly DelegationSummary[];
+    readonly onToggle: (area: DelegationArea) => void;
+  };
   readonly treasury: number;
   readonly hireVerdict: (candidate: StaffCandidate) => HireVerdict;
   readonly onHireStaff: (candidate: StaffCandidate) => void;
@@ -115,7 +131,7 @@ export function TrainingScreen({
   roster, trainingByPlayer, seasonStats, coaching, staff, scouting, currentSeason,
   onSetFocus, onSetFocusForAll, onBack, rested, onToggleRest,
   academy, academyCostPerSeason, academyTarget, onSetAcademy, prospects,
-  staffMarket, treasury, hireVerdict, onHireStaff,
+  staffMarket, treasury, hireVerdict, onHireStaff, delegation,
 }: Props) {
   const [sortBy, setSortBy] = useState<'minutes' | 'age' | 'name'>('minutes');
   const [marketOpen, setMarketOpen] = useState(false);
@@ -226,6 +242,38 @@ export function TrainingScreen({
           seasonStats={seasonStats}
           currentSeason={currentSeason}
         />
+
+        {/* ---- Délégation ---------------------------------------------------- */}
+        {delegation && (
+          <div className="dashboard-panel">
+            <div className="panel-tag">Ce que vous confiez au staff</div>
+            <p className="deleg-intro">
+              Rien n'est délégué tant que vous ne le décidez pas, et tout se
+              reprend d'un clic. L'adjoint décide comme un adjoint : sa
+              compétence fixe la qualité de ce qu'il choisit à votre place.
+            </p>
+            <ul className="deleg-list">
+              {delegation.summaries.map(item => (
+                <li key={item.area} className={item.delegated ? 'on' : ''}>
+                  <label className="deleg-row">
+                    <input
+                      type="checkbox"
+                      checked={item.delegated}
+                      onChange={() => delegation.onToggle(item.area)}
+                    />
+                    <span className="deleg-body">
+                      <span className="deleg-label">{DELEGATION_LABEL[item.area]}</span>
+                      <span className="deleg-desc">{DELEGATION_DESCRIPTION[item.area]}</span>
+                      <span className={`deleg-owner ${item.quality >= 60 ? 'ok' : 'faible'}`}>
+                        {item.verdict}
+                      </span>
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* ---- Encadrement --------------------------------------------------- */}
         <div className="dashboard-panel">

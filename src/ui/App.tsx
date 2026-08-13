@@ -26,7 +26,7 @@ import {
   type SeasonSession,
   type SeasonState,
 } from '../engine/game/season-session.js';
-import { rolloverSeason } from '../engine/season/rollover.js';
+import { planYouthIntake, rolloverSeason } from '../engine/season/rollover.js';
 import {
   runAiMarket,
   runAiMarketAcrossDivisions,
@@ -201,8 +201,7 @@ import {
   canRegister,
   capReport,
   jiffReport,
-  reviewSeason,
-  countsAsOffence,
+  reviewLeague,
   sanctionSummary,
 } from '../engine/club/regulations.js';
 import {
@@ -217,7 +216,11 @@ import {
   type NewsFeed,
 } from '../engine/season/news.js';
 import { isWindowOpeningRound, transferWindowStatus } from '../engine/season/transfer-window.js';
-import { applyMovement as applyFinancesMovement, closeSeason as closeSeasonFinances, initFinancesForAllClubs } from '../engine/club/finances.js';
+import {
+  applyMovement as applyFinancesMovement,
+  closeSeasonForAllClubs,
+  initFinancesForAllClubs,
+} from '../engine/club/finances.js';
 import { defaultAcademyLevel, generateFreeAgentPool, generateYouthIntake } from '../engine/club/youth-generation.js';
 import { EMPTY_PROSPECTS, trackProspects, type ProspectRecord } from '../engine/club/academy.js';
 import {
@@ -265,10 +268,28 @@ import { MatchScreen } from './screens/MatchScreen.js';
 import { SeasonSetupScreen } from './screens/SeasonSetupScreen.js';
 import { DashboardScreen } from './screens/DashboardScreen.js';
 import { StandingsScreen } from './screens/StandingsScreen.js';
+import { SettingsScreen } from './screens/SettingsScreen.js';
+import { applySettings, loadSettings, saveSettings, type Settings } from './settings.js';
+import { Encyclopedia } from './components/Encyclopedia.js';
+import { SCREEN_ENTRY_POINT } from './encyclopedia.js';
 import { ClubScreen } from './screens/ClubScreen.js';
 import { allLeaderboards } from '../engine/season/leaderboards.js';
 import { buildSeasonVerdict, topScorerOf } from '../engine/season/season-verdict.js';
 import { buildShortlist } from '../engine/club/shortlist.js';
+import { estimateMarketValue } from '../engine/club/transfer-offers.js';
+import {
+  DELEGATION_LABEL,
+  NO_DELEGATION,
+  delegateQuality,
+  decideMinorOffer,
+  focusForPlayer,
+  isDelegated,
+  lineupMistakes,
+  summarise as summariseDelegation,
+  toggleDelegation,
+  type DelegationArea,
+  type DelegationState,
+} from '../engine/club/delegation.js';
 import { PreMatchScreen } from './screens/PreMatchScreen.js';
 import { SquadScreen } from './screens/SquadScreen.js';
 import { PlayerScreen } from './screens/PlayerScreen.js';
@@ -368,7 +389,15 @@ type Screen =
    * Porte l'identifiant plutôt que le club : l'effectif et le classement
    * changent d'une journée à l'autre, et une copie figée mentirait.
    */
-  | { kind: 'club'; clubId: ClubId };
+  | { kind: 'club'; clubId: ClubId }
+  /**
+   * V0.62 — les réglages, atteignables avant même d'avoir une carrière.
+   *
+   * `from` retient d'où l'on vient : ouvrir les réglages depuis l'écran titre
+   * doit y ramener, pas jeter le joueur dans un tableau de bord qui n'existe
+   * pas encore.
+   */
+  | { kind: 'settings'; from: 'title' | 'game' };
 
 /**
  * Écran courant, tel que l'introduction le comprend.
@@ -377,7 +406,7 @@ type Screen =
  * tombent sur `autre` : rien ne doit s'afficher par-dessus un match.
  */
 const ONBOARDING_SCREEN: Readonly<Record<Screen['kind'], OnboardingScreen>> = {
-  club: 'autre',
+  club: 'autre', settings: 'autre',
   title: 'autre', 'season-setup': 'autre', 'match-setup': 'autre',
   'pre-match': 'autre', match: 'autre', highlights: 'autre',
   dashboard: 'dashboard', standings: 'standings', squad: 'squad',
@@ -435,6 +464,23 @@ export function App() {
     [allClubs, divisionEpoch],
   );
   const [screen, setScreen] = useState<Screen>({ kind: 'title' });
+  /**
+   * V0.62 — les préférences du joueur.
+   *
+   * Chargées une fois, appliquées au document à chaque changement : la feuille
+   * de style lit des attributs sur la racine plutôt que des styles en ligne.
+   */
+  const [settings, setSettings] = useState<Settings>(() => {
+    const chargees = loadSettings();
+    applySettings(chargees);
+    return chargees;
+  });
+
+  const updateSettings = (next: Settings): void => {
+    setSettings(next);
+    saveSettings(next);
+    applySettings(next);
+  };
 
   /**
    * V0.49 — leçons déjà lues, et refus global.
@@ -545,6 +591,17 @@ export function App() {
    * moment où on les a mis en liste. Le second sert à signaler un départ.
    */
   const shortlistRef = useRef<ReadonlyMap<PlayerId, string>>(new Map());
+  /** V0.62 — ce que le manager a confié à son staff. Rien, au départ. */
+  const delegationRef = useRef<DelegationState>(NO_DELEGATION);
+  const [delegationEpoch, setDelegationEpoch] = useState(0);
+  /**
+   * V0.62 — l'encyclopédie, ouverte par-dessus l'écran courant.
+   *
+   * Elle s'ouvre sur l'entrée qui répond à la question qu'on se pose là où l'on
+   * est : le mercato depuis les transferts, le plafond salarial depuis les
+   * finances.
+   */
+  const [encyclopediaOpen, setEncyclopediaOpen] = useState(false);
   const [shortlistEpoch, setShortlistEpoch] = useState(0);
   /**
    * V0.53 — les entraîneurs des autres clubs.
@@ -1133,6 +1190,11 @@ export function App() {
     shortlistRef.current = new Map(
       (save.shortlist ?? []).map(e => [e.playerId, e.clubId as string]),
     );
+    delegationRef.current = {
+      delegated: (save.delegation ?? []).filter(
+        (a): a is DelegationArea => a in DELEGATION_LABEL,
+      ),
+    };
     sanctionedLastSeasonRef.current = save.regulation?.sanctionedLastSeason ?? false;
     transferBanRef.current = save.regulation?.transferBan ?? false;
     repeatOffendersRef.current = new Set(
@@ -1198,9 +1260,31 @@ export function App() {
     setScreen({ kind: 'dashboard' });
   };
 
+  /**
+   * V0.62 — l'adjoint fixe les focus d'entraînement.
+   *
+   * Appliqué au moment où l'on coche, puis à chaque intersaison : un joueur qui
+   * vieillit ou qui se fragilise ne travaille plus la même chose, et une
+   * délégation qui se figerait le jour de son activation ne serait pas une
+   * délégation.
+   */
+  const appliquerEntrainementDelegue = (): void => {
+    const session = seasonRef.current;
+    if (!session) return;
+    const state = session.getState();
+    for (const joueur of state.playerClubRoster) {
+      if (joueur.retired || joueur.freeAgent) continue;
+      session.setTrainingFocus(joueur.id, focusForPlayer(joueur, state.currentSeason));
+    }
+  };
+
   const saveSeasonNow = async (kind: 'manual' | 'auto' = 'manual'): Promise<void> => {
     const session = seasonRef.current;
     if (!session) return;
+    // V0.62 : couper la sauvegarde automatique n'efface rien, elle cesse
+    // simplement de tenir la partie à jour toute seule. Le geste manuel, lui,
+    // reste toujours possible.
+    if (kind === 'auto' && !settings.autosave) return;
     const state = session.getState();
     const playerClub = allClubs.find(c => c.id === state.playerClubId);
     const seasonLabel = `${state.currentSeason}-${(state.currentSeason + 1).toString().slice(-2)}`;
@@ -1267,6 +1351,7 @@ export function App() {
           shortlist: [...shortlistRef.current].map(([playerId, clubId]) => ({
             playerId, clubId: clubId as ClubId,
           })),
+          delegation: delegationRef.current.delegated,
           expectations: expectationsRef.current,
           headToHead: [...headToHeadRef.current].map(([clubId, record]) => ({
             clubId: clubId as ClubId, record,
@@ -1461,98 +1546,79 @@ export function App() {
     setLoanEpoch(e => e + 1);
     developmentReportsRef.current = rollover.developmentReports;
 
-    // 1bis. V0.7 — promo de jeunes par club
-    const existingIds = new Set<string>(rollover.players.map(p => p.id as string));
-    const youthByClub: Player[] = [];
-    // V0.39 — le centre du club utilisateur suit son investissement ; les clubs
-    // IA gardent le niveau dicté par leur taille.
-    const playerAcademy = academyRef.current;
-    // V0.60 : les deux divisions reçoivent leur promotion de jeunes.
+    // 1bis. V0.7 — promo de jeunes par club.
     //
-    // La boucle ne parcourait que la division du manager, alors que le
-    // vieillissement et les retraites frappent tout le monde. La division qu'on
-    // ne joue pas perdait donc des joueurs chaque saison sans jamais en
-    // recevoir : au bout de quelques années elle était exsangue, et la remontée
-    // se jouait contre des fantômes.
-    for (const club of allClubs) {
-      const isMine = club.id === state.playerClubId;
-      const intake = generateYouthIntake({
-        club,
-        currentSeason: rollover.newSeason,
-        academyLevel: isMine ? Math.round(playerAcademy.level) : defaultAcademyLevel(club),
-        ...(isMine ? { focus: playerAcademy.focus } : {}),
-        seed: `${seasonSeedRef.current}_youth_${rollover.newSeason}`,
-        existingPlayerIds: existingIds,
-      });
-      for (const p of intake) existingIds.add(p.id as string);
-      youthByClub.push(...intake);
-      // V0.42 — la promotion sortante du club était livrée sans un mot : on
-      // découvrait les jeunes dans la liste d'effectif, sans savoir qu'ils
-      // venaient d'arriver ni lequel valait le coup.
-      if (isMine && intake.length > 0) {
-        // V0.43 — on retient le niveau de sortie : c'est la seule référence qui
-        // permette de mesurer plus tard ce que le jeune est devenu.
-        prospectsRef.current = trackProspects(
-          prospectsRef.current,
-          intake.map(p => ({ playerId: p.id, overall: approximateOverall(p) })),
-          rollover.newSeason,
-          Math.round(playerAcademy.level),
-        );
-        const best = [...intake]
-          .sort((a, b) => approximateOverall(b) - approximateOverall(a))[0]!;
-        sendMail([mailAcademyIntake({
-          season: rollover.newSeason,
-          clubId: club.id,
-          count: intake.length,
-          bestName: `${best.firstName} ${best.lastName}`,
-          bestLevel: Math.round(approximateOverall(best)),
-          academyLevel: Math.round(playerAcademy.level),
-        })]);
-      }
-    }
-    const playersAfterIntake = [...rollover.players, ...youthByClub];
+    // V0.62 : la boucle est passée au moteur. Elle porte deux règles, et non
+    // du câblage : tous les clubs reçoivent leur promotion (V0.60), et seul le
+    // centre du club dirigé suit l'investissement du manager.
+    const promotion = planYouthIntake({
+      clubs: allClubs,
+      playerClubId: state.playerClubId,
+      newSeason: rollover.newSeason,
+      seed: seasonSeedRef.current,
+      existingPlayerIds: new Set(rollover.players.map(p => p.id as string)),
+      playerAcademy: {
+        level: academyRef.current.level,
+        ...(academyRef.current.focus ? { focus: academyRef.current.focus } : {}),
+      },
+      defaultAcademyLevel,
+      generate: generateYouthIntake,
+    });
 
-    // 2. Clôture des finances de la saison écoulée + nouvel encaissement sponsor pour chaque club
-    const closedFinances = new Map<ClubId, import('../engine/club/finances.js').ClubFinances>();
-    for (const [clubId, prev] of state.financesByClub.entries()) {
-      const club = allClubs.find(c => c.id === clubId);
-      if (!club) continue;
-      let next = closeSeasonFinances(prev, rollover.newSeason);
-      // V0.45 — le club de l'utilisateur encaisse selon sa politique
-      // commerciale : sponsors majorés par la campagne, recettes de boutique,
-      // et coût de cette même campagne. Les clubs IA gardent l'enveloppe sèche.
-      if (clubId === state.playerClubId) {
-        const standing = state.standings.get(clubId);
-        const winsRatio = standing && standing.played > 0 ? standing.wins / standing.played : 0.5;
-        next = applyFinancesMovement(next, {
-          kind: 'SPONSOR',
-          amount: sponsorRevenue(club, clubPlanRef.current),
-          note: 'Sponsors + TV (saison)',
-        });
-        next = applyFinancesMovement(next, {
-          kind: 'SPONSOR',
-          amount: merchandisingRevenue({
-            club, facilities: facilitiesRef.current, plan: clubPlanRef.current, winsRatio,
-          }),
-          note: 'Boutique et merchandising',
-        });
-        const campaign = commercialCost(clubPlanRef.current);
-        if (campaign > 0) {
-          next = applyFinancesMovement(next, {
-            kind: 'TRANSFER_OUT',
-            amount: -campaign,
-            note: 'Campagne marketing',
-          });
-        }
-      } else {
-        next = applyFinancesMovement(next, {
-          kind: 'SPONSOR',
-          amount: club.annualBudget,
-          note: 'Sponsors + TV (saison)',
-        });
-      }
-      closedFinances.set(clubId, next);
+    // V0.42 — la promotion sortante du club était livrée sans un mot : on
+    // découvrait les jeunes dans la liste d'effectif, sans savoir qu'ils
+    // venaient d'arriver ni lequel valait le coup.
+    if (promotion.forPlayerClub.length > 0) {
+      // V0.43 — on retient le niveau de sortie : c'est la seule référence qui
+      // permette de mesurer plus tard ce que le jeune est devenu.
+      prospectsRef.current = trackProspects(
+        prospectsRef.current,
+        promotion.forPlayerClub.map(p => ({ playerId: p.id, overall: approximateOverall(p) })),
+        rollover.newSeason,
+        Math.round(academyRef.current.level),
+      );
+      const best = [...promotion.forPlayerClub]
+        .sort((a, b) => approximateOverall(b) - approximateOverall(a))[0]!;
+      sendMail([mailAcademyIntake({
+        season: rollover.newSeason,
+        clubId: state.playerClubId,
+        count: promotion.forPlayerClub.length,
+        bestName: `${best.firstName} ${best.lastName}`,
+        bestLevel: Math.round(approximateOverall(best)),
+        academyLevel: Math.round(academyRef.current.level),
+      })]);
     }
+
+    const playersAfterIntake = [...rollover.players, ...promotion.all];
+
+    // 2. Clôture des finances de la saison écoulée, et nouvel encaissement.
+    //
+    // V0.62 : la boucle est passée au moteur. Elle porte une règle, et non du
+    // câblage : le club dirigé encaisse selon sa politique commerciale, les
+    // autres gardent l'enveloppe sèche de leur budget annuel.
+    const myClubForFinances = allClubs.find(c => c.id === state.playerClubId);
+    const myStanding = state.standings.get(state.playerClubId);
+    const myWinsRatio = myStanding && myStanding.played > 0
+      ? myStanding.wins / myStanding.played
+      : 0.5;
+    const closedFinances = closeSeasonForAllClubs({
+      previous: state.financesByClub,
+      clubs: allClubs,
+      playerClubId: state.playerClubId,
+      newSeason: rollover.newSeason,
+      playerClubCommercial: myClubForFinances
+        ? {
+          sponsors: sponsorRevenue(myClubForFinances, clubPlanRef.current),
+          merchandising: merchandisingRevenue({
+            club: myClubForFinances,
+            facilities: facilitiesRef.current,
+            plan: clubPlanRef.current,
+            winsRatio: myWinsRatio,
+          }),
+          campaignCost: commercialCost(clubPlanRef.current),
+        }
+        : { sponsors: 0, merchandising: 0, campaignCost: 0 },
+    });
 
     // V0.48 — le président fait le point sur ce qu'il avait demandé en plus du
     // classement, puis fixe la feuille de route de l'exercice qui s'ouvre.
@@ -1599,36 +1665,35 @@ export function App() {
     const rosterAtSeasonEnd = (clubId: ClubId): readonly Player[] =>
       playersAfterIntake.filter(p => p.clubId === clubId && !p.retired && !p.freeAgent);
 
-    const bannedClubs = new Set<ClubId>();
-    const penalties = new Map<ClubId, number>();
-    const nextRepeat = new Set<string>();
+    // V0.62 : la revue de la commission est calculée par le moteur.
+    //
+    // Elle décidait ici, en pleine intersaison, des points retirés, des
+    // interdictions et des amendes de toute une division, mêlée à la
+    // publication des actualités et à l'écriture d'une demi-douzaine de
+    // références. L'interface n'en garde que les conséquences visibles.
+    const revue = reviewLeague({
+      clubs,
+      division: divisionPlayed,
+      rosterOf: rosterAtSeasonEnd,
+      repeatOffenders: new Set(
+        clubs
+          .map(c => c.id)
+          .filter(id => (id === state.playerClubId
+            ? sanctionedLastSeasonRef.current
+            : repeatOffendersRef.current.has(id as string))),
+      ),
+    });
 
-    for (const club of clubs) {
-      const roster = rosterAtSeasonEnd(club.id);
-      if (roster.length === 0) continue;
+    for (const bilan of revue.reviews) {
+      const club = clubs.find(c => c.id === bilan.clubId);
+      if (!club) continue;
 
-      const verdicts = reviewSeason({
-        cap: capReport(roster, divisionPlayed),
-        jiff: jiffReport(roster),
-        repeatOffender: club.id === state.playerClubId
-          ? sanctionedLastSeasonRef.current
-          : repeatOffendersRef.current.has(club.id as string),
-      });
-      if (verdicts.length === 0) continue;
-
-      // V0.60 : seul un verdict qui sanctionne vraiment fait un antécédent.
-      if (verdicts.some(countsAsOffence)) nextRepeat.add(club.id as string);
-      const points = verdicts.reduce((n, x) => n + x.pointsDeducted, 0);
-      if (points > 0) penalties.set(club.id, points);
-      if (verdicts.some(x => x.transferBan)) bannedClubs.add(club.id);
-
-      const fine = verdicts.reduce((n, x) => n + x.fine, 0);
-      if (fine > 0) {
+      if (bilan.fine > 0) {
         const f = closedFinances.get(club.id);
         if (f) {
           closedFinances.set(club.id, applyFinancesMovement(f, {
             kind: 'TRANSFER_OUT',
-            amount: -fine,
+            amount: -bilan.fine,
             note: 'Amende de la commission',
           }));
         }
@@ -1636,7 +1701,7 @@ export function App() {
 
       // Le championnat apprend chaque sanction : un club qui démarre la saison
       // suivante avec six points de retard doit avoir une raison lisible.
-      for (const verdict of verdicts) {
+      for (const verdict of bilan.verdicts) {
         publish([{
           season: state.currentSeason,
           round: 0,
@@ -1653,16 +1718,16 @@ export function App() {
           season: state.currentSeason,
           clubId: club.id,
           clubName: club.name,
-          sanctions: verdicts.map(x => ({ summary: sanctionSummary(x), reason: x.reason })),
+          sanctions: bilan.verdicts.map(v => ({ summary: sanctionSummary(v), reason: v.reason })),
         })]);
       }
     }
 
-    repeatOffendersRef.current = nextRepeat;
-    sanctionedLastSeasonRef.current = nextRepeat.has(state.playerClubId as string);
-    pointsPenaltyRef.current = penalties.get(state.playerClubId) ?? 0;
-    transferBanRef.current = bannedClubs.has(state.playerClubId);
-    pointsPenaltyByClubRef.current = penalties;
+    repeatOffendersRef.current = new Set([...revue.repeatOffenders].map(id => id as string));
+    sanctionedLastSeasonRef.current = revue.repeatOffenders.has(state.playerClubId);
+    pointsPenaltyRef.current = revue.penaltiesByClub.get(state.playerClubId) ?? 0;
+    transferBanRef.current = revue.bannedClubs.has(state.playerClubId);
+    pointsPenaltyByClubRef.current = revue.penaltiesByClub;
 
     // 2ter. V0.29 — mercato des clubs IA.
     //
@@ -1680,7 +1745,7 @@ export function App() {
         balanceByClub: new Map([...closedFinances].map(([id, f]) => [id, f.balance])),
         currentSeason: rollover.newSeason,
         rankedClubIds: session.getRanking().map(s => s.clubId),
-        transferBannedClubs: bannedClubs,
+        transferBannedClubs: revue.bannedClubs,
       },
       byDivision: (['TOP14', 'PRO_D2'] as const).map(division => ({
         division,
@@ -2149,10 +2214,15 @@ export function App() {
     setRolloverSummary({
       retiredCount: rollover.retired.length,
       freeAgentCount: rollover.freeAgents.length,
-      youthCount: youthByClub.length,
+      youthCount: promotion.all.length,
       newSeason: rollover.newSeason,
     });
     winterMarketRef.current = null;
+
+    // V0.62 — l'adjoint refait les focus pour la saison qui s'ouvre : les
+    // joueurs ont vieilli, certains se sont fragilisés, et une délégation qui
+    // se figerait le jour de son activation ne serait pas une délégation.
+    if (isDelegated(delegationRef.current, 'ENTRAINEMENT')) appliquerEntrainementDelegue();
 
     // V0.39 — le centre converge vers le niveau visé, et sa facture tombe.
     const myClub = allClubs.find(c => c.id === state.playerClubId);
@@ -2283,6 +2353,45 @@ export function App() {
       club, facilities: facilitiesRef.current, plan: clubPlanRef.current, winsRatio,
     });
     return crowdFromFillRate(revenue.fillRate);
+  };
+
+  /**
+   * V0.62 — l'adjoint traite les offres qu'on lui a confiées.
+   *
+   * Il ne touche qu'aux joueurs dont le départ ne coûte rien. Une offre sur un
+   * cadre, ou sur quelqu'un qui joue la moitié des matchs, remonte toujours au
+   * manager : déléguer les petites décisions ne doit jamais faire partir un
+   * titulaire dans le dos de celui qui dirige.
+   */
+  const traiterOffresDeleguees = (): void => {
+    const session = seasonRef.current;
+    if (!session || !isDelegated(delegationRef.current, 'OFFRES_MINEURES')) return;
+
+    const state = session.getState();
+    const statuts = squadStatusRef.current;
+    const ratios = playRatioByPlayerForPlayerClub();
+
+    for (const offre of state.pendingIncomingOffers) {
+      const joueur = state.playerClubRoster.find(p => p.id === offre.playerId);
+      if (!joueur) continue;
+
+      const valeur = estimateMarketValue(joueur, state.currentSeason);
+      const decision = decideMinorOffer({
+        isKeyPlayer: statuts.get(joueur.id) === 'CADRE',
+        playRatio: ratios.get(joueur.id as string) ?? 0,
+        offerRatio: valeur > 0 ? offre.transferAmount / valeur : 0,
+      });
+      if (decision === 'AU_MANAGER') continue;
+
+      const resolution = session.resolveIncomingOffer(offre.id, decision === 'ACCEPTER');
+      if (!resolution) continue;
+      notify(
+        decision === 'ACCEPTER'
+          ? `Votre adjoint a accepté l'offre sur ${joueur.lastName}.`
+          : `Votre adjoint a décliné l'offre sur ${joueur.lastName}.`,
+        'info',
+      );
+    }
   };
 
   const publishRoundNews = (): void => {
@@ -3156,7 +3265,30 @@ export function App() {
         playerIsHome,
         playerClubId: state.playerClubId,
         seed: `${state.currentRound}_${state.playerNextMatch.homeClubId}_${state.playerNextMatch.awayClubId}`,
-        initialLineup: autoLineup(state.playerClubId, calledUp),
+        // V0.62 — la compo de l'adjoint, quand on la lui a confiée. Le quinze
+        // proposé a toujours été le meilleur possible : déléguer n'aurait rien
+        // changé sans cette imperfection, et la case aurait été un décor.
+        initialLineup: (() => {
+          const auto = autoLineup(state.playerClubId, calledUp);
+          if (!isDelegated(delegationRef.current, 'COMPOSITION')) return auto;
+          const swaps = lineupMistakes(
+            delegateQuality(session.getStaff(), 'COMPOSITION'),
+            auto.starters.length,
+            auto.substitutes.length,
+            createRng(`compo_${seasonSeedRef.current}_${state.currentRound}`),
+          );
+          if (swaps.length === 0) return auto;
+          const starters = [...auto.starters];
+          const substitutes = [...auto.substitutes];
+          for (const swap of swaps) {
+            const titulaire = starters[swap.starterIndex];
+            const remplacant = substitutes[swap.substituteIndex];
+            if (!titulaire || !remplacant) continue;
+            starters[swap.starterIndex] = { ...titulaire, playerId: remplacant };
+            substitutes[swap.substituteIndex] = titulaire.playerId;
+          }
+          return { ...auto, starters, substitutes };
+        })(),
         conditions: weatherFor(
           state.currentSeason, state.currentRound, state.playerNextMatch.homeClubId,
         ),
@@ -3395,6 +3527,7 @@ export function App() {
     // 2. Commit le match du joueur (incrémente currentRound + déclenche détection events + évolue relations)
     session.commitPlayerMatch(homeScore, awayScore, result, starterIds);
     maybeRunWinterMarket();
+    traiterOffresDeleguees();
     publishRoundNews();
     refreshSeason();
     setScreen({ kind: 'dashboard' });
@@ -3948,6 +4081,16 @@ export function App() {
   };
 
   const exitSeason = (): void => {
+    // V0.62 — la confirmation se règle. Quitter une carrière en cours est le
+    // geste le plus coûteux du jeu : par défaut on demande, et celui qui sait
+    // ce qu'il fait peut couper la question.
+    if (settings.confirmations && seasonRef.current) {
+      const state = seasonRef.current.getState();
+      const enCours = state.phase !== 'over';
+      if (enCours && !window.confirm(
+        'Quitter la carrière ? La partie reste sauvegardée, mais la journée en cours sera à reprendre.',
+      )) return;
+    }
     seasonRef.current = null;
     setScreen({ kind: 'title' });
   };
@@ -4021,6 +4164,8 @@ export function App() {
       active={navKey ?? 'dashboard'}
       onNavigate={navigateTo}
       onExitSeason={exitSeason}
+      onOpenSettings={() => setScreen({ kind: 'settings', from: 'game' })}
+      onOpenHelp={() => setEncyclopediaOpen(true)}
       onSave={saveSeasonNow}
       saveStatus={seasonSaveStatus}
       clubName={careerRef.current.kind === 'LIBRE' ? 'Sans club' : playerClubName}
@@ -4266,6 +4411,14 @@ export function App() {
         </header>
       )}
 
+      {encyclopediaOpen && (
+        <Encyclopedia
+          {...(navKey && SCREEN_ENTRY_POINT[navKey]
+            ? { initialEntryId: SCREEN_ENTRY_POINT[navKey] } : {})}
+          onClose={() => setEncyclopediaOpen(false)}
+        />
+      )}
+
       {screen.kind === 'title' && (
         <TitleScreen
           onNewCareer={() => setScreen({ kind: 'season-setup' })}
@@ -4277,8 +4430,25 @@ export function App() {
             });
           }}
           onFreeMatch={() => setScreen({ kind: 'match-setup' })}
+          onOpenSettings={() => setScreen({ kind: 'settings', from: 'title' })}
         />
       )}
+
+      {/* V0.62 — les réglages s'ouvrent avant même d'avoir une carrière : le
+          confort de lecture et les animations réduites ne se découvrent pas
+          après coup, au milieu d'un match. */}
+      {screen.kind === 'settings' && (() => {
+        const ecran = (
+          <SettingsScreen
+            settings={settings}
+            onChange={updateSettings}
+            onBack={() => setScreen(
+              screen.from === 'title' ? { kind: 'title' } : { kind: 'dashboard' },
+            )}
+          />
+        );
+        return screen.from === 'game' && seasonState ? renderInGame(ecran) : ecran;
+      })()}
 
       {screen.kind === 'season-setup' && (
         <>
@@ -4471,6 +4641,24 @@ export function App() {
 
       {screen.kind === 'training' && seasonState && renderInGame(
         <TrainingScreen
+          delegation={{
+            summaries: (() => {
+              void delegationEpoch;
+              return summariseDelegation(
+                delegationRef.current,
+                seasonRef.current?.getStaff() ?? [],
+              );
+            })(),
+            onToggle: (area) => {
+              delegationRef.current = toggleDelegation(delegationRef.current, area);
+              // V0.62 : confier l'entraînement s'applique tout de suite, sinon
+              // la case cochée ne changerait rien avant la semaine suivante et
+              // le manager croirait le réglage mort.
+              if (isDelegated(delegationRef.current, 'ENTRAINEMENT')) appliquerEntrainementDelegue();
+              setDelegationEpoch(e => e + 1);
+              refreshSeason();
+            },
+          }}
           roster={seasonState.playerClubRoster}
           trainingByPlayer={seasonState.trainingByPlayer}
           seasonStats={seasonState.seasonPlayerStats}
@@ -4905,6 +5093,14 @@ export function App() {
 
       {screen.kind === 'match' && (
         <MatchScreen
+          defaultSpeed={settings.matchSpeed}
+          {...(isDelegated(delegationRef.current, 'REMPLACEMENTS')
+            ? {
+              delegatedSubstitutions: {
+                quality: delegateQuality(seasonRef.current?.getStaff() ?? [], 'REMPLACEMENTS'),
+              },
+            }
+            : {})}
           setup={screen.setup}
           onBack={backToHome}
           {...(screen.setup.returnToSeason ? { onMatchFinished } : {})}
