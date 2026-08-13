@@ -20,7 +20,8 @@ import {
   type DevelopmentReport,
   type TrainingFocus,
 } from '../club/development.js';
-import type { Player, PlayerId } from '../types.js';
+import type { Club, ClubId, Player, PlayerId } from '../types.js';
+import type { AcademyFocus } from '../club/academy.js';
 
 export interface RolloverInput {
   /** Tous les joueurs (tous clubs confondus) avant rollover. */
@@ -159,4 +160,80 @@ export function rolloverSeason(input: RolloverInput): RolloverResult {
     newSeason,
     developmentReports: [],
   };
+}
+
+// =============================================================================
+// La promotion des jeunes, division par division
+// =============================================================================
+
+/**
+ * Ce que chaque centre de formation sort cette année : V0.62.
+ *
+ * La boucle vivait dans `App.tsx`. Elle décide qui entre dans le monde du jeu,
+ * pour les deux divisions, et deux règles s'y cachaient au milieu du câblage :
+ *
+ * - **tous les clubs reçoivent leur promotion**, pas seulement celui qu'on
+ *   dirige. Le vieillissement et les retraites frappent tout le monde ; une
+ *   division qui perdrait des joueurs chaque saison sans jamais en recevoir
+ *   serait exsangue en quelques années, et la remontée se jouerait contre des
+ *   fantômes. C'est le défaut corrigé en V0.60 ;
+ * - **le centre du club dirigé suit son investissement**, les clubs gérés par
+ *   la machine gardent le niveau dicté par leur taille. Sans quoi le centre de
+ *   formation ne serait qu'un poste de dépense sans effet.
+ *
+ * Les identifiants déjà pris circulent d'un club à l'autre : deux centres ne
+ * peuvent pas sortir le même joueur.
+ */
+export interface YouthIntakeInput {
+  readonly clubs: readonly Club[];
+  readonly playerClubId: ClubId;
+  readonly newSeason: number;
+  readonly seed: string;
+  /** Identifiants déjà utilisés, joueurs d'après rollover compris. */
+  readonly existingPlayerIds: ReadonlySet<string>;
+  /** Niveau et orientation du centre du club dirigé. */
+  readonly playerAcademy: { readonly level: number; readonly focus?: AcademyFocus };
+  /** Niveau de centre d'un club géré par la machine. */
+  readonly defaultAcademyLevel: (club: Club) => number;
+  readonly generate: (args: {
+    readonly club: Club;
+    readonly currentSeason: number;
+    readonly academyLevel: number;
+    readonly focus?: AcademyFocus;
+    readonly seed: string;
+    readonly existingPlayerIds: ReadonlySet<string>;
+  }) => readonly Player[];
+}
+
+export interface YouthIntakeResult {
+  /** Tous les jeunes promus, tous clubs confondus. */
+  readonly all: readonly Player[];
+  /** Ceux du club dirigé, que l'interface annonce nommément. */
+  readonly forPlayerClub: readonly Player[];
+}
+
+export function planYouthIntake(input: YouthIntakeInput): YouthIntakeResult {
+  const pris = new Set(input.existingPlayerIds);
+  const all: Player[] = [];
+  let forPlayerClub: readonly Player[] = [];
+
+  for (const club of input.clubs) {
+    const isMine = club.id === input.playerClubId;
+    const intake = input.generate({
+      club,
+      currentSeason: input.newSeason,
+      academyLevel: isMine
+        ? Math.round(input.playerAcademy.level)
+        : input.defaultAcademyLevel(club),
+      ...(isMine && input.playerAcademy.focus ? { focus: input.playerAcademy.focus } : {}),
+      seed: `${input.seed}_youth_${input.newSeason}`,
+      existingPlayerIds: pris,
+    });
+
+    for (const p of intake) pris.add(p.id as string);
+    all.push(...intake);
+    if (isMine) forPlayerClub = intake;
+  }
+
+  return { all, forPlayerClub };
 }
