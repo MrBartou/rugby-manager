@@ -139,14 +139,20 @@ function ageOf(player: Player, season: number): number {
   return season - Number(player.birthDate.slice(0, 4));
 }
 
-/** Traduit le facteur de temps de jeu en une appréciation lisible. */
+/**
+ * Traduit le facteur de temps de jeu en une appréciation lisible.
+ *
+ * Les libellés répétaient « Temps de jeu » que la colonne annonce déjà : sur
+ * vingt-huit lignes, cela faisait vingt-huit fois le même mot pour rien, et
+ * poussait la dernière colonne hors du cadre.
+ */
 function playingTimeLabel(minutes: number): { label: string; tone: 'good' | 'mid' | 'bad' } {
   const factor = playingTimeFactor(minutes);
-  if (factor >= 1.10) return { label: 'Temps de jeu idéal', tone: 'good' };
-  if (factor >= 0.80) return { label: 'Temps de jeu correct', tone: 'good' };
-  if (factor >= 0.52) return { label: 'Trop peu joué', tone: 'mid' };
+  if (factor >= 1.10) return { label: 'Idéal', tone: 'good' };
+  if (factor >= 0.80) return { label: 'Correct', tone: 'good' };
+  if (factor >= 0.52) return { label: 'Trop peu', tone: 'mid' };
   if (minutes > 0) return { label: 'Marginal', tone: 'bad' };
-  return { label: 'N\'a pas joué', tone: 'bad' };
+  return { label: 'Pas joué', tone: 'bad' };
 }
 
 function coachingTone(value: number): 'good' | 'mid' | 'bad' {
