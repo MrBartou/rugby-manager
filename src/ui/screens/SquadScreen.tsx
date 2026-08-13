@@ -35,6 +35,8 @@ import {
   type PositionLine,
 } from '../components/DataBits.js';
 import { roleFitness, type RoleDefinition } from '../../engine/match/roles.js';
+import { averageRating, type SeasonPlayerStat } from '../../engine/game/season-session.js';
+import { PlayerCompare, type CompareEntry } from '../components/PlayerCompare.js';
 
 interface Props {
   readonly clubName?: string;
@@ -43,7 +45,14 @@ interface Props {
   readonly recentResults: readonly (-1 | 0 | 1)[];
   readonly playRatioByPlayer: ReadonlyMap<string, number>;
   readonly relations: RelationsState;
-  readonly seasonStats: ReadonlyMap<PlayerId, { readonly tries: number; readonly matches: number; readonly minutes: number }>;
+  /**
+   * V0.61 — la statistique de saison au complet, note comprise.
+   *
+   * L'écran n'en lisait que trois champs alors que le moteur en tient huit
+   * depuis la V0.13 : mètres, plaquages, grattages, défenseurs battus et
+   * franchissements n'apparaissaient nulle part.
+   */
+  readonly seasonStats: ReadonlyMap<PlayerId, SeasonPlayerStat>;
   readonly scouting: ScoutingState;
   readonly currentRound: number;
   /** V0.50 — capitaine en titre, signalé dans la liste et pesant sur son moral. */
@@ -62,7 +71,26 @@ interface Props {
 
 type LineFilter = 'ALL' | PositionLine;
 type StatusFilter = 'ALL' | 'DISPO' | 'INDISPO' | 'JIFF' | 'JEUNES';
-type SortKey = 'poste' | 'nom' | 'age' | 'profil' | 'condition' | 'forme' | 'mood' | 'minutes' | 'potentiel';
+type SortKey =
+  | 'poste' | 'nom' | 'age' | 'profil' | 'condition' | 'forme' | 'mood' | 'minutes' | 'potentiel'
+  | 'note' | 'matchs' | 'essais' | 'metres' | 'plaquages' | 'grattages' | 'battus' | 'franchis';
+
+/**
+ * V0.61 — deux lectures du même effectif.
+ *
+ * L'écran répondait à « de quoi je dispose » et jamais à « qui produit ». Les
+ * deux questions n'appellent pas les mêmes colonnes, et les empiler dans un
+ * seul tableau aurait donné dix-huit colonnes illisibles.
+ */
+type Vue = 'EFFECTIF' | 'STATISTIQUES';
+
+/** Même code couleur que la feuille de match : au dessus du décile, sous la moyenne, le reste. */
+function noteClass(rating: number | undefined): string {
+  if (rating === undefined) return 'dim';
+  if (rating >= 7) return 'haute';
+  if (rating < 5.5) return 'basse';
+  return '';
+}
 
 const LINE_LABEL: Record<LineFilter, string> = {
   ALL: 'Tout l\'effectif',
@@ -103,6 +131,9 @@ interface Row {
   /** V0.50 — rôle annoncé par le manager, et ce que le joueur en pense. */
   readonly status: SquadStatus;
   readonly statusVerdict: StatusVerdict;
+  /** V0.61 — ce que la saison a produit, pour la vue statistiques. */
+  readonly stat: SeasonPlayerStat | undefined;
+  readonly rating: number | undefined;
 }
 
 export function SquadScreen({
@@ -113,6 +144,16 @@ export function SquadScreen({
   const [line, setLine] = useState<LineFilter>('ALL');
   const [status, setStatus] = useState<StatusFilter>('ALL');
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'poste', desc: false });
+  const [vue, setVue] = useState<Vue>('EFFECTIF');
+  /**
+   * V0.61 — les joueurs mis face à face.
+   *
+   * Trois au plus : au-delà, les colonnes se serrent au point qu'on ne compare
+   * plus rien, et la décision qu'on cherche à outiller se prend de toute façon
+   * entre deux ou trois noms.
+   */
+  const [compares, setCompares] = useState<readonly PlayerId[]>([]);
+  const [compareOuvert, setCompareOuvert] = useState(false);
   const [query, setQuery] = useState('');
 
   const active = useMemo(
@@ -165,6 +206,8 @@ export function SquadScreen({
       unavailable,
       status,
       statusVerdict,
+      stat,
+      rating: averageRating(stat),
     };
   }), [active, relations, recentResults, playRatioByPlayer, currentSeason, seasonStats,
     scouting, currentRound, captainId, squadStatuses]);
@@ -197,6 +240,16 @@ export function SquadScreen({
         // Trier par profil regroupe les joueurs de même rôle : c'est ainsi
         // qu'on repère d'un coup d'œil qu'on n'a aucun gratteur dans l'effectif.
         case 'profil': return dir * (a.naturalRole?.label ?? '').localeCompare(b.naturalRole?.label ?? '');
+        // V0.61 — les colonnes de la vue statistiques. Un joueur sans note
+        // passe derrière tout le monde plutôt que devant : il n'a pas joué.
+        case 'note': return dir * ((a.rating ?? -1) - (b.rating ?? -1));
+        case 'matchs': return dir * (a.matches - b.matches);
+        case 'essais': return dir * ((a.stat?.tries ?? 0) - (b.stat?.tries ?? 0));
+        case 'metres': return dir * ((a.stat?.meters ?? 0) - (b.stat?.meters ?? 0));
+        case 'plaquages': return dir * ((a.stat?.tackles ?? 0) - (b.stat?.tackles ?? 0));
+        case 'grattages': return dir * ((a.stat?.turnovers ?? 0) - (b.stat?.turnovers ?? 0));
+        case 'battus': return dir * ((a.stat?.defendersBeaten ?? 0) - (b.stat?.defendersBeaten ?? 0));
+        case 'franchis': return dir * ((a.stat?.lineBreaks ?? 0) - (b.stat?.lineBreaks ?? 0));
         case 'poste':
         default:
           return dir * (Number(positionNumber(a.player.position)) - Number(positionNumber(b.player.position)));
@@ -218,6 +271,21 @@ export function SquadScreen({
   };
 
   const sortMark = (key: SortKey): string => (sort.key === key ? (sort.desc ? ' ↓' : ' ↑') : '');
+
+  const toggleCompare = (playerId: PlayerId): void => {
+    setCompares(current => current.includes(playerId)
+      ? current.filter(id => id !== playerId)
+      : current.length >= 3 ? current : [...current, playerId]);
+  };
+
+  const compareEntries: readonly CompareEntry[] = compares
+    .map(id => rows.find(r => r.player.id === id))
+    .filter((r): r is Row => r !== undefined)
+    .map(r => ({
+      player: r.player,
+      familiarity: scouting.knowledge.get(r.player.id)?.familiarity ?? 0,
+      stat: r.stat,
+    }));
 
   return (
     <section className="squad-screen">
@@ -285,6 +353,23 @@ export function SquadScreen({
           value={query}
           onChange={e => setQuery(e.target.value)}
         />
+        {/* V0.61 — la même liste, lue autrement : de quoi je dispose, puis qui
+            produit. Deux questions différentes, deux jeux de colonnes. */}
+        <div className="squad-view-switch">
+          {([['EFFECTIF', 'Effectif'], ['STATISTIQUES', 'Statistiques']] as const).map(([v, label]) => (
+            <button
+              key={v}
+              type="button"
+              className={vue === v ? 'active' : ''}
+              onClick={() => {
+                setVue(v);
+                setSort(v === 'STATISTIQUES' ? { key: 'note', desc: true } : { key: 'poste', desc: false });
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Tableau dense */}
@@ -292,17 +377,34 @@ export function SquadScreen({
         <table className="squad-table">
           <thead>
             <tr>
+              <th className="c-compare" title="Comparer jusqu'à trois joueurs">⇄</th>
               <th className="c-pos sortable" onClick={() => toggleSort('poste')}>Poste{sortMark('poste')}</th>
               <th className="c-name sortable" onClick={() => toggleSort('nom')}>Joueur{sortMark('nom')}</th>
-              <th className="sortable num-head" onClick={() => toggleSort('age')}>Âge{sortMark('age')}</th>
-              <th className="c-attrs">Points forts</th>
-              <th className="c-role sortable" onClick={() => toggleSort('profil')}>Profil{sortMark('profil')}</th>
-              <th className="c-status">Rôle annoncé</th>
-              <th className="sortable" onClick={() => toggleSort('condition')}>Condition{sortMark('condition')}</th>
-              <th className="sortable" onClick={() => toggleSort('forme')}>Forme{sortMark('forme')}</th>
-              <th className="sortable" onClick={() => toggleSort('mood')}>Moral{sortMark('mood')}</th>
-              <th className="sortable num-head" onClick={() => toggleSort('minutes')}>Minutes{sortMark('minutes')}</th>
-              <th className="sortable num-head" onClick={() => toggleSort('potentiel')}>Potentiel{sortMark('potentiel')}</th>
+              {vue === 'EFFECTIF' ? (
+                <>
+                  <th className="sortable num-head" onClick={() => toggleSort('age')}>Âge{sortMark('age')}</th>
+                  <th className="c-attrs">Points forts</th>
+                  <th className="c-role sortable" onClick={() => toggleSort('profil')}>Profil{sortMark('profil')}</th>
+                  <th className="c-status">Rôle annoncé</th>
+                  <th className="sortable" onClick={() => toggleSort('condition')}>Condition{sortMark('condition')}</th>
+                  <th className="sortable" onClick={() => toggleSort('forme')}>Forme{sortMark('forme')}</th>
+                  <th className="sortable" onClick={() => toggleSort('mood')}>Moral{sortMark('mood')}</th>
+                  <th className="sortable num-head" onClick={() => toggleSort('minutes')}>Minutes{sortMark('minutes')}</th>
+                  <th className="sortable num-head" onClick={() => toggleSort('potentiel')}>Potentiel{sortMark('potentiel')}</th>
+                </>
+              ) : (
+                <>
+                  <th className="sortable num-head" onClick={() => toggleSort('note')} title="Note moyenne sur 10, calculée sur les seuls matchs notés. 6 est la médiane du poste, 7,5 le neuvième décile.">Note{sortMark('note')}</th>
+                  <th className="sortable num-head" onClick={() => toggleSort('matchs')}>Matchs{sortMark('matchs')}</th>
+                  <th className="sortable num-head" onClick={() => toggleSort('minutes')}>Minutes{sortMark('minutes')}</th>
+                  <th className="sortable num-head" onClick={() => toggleSort('essais')}>Essais{sortMark('essais')}</th>
+                  <th className="sortable num-head" onClick={() => toggleSort('metres')} title="Mètres gagnés balle en main">Mètres{sortMark('metres')}</th>
+                  <th className="sortable num-head" onClick={() => toggleSort('battus')} title="Défenseurs battus">Battus{sortMark('battus')}</th>
+                  <th className="sortable num-head" onClick={() => toggleSort('franchis')} title="Franchissements du rideau défensif">Franchis.{sortMark('franchis')}</th>
+                  <th className="sortable num-head" onClick={() => toggleSort('plaquages')}>Plaquages{sortMark('plaquages')}</th>
+                  <th className="sortable num-head" onClick={() => toggleSort('grattages')} title="Ballons grattés">Grattages{sortMark('grattages')}</th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -313,6 +415,15 @@ export function SquadScreen({
                 onClick={() => onSelectPlayer(row.player)}
                 title={row.unavailable ?? 'Voir la fiche'}
               >
+                <td className="c-compare" onClick={e => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={compares.includes(row.player.id)}
+                    disabled={!compares.includes(row.player.id) && compares.length >= 3}
+                    onChange={() => toggleCompare(row.player.id)}
+                    aria-label={`Comparer ${row.player.lastName}`}
+                  />
+                </td>
                 <td className="c-pos"><PositionBadge position={row.player.position} /></td>
                 <td className="c-name">
                   <span className="sq-name">{row.player.firstName} {row.player.lastName}</span>
@@ -326,38 +437,56 @@ export function SquadScreen({
                     {row.unavailable && <span className="sq-tag out">{row.unavailable}</span>}
                   </span>
                 </td>
-                <td className="num">{row.age}</td>
-                <td className="c-attrs">
-                  <KeyAttributes attributes={keyAttributesFor(row.player as never)} />
-                </td>
-                <td className="c-role">
-                  {row.naturalRole
-                    ? <span className="sq-role" title={row.naturalRole.description}>{row.naturalRole.label}</span>
-                    : <span className="sq-role none">—</span>}
-                </td>
-                {/* V0.50 — le rôle s'annonce ici, là où l'on regarde son
-                    effectif. Le pastille dit ce que le joueur en pense. */}
-                <td className="c-status" onClick={e => e.stopPropagation()}>
-                  <select
-                    className={`sq-status ${row.statusVerdict.toLowerCase()}`}
-                    value={row.status}
-                    disabled={onSetStatus === undefined}
-                    onChange={e => onSetStatus?.(row.player.id, e.target.value as SquadStatus)}
-                    title={STATUS_DESCRIPTION[row.status]}
-                  >
-                    {(['CADRE', 'ROTATION', 'ESPOIR', 'HORS_PROJET'] as const).map(st => (
-                      <option key={st} value={st}>{ROLE_LABEL[st]}</option>
-                    ))}
-                  </select>
-                </td>
-                <td><Meter value={row.condition} label="Condition" /></td>
-                <td><Meter value={row.player.dynamic.forme} label="Forme" /></td>
-                <td><Meter value={row.mood} label="Moral" /></td>
-                <td className="num">
-                  {row.minutes > 0 ? row.minutes : '—'}
-                  {row.matches > 0 && <span className="sq-sub">{row.matches} m</span>}
-                </td>
-                <td className="num potential">{row.potentialDisplay}</td>
+                {vue === 'EFFECTIF' ? (
+                  <>
+                    <td className="num">{row.age}</td>
+                    <td className="c-attrs">
+                      <KeyAttributes attributes={keyAttributesFor(row.player as never)} />
+                    </td>
+                    <td className="c-role">
+                      {row.naturalRole
+                        ? <span className="sq-role" title={row.naturalRole.description}>{row.naturalRole.label}</span>
+                        : <span className="sq-role none">—</span>}
+                    </td>
+                    {/* V0.50 — le rôle s'annonce ici, là où l'on regarde son
+                        effectif. Le pastille dit ce que le joueur en pense. */}
+                    <td className="c-status" onClick={e => e.stopPropagation()}>
+                      <select
+                        className={`sq-status ${row.statusVerdict.toLowerCase()}`}
+                        value={row.status}
+                        disabled={onSetStatus === undefined}
+                        onChange={e => onSetStatus?.(row.player.id, e.target.value as SquadStatus)}
+                        title={STATUS_DESCRIPTION[row.status]}
+                      >
+                        {(['CADRE', 'ROTATION', 'ESPOIR', 'HORS_PROJET'] as const).map(st => (
+                          <option key={st} value={st}>{ROLE_LABEL[st]}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td><Meter value={row.condition} label="Condition" /></td>
+                    <td><Meter value={row.player.dynamic.forme} label="Forme" /></td>
+                    <td><Meter value={row.mood} label="Moral" /></td>
+                    <td className="num">
+                      {row.minutes > 0 ? row.minutes : '—'}
+                      {row.matches > 0 && <span className="sq-sub">{row.matches} m</span>}
+                    </td>
+                    <td className="num potential">{row.potentialDisplay}</td>
+                  </>
+                ) : (
+                  <>
+                    <td className={`num sq-note ${noteClass(row.rating)}`}>
+                      {row.rating?.toFixed(1) ?? '—'}
+                    </td>
+                    <td className="num">{row.matches || '—'}</td>
+                    <td className="num">{row.minutes || '—'}</td>
+                    <td className="num">{row.stat?.tries || '—'}</td>
+                    <td className="num">{row.stat?.meters ? Math.round(row.stat.meters) : '—'}</td>
+                    <td className="num">{row.stat?.defendersBeaten || '—'}</td>
+                    <td className="num">{row.stat?.lineBreaks || '—'}</td>
+                    <td className="num">{row.stat?.tackles || '—'}</td>
+                    <td className="num">{row.stat?.turnovers || '—'}</td>
+                  </>
+                )}
               </tr>
             ))}
           </tbody>
@@ -367,6 +496,30 @@ export function SquadScreen({
           <p className="squad-empty">Aucun joueur ne correspond à ces filtres.</p>
         )}
       </div>
+
+      {compares.length > 0 && (
+        <div className="compare-bar">
+          <span>{compares.length} joueur{compares.length > 1 ? 's' : ''} sélectionné{compares.length > 1 ? 's' : ''}</span>
+          <button type="button" className="ghost" onClick={() => setCompares([])}>Vider</button>
+          <button
+            type="button"
+            className="primary"
+            disabled={compares.length < 2}
+            onClick={() => setCompareOuvert(true)}
+          >
+            Comparer
+          </button>
+        </div>
+      )}
+
+      {compareOuvert && (
+        <PlayerCompare
+          entries={compareEntries}
+          currentSeason={currentSeason}
+          onRemove={id => toggleCompare(id)}
+          onClose={() => setCompareOuvert(false)}
+        />
+      )}
     </section>
   );
 }

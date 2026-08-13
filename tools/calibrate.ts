@@ -35,6 +35,11 @@
 
 import { simulateMatch } from '../src/engine/match/simulate.js';
 import { makeMatchInput } from '../tests/engine/fixtures.js';
+import {
+  CALIBRATION_SCENARIOS,
+  CALIBRATION_TARGETS,
+  type CalibrationTarget,
+} from '../src/engine/match/calibration-targets.js';
 
 // =============================================================================
 // CLI
@@ -50,23 +55,11 @@ if (!Number.isFinite(N) || N < 100) {
 // Cibles V1 (cf. 14-tests-validation.md)
 // =============================================================================
 
-interface Target {
-  readonly min?: number;
-  readonly max?: number;
-}
-
-const T = {
-  triesPerMatch: { min: 4, max: 6 },
-  triesStdDev: { max: 2 },
-  placeKickRate: { min: 0.60, max: 0.70 },
-  phasesPerMatch: { min: 70, max: 80 },
-  drawRate: { max: 0.08 },
-  homeWinRateBalanced: { min: 0.42, max: 0.58 },
-  possessionBalanced: { min: 0.45, max: 0.55 },
-  strongWinRateGap: { min: 0.65, max: 0.78 },
-  possessionGap: { min: 0.30, max: 0.40 }, // equipe faible
-  totalPointsBalanced: { min: 35, max: 70 },
-} satisfies Record<string, Target>;
+// V0.61 : les cibles vivent dans le moteur, lues aussi par la suite statistique
+// de l'intégration continue. Les recopier ici aurait fait deux sources de
+// vérité pour le même contrat.
+type Target = CalibrationTarget;
+const T = CALIBRATION_TARGETS;
 
 // =============================================================================
 // Run scénario
@@ -245,10 +238,14 @@ console.log(color(`N = ${N} matchs / scénario`, DIM));
 // Scénario 1 : équilibré
 // -------------------------------------------------------------------------
 const t0 = performance.now();
-const balanced = runScenario(60, 60, N, 100_000);
+const balanced = runScenario(
+  CALIBRATION_SCENARIOS.balanced.home, CALIBRATION_SCENARIOS.balanced.away, N, 100_000,
+);
 const t1 = performance.now();
 
-printScenarioHeader(`Scénario 1 — équilibré (60 vs 60)`);
+printScenarioHeader(
+  `Scénario 1 : équilibré (${CALIBRATION_SCENARIOS.balanced.home} vs ${CALIBRATION_SCENARIOS.balanced.away})`,
+);
 
 const trM = mean(balanced.tries);
 const trSD = stddev(balanced.tries);
@@ -282,10 +279,14 @@ printScenarioFooter(pass1, checks1.length);
 // -------------------------------------------------------------------------
 // Scénario 2 : écart de niveau
 // -------------------------------------------------------------------------
-const skewed = runScenario(75, 45, N, 200_000);
+const skewed = runScenario(
+  CALIBRATION_SCENARIOS.skewed.home, CALIBRATION_SCENARIOS.skewed.away, N, 200_000,
+);
 const t2 = performance.now();
 
-printScenarioHeader(`Scénario 2 — écart de niveau (75 vs 45)`);
+printScenarioHeader(
+  `Scénario 2 : écart de niveau (${CALIBRATION_SCENARIOS.skewed.home} vs ${CALIBRATION_SCENARIOS.skewed.away})`,
+);
 
 const swR = skewed.homeWins / N;
 const possHS = sumRatio(skewed.homePossessionPhases, skewed.awayPossessionPhases);
