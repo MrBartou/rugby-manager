@@ -185,6 +185,13 @@ export interface SeasonSave extends SeasonSaveMeta {
     readonly pointsPenaltyByClub?: readonly { readonly clubId: ClubId; readonly points: number }[];
   };
   /**
+   * V0.62 — domaines confiés au staff.
+   *
+   * Choix de carrière et non préférence d'affichage : il suit la partie, et se
+   * perd quand on change de club.
+   */
+  readonly delegation?: readonly string[];
+  /**
    * V0.61 — joueurs gardés à l'œil, et le club qu'ils occupaient alors.
    *
    * Le club d'origine sert à signaler un départ : sans lui, un joueur suivi qui
@@ -673,6 +680,8 @@ export function buildSeasonSaveFromState(
     readonly pendingEvents?: readonly HumanEvent[];
     /** V0.61 — liste de suivi. */
     readonly shortlist?: readonly { readonly playerId: PlayerId; readonly clubId: ClubId }[];
+    /** V0.62 — domaines confiés au staff. */
+    readonly delegation?: readonly string[];
     readonly direction?: {
       readonly facilities: ClubFacilities;
       readonly plan: ClubPlan;
@@ -734,6 +743,7 @@ export function buildSeasonSaveFromState(
     ...(extras.vacancies !== undefined ? { vacancies: extras.vacancies } : {}),
     ...(extras.pendingEvents !== undefined ? { pendingEvents: extras.pendingEvents } : {}),
     ...(extras.shortlist !== undefined ? { shortlist: extras.shortlist } : {}),
+    ...(extras.delegation !== undefined ? { delegation: extras.delegation } : {}),
     financesByClub: [...state.financesByClub.entries()].map(([clubId, finances]) => ({ clubId, finances })),
     careerHistory,
     managerReputation,
