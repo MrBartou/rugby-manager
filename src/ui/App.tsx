@@ -1231,6 +1231,10 @@ export function App() {
   const saveSeasonNow = async (kind: 'manual' | 'auto' = 'manual'): Promise<void> => {
     const session = seasonRef.current;
     if (!session) return;
+    // V0.62 : couper la sauvegarde automatique n'efface rien, elle cesse
+    // simplement de tenir la partie à jour toute seule. Le geste manuel, lui,
+    // reste toujours possible.
+    if (kind === 'auto' && !settings.autosave) return;
     const state = session.getState();
     const playerClub = allClubs.find(c => c.id === state.playerClubId);
     const seasonLabel = `${state.currentSeason}-${(state.currentSeason + 1).toString().slice(-2)}`;
@@ -3958,6 +3962,16 @@ export function App() {
   };
 
   const exitSeason = (): void => {
+    // V0.62 — la confirmation se règle. Quitter une carrière en cours est le
+    // geste le plus coûteux du jeu : par défaut on demande, et celui qui sait
+    // ce qu'il fait peut couper la question.
+    if (settings.confirmations && seasonRef.current) {
+      const state = seasonRef.current.getState();
+      const enCours = state.phase !== 'over';
+      if (enCours && !window.confirm(
+        'Quitter la carrière ? La partie reste sauvegardée, mais la journée en cours sera à reprendre.',
+      )) return;
+    }
     seasonRef.current = null;
     setScreen({ kind: 'title' });
   };
@@ -4933,6 +4947,7 @@ export function App() {
 
       {screen.kind === 'match' && (
         <MatchScreen
+          defaultSpeed={settings.matchSpeed}
           setup={screen.setup}
           onBack={backToHome}
           {...(screen.setup.returnToSeason ? { onMatchFinished } : {})}

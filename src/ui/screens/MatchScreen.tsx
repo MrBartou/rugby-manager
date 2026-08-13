@@ -5,6 +5,7 @@ import type { MatchSetup } from '../App.js';
 import { MatchPitch } from '../components/MatchPitch.js';
 import { PhaseTimeline } from '../components/PhaseTimeline.js';
 import { MatchSummary } from '../components/MatchSummary.js';
+import type { MatchSpeed } from '../settings.js';
 import { LiveMomentModal } from '../components/LiveMomentModal.js';
 import { createMatchSession, type MatchSession } from '../../engine/match/session.js';
 import { BenchPanel } from '../components/BenchPanel.js';
@@ -33,7 +34,20 @@ interface Props {
     result: import('../../engine/match/types.js').MatchResult,
     matchInput: import('../../engine/match/types.js').MatchInput,
   ) => void;
+  /**
+   * V0.62 — vitesse choisie dans les réglages.
+   *
+   * La rencontre démarre à la vitesse que le joueur a fixée une fois pour
+   * toutes, plutôt qu'à celle du code. Elle reste modifiable en cours de match :
+   * un réglage par défaut n'est pas un verrou.
+   */
+  readonly defaultSpeed?: MatchSpeed;
 }
+
+/** Correspondance entre le réglage et l'échelle interne du lecteur. */
+const SPEED_LABEL: Readonly<Record<MatchSpeed, string>> = {
+  'x0.5': '×0.5', 'x1': '×1', 'x2': '×2', 'x4': '×4', 'x16': '×16',
+};
 
 const SPEEDS = [
   { label: '×0.5', ms: 2400 },   // lent : 2.4s par phase, on prend le temps de lire
@@ -50,7 +64,7 @@ const SPEEDS = [
  *   - dès que la session est `awaiting-decision` et qu'on a tout révélé, on affiche le modal
  *   - dès que `finished` et qu'on a tout révélé, on affiche le summary
  */
-export function MatchScreen({ setup, onBack, onMatchFinished }: Props) {
+export function MatchScreen({ setup, onBack, onMatchFinished, defaultSpeed = 'x1' }: Props) {
   // Session est créée une fois par setup (matchInput + seed [+ replay])
   const sessionRef = useRef<MatchSession | null>(null);
   if (sessionRef.current === null) {
@@ -66,7 +80,9 @@ export function MatchScreen({ setup, onBack, onMatchFinished }: Props) {
 
   const [displayedCount, setDisplayedCount] = useState(0);
   const [playing, setPlaying] = useState(true);
-  const [speedIdx, setSpeedIdx] = useState(1);
+  const [speedIdx, setSpeedIdx] = useState(
+    () => Math.max(0, SPEEDS.findIndex(s => s.label === SPEED_LABEL[defaultSpeed])),
+  );
   /** V0.33 — tiroir de gestion en direct (banc + plan de match). */
   const [sidelineOpen, setSidelineOpen] = useState(false);
 
