@@ -32,6 +32,17 @@ clair ne pouvait pas fonctionner.
   figé au chargement de la configuration de Vite, qui ne surveille que son
   propre fichier. Le `package.json` est désormais surveillé aussi.
 
+- **L'écran d'entraînement plaçait ses panneaux dans l'ordre du code.** Cinq
+  d'entre eux y avaient été ajoutés au fil de six versions sans que personne ne
+  resitue les suivants : l'effectif, tableau de vingt-huit lignes qui est le
+  travail même de l'écran, avait fini dans la colonne étroite, à 270 pixels de
+  large et 1428 de haut, sous un panneau de délégation qui occupait la hauteur
+  d'un écran entier.
+- **Quatre couleurs du thème clair étaient sous le seuil AA** dans leur emploi
+  réel, mesurées : le vert des indicateurs à 2,66, le jaune à 2,89, le rouge et
+  le bleu à peine au-dessus de 4. Les libellés secondaires retombaient à 4,05
+  sur les fonds enfoncés, que la première correction n'avait pas regardés.
+
 ### Modifié
 
 - **L'écran de réglages** : des groupes titrés qui se distinguent, de l'air
@@ -40,6 +51,14 @@ clair ne pouvait pas fonctionner.
 - **L'encyclopédie** passe de dix à vingt entrées, rangées par thème. Chaque
   entrée s'ouvre sur une phrase avant le paragraphe, et renvoie aux notions
   voisines d'un clic.
+- **L'entraînement** est rangé en zones nommées : le tableau tient la colonne
+  large, les décisions se rangent dans une colonne latérale, les espoirs passent
+  en pleine largeur. Le tableau gagne un bilan de rotation en tête (bien
+  employés, trop peu joué, hors rotation, au repos), un en-tête qui reste
+  visible, une jauge de temps de jeu avec son repère à 1200 minutes, et le même
+  interrupteur que les réglages pour le repos.
+- **Le marché des techniciens** s'ouvre en fenêtre, où les fiches se comparent
+  côte à côte, au lieu d'un accordéon dans un panneau de trois cents pixels.
 
 ### Notes de modélisation
 
@@ -49,6 +68,15 @@ clair ne pouvait pas fonctionner.
 - **Redessiner un contrôle ne doit pas revenir à en construire un qui n'obéit
   qu'à la souris.** L'interrupteur garde l'`input` natif sous le rail dessiné :
   il porte le clavier, le libellé et l'état coché.
+- **Une grille qui laisse tomber ses enfants là où ils viennent se dérègle à
+  chaque ajout.** Une grille nommée refuse le nouvel arrivant tant qu'on ne lui
+  a pas dit où il va : c'est la seule raison pour laquelle l'écran
+  d'entraînement a pu dériver pendant six versions sans que rien ne casse.
+- **Le pire cas d'une couleur n'est pas le fond blanc.** Un indicateur s'affiche
+  presque toujours en pastille, c'est-à-dire en texte plein sur une teinte à
+  12 % de lui-même : le fond se rapproche alors du texte au lieu de s'en
+  éloigner. Un test refait le calcul du WCAG sur les quatre fonds du thème et
+  leurs quatre pastilles, palette daltonienne comprise.
 - **Une mesure prise dans le même tick qu'un changement de thème ne vaut
   rien**, et une mesure de géométrie prise pendant que le panneau du navigateur
   est masqué non plus : la fenêtre fait alors zéro pixel de large. Deux fausses

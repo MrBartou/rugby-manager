@@ -1,6 +1,6 @@
 # Statut global — V0.62.1
 
-> Dernière mise à jour : V0.62.1 livrée. **1402/1402 tests verts. Calibration 12/12 cibles atteintes (8000 matchs par scénario).**
+> Dernière mise à jour : V0.62.1 livrée. **1417/1417 tests verts. Calibration 12/12 cibles atteintes (8000 matchs par scénario).**
 >
 > Ce document a longtemps annoncé V0.5 alors que le code était déjà en V0.10+ : les jalons
 > V0.6 à V0.12 (carrière, transferts, finances, JIFF, formation, internationaux, records)
@@ -334,7 +334,7 @@
 - [x] Délégation au staff : composition, remplacements, entraînement, offres mineures
 - [x] Encyclopédie contextuelle, ouverte sur le terme de l'écran courant
 - [x] Commission, promotion des jeunes et clôture financière extraites vers le moteur
-- [x] **V0.62.1** : thème clair réellement fonctionnel (185 couleurs en dur passées aux variables), réglages remis en forme, encyclopédie portée à vingt entrées
+- [x] **V0.62.1** : thème clair réellement fonctionnel (185 couleurs en dur passées aux variables, quatre teintes remontées au seuil AA et verrouillées par un test), réglages, encyclopédie et entraînement remis en forme
 
 ### ⬜ V0.9 — Bêta privée
 - [ ] Init Tauri (binaire desktop)
