@@ -4066,20 +4066,48 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
    V0.14 — Entraînement et développement
    ========================================================================== */
 
-/* V0.16 — `1fr` laissait la colonne de droite grandir avec son contenu et pousser
-   le tableau hors de l'écran (colonne « Focus » et bouton « Appliquer » coupés).
-   `minmax(0, 1fr)` autorise enfin la grille à contraindre son enfant. */
+/* V0.16 : `1fr` laissait la colonne de droite grandir avec son contenu et
+   pousser le tableau hors de l'écran (colonne « Focus » et bouton « Appliquer »
+   coupés). `minmax(0, 1fr)` autorise enfin la grille à contraindre son enfant.
+
+   V0.62.1 : la grille plaçait ses enfants dans l'ordre du code, et cinq
+   panneaux ajoutés sur six versions avaient fini par y tomber n'importe où.
+   L'effectif, tableau de vingt-huit lignes qui est le travail même de l'écran,
+   se retrouvait dans la colonne étroite. Les zones sont nommées : un panneau
+   ajouté demain devra dire où il va au lieu de déranger les autres. */
 .training-layout {
   display: grid;
-  grid-template-columns: minmax(220px, 270px) minmax(0, 1fr);
-  gap: var(--sp-4);
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
+  grid-template-areas:
+    'effectif aside'
+    'espoirs  aside';
+  gap: var(--sp-4) var(--sp-5);
   align-items: start;
 }
 
-.training-main { min-width: 0; }
+.training-main { grid-area: effectif; min-width: 0; }
+.prospects-panel { grid-area: espoirs; min-width: 0; }
 
-@media (max-width: 900px) {
-  .training-layout { grid-template-columns: 1fr; }
+.training-aside {
+  grid-area: aside;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+
+/* Sous 1180 px la colonne latérale mange la place du tableau : elle repasse
+   dessous, et ses panneaux se rangent alors côte à côte plutôt qu'en pile. */
+@media (max-width: 1180px) {
+  .training-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'effectif' 'aside' 'espoirs';
+  }
+  .training-aside {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    align-items: start;
+  }
 }
 
 /* --- Encadrement --- */
@@ -4162,7 +4190,49 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
   margin-bottom: var(--sp-3);
 }
 
+.training-toolbar-title { display: flex; align-items: baseline; gap: var(--sp-3); }
+.training-toolbar-title .panel-tag { margin-bottom: 0; }
+.training-count { font-size: 12px; color: var(--text-dim); }
+
 .training-actions { display: flex; gap: var(--sp-3); flex-wrap: wrap; }
+
+/* Le bilan de la rotation.
+   Vingt-huit lignes ne disent pas d'elles-mêmes si l'effectif est bien
+   employé, il faut les compter. Le tableau répond à « que faire de cet homme »,
+   ce résumé répond à « où en est le groupe ». */
+.training-bilan {
+  list-style: none;
+  margin: 0 0 var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--sp-2) var(--sp-4);
+}
+
+.training-bilan li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.training-bilan strong {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  font-feature-settings: 'tnum';
+  color: var(--text);
+}
+
+.training-bilan .tb-good strong { color: var(--green); }
+.training-bilan .tb-mid strong  { color: var(--yellow); }
+.training-bilan .tb-bad strong  { color: var(--red); }
+.training-bilan .tb-rest strong { color: var(--accent); }
 
 .training-sort {
   display: flex;
@@ -4191,11 +4261,25 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
 .focus-select { width: 100%; max-width: 200px; }
 .focus-select:hover { border-color: var(--accent); }
 
-.training-scroll { overflow-x: auto; border-radius: var(--radius-2); border: 1px solid var(--border); }
+/* Le tableau défile chez lui plutôt que d'allonger la page de mille quatre
+   cents pixels. Sans quoi la colonne de décisions, à droite, se retrouve hors
+   de l'écran dès la dixième ligne, et le `position: sticky` de l'en-tête n'a
+   aucun conteneur défilant auquel se raccrocher. */
+.training-scroll {
+  overflow: auto;
+  max-height: min(70vh, 860px);
+  border-radius: var(--radius-2);
+  border: 1px solid var(--border);
+}
 
 .training-table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
 
+/* L'en-tête reste visible : vingt-huit lignes défilent sous elle, et sans cela
+   on ne sait plus, à mi-tableau, ce que chiffre la colonne qu'on lit. */
 .training-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   background: var(--bg-2);
   color: var(--text-muted);
   font-family: var(--font-mono);
@@ -4203,24 +4287,82 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
   font-weight: 500;
   letter-spacing: 0.12em;
   text-align: right;
-  padding: var(--sp-2) var(--sp-3);
+  padding: var(--sp-3);
   border-bottom: 1px solid var(--border-strong);
 }
 
 .training-table th.col-player,
 .training-table td.col-player,
+.training-table th.col-time,
+.training-table td.col-time,
+.training-table th.col-pot,
+.training-table td.col-pot,
 .training-table th.col-wide,
 .training-table td.col-wide { text-align: left; }
 
+.training-table th.col-rest,
+.training-table td.col-rest { text-align: center; width: 62px; }
+
+.training-table td.col-time { width: 38%; min-width: 230px; }
+.training-table td.col-pot { width: 130px; }
+
 .training-table tbody td {
-  padding: var(--sp-2) var(--sp-3);
+  padding: var(--sp-3);
   text-align: right;
   border-bottom: 1px solid var(--border);
   color: var(--text-dim);
+  vertical-align: middle;
 }
 .training-table tbody tr:last-child td { border-bottom: none; }
 .training-table tbody tr:hover td { background: var(--bg-2); }
 .training-table td.mono { font-family: var(--font-mono); font-feature-settings: 'tnum'; color: var(--text); }
+
+/* Un homme au repos sort de la semaine : la ligne le dit d'un coup d'œil,
+   sinon il faut relire la dernière colonne de vingt-huit lignes. */
+.training-table tbody tr.is-rested td { background: var(--accent-soft); }
+.training-table tbody tr.is-rested .sheet-name { color: var(--accent); }
+
+/* --- Colonne « Temps de jeu » ---
+   Minutes, jauge et appréciation disent la même chose : les séparer en trois
+   colonnes obligeait à lire de gauche à droite pour recomposer une évidence. */
+.tt-line { display: flex; align-items: baseline; gap: var(--sp-2); }
+.tt-minutes { font-size: 13px; color: var(--text); font-feature-settings: 'tnum'; }
+.tt-unit { font-size: 10px; color: var(--text-muted); margin-right: var(--sp-1); }
+
+.tt-bar {
+  position: relative;
+  display: block;
+  height: 4px;
+  margin-top: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-3);
+  overflow: hidden;
+}
+
+.tt-fill { display: block; height: 100%; border-radius: var(--radius-pill); }
+.tt-fill.good { background: var(--green); }
+.tt-fill.mid  { background: var(--yellow); }
+.tt-fill.bad  { background: var(--red); }
+
+/* Le repère marque l'entrée dans la tranche idéale, seul seuil que le manager
+   ait intérêt à viser : au-delà de 1800 minutes le moteur ne donne plus rien. */
+.tt-goal {
+  position: absolute;
+  top: -2px;
+  width: 1px;
+  height: 8px;
+  background: var(--text-muted);
+  opacity: 0.7;
+}
+
+/* Nom et poste étaient côte à côte sur une même ligne, sans séparateur : on
+   lisait « Ange Capuozzoailier droit ». Empilés, la colonne se relit d'un
+   balayage vertical, comme le reste du tableau. */
+.training-table .col-player .sheet-name { display: block; font-weight: 600; }
+.training-table .col-player .sheet-pos { display: block; margin-top: 2px; }
+
+.tp-value { display: block; font-size: 13px; color: var(--accent); }
+.tp-upside { display: block; font-size: 10px; color: var(--text-muted); margin-top: 2px; }
 
 .time-pill {
   display: inline-block;
@@ -4235,7 +4377,6 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
 .time-pill.mid  { color: var(--yellow); background: var(--yellow-soft); border-color: color-mix(in srgb, var(--yellow) 30%, transparent); }
 .time-pill.bad  { color: var(--red); background: var(--red-soft); border-color: color-mix(in srgb, var(--red) 30%, transparent); }
 
-.upside { margin-left: var(--sp-2); font-size: 11px; color: var(--text-muted); }
 
 /* --- Bilan d'intersaison --- */
 .development-panel {
@@ -8781,15 +8922,40 @@ button:active:not(:disabled) { transform: scale(0.97); }
 
 .staff-market-toggle { width: 100%; margin-top: var(--sp-3); }
 
-.staff-market {
-  list-style: none;
-  margin: var(--sp-3) 0 0;
-  padding: 0;
+/* V0.62.1 : le marché s'ouvrait en accordéon dans le panneau Encadrement, qui
+   vit désormais dans une colonne latérale. Comparer six fiches à trois cents
+   pixels de large ne se pouvait pas, d'où la fenêtre et les cartes côte à
+   côte : un recrutement de staff est une comparaison avant d'être un achat. */
+/* Seul le corps défile : douze fiches passeraient sinon l'en-tête et le bouton
+   de fermeture hors de l'écran, et on ne saurait plus ce qu'on parcourt. */
+.staff-market-modal {
+  width: min(1020px, 96vw);
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
-  max-height: 460px;
-  overflow-y: auto;
+  overflow: hidden;
+}
+
+.smm-head { flex: none; padding: var(--sp-5) var(--sp-5) 0; }
+.staff-market-modal .modal-actions { flex: none; }
+.smm-head .panel-tag { margin-bottom: var(--sp-2); }
+.smm-sub {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.smm-body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-4) var(--sp-5) var(--sp-2); }
+
+.staff-market {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: var(--sp-3);
+  align-items: start;
 }
 
 .staff-cand {
@@ -10548,15 +10714,21 @@ label.setting:hover { background: rgb(var(--overlay-hi) / 2%); }
 .deleg-list li:first-child { border-top: 0; }
 .deleg-list li.on { background: var(--accent-soft); }
 
+/* L'interrupteur passe à droite, après ce qu'il commande : la case à cocher
+   native ouvrait la ligne, et on lisait donc l'état avant de savoir de quoi il
+   s'agissait. C'est aussi le contrôle de l'écran de réglages, pas un second
+   dessin qui divergerait à la première retouche. */
 .deleg-row {
   display: flex;
   align-items: flex-start;
+  justify-content: space-between;
   gap: 0.7rem;
-  padding: 0.6rem 0.4rem;
+  padding: 0.7rem 0.5rem;
   cursor: pointer;
 }
 
-.deleg-body { display: flex; flex-direction: column; gap: 0.12rem; }
+.deleg-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.12rem; }
+.deleg-row .switch { margin-top: 0.15rem; flex: none; }
 .deleg-label { font-size: 0.88rem; font-weight: 600; }
 .deleg-desc { color: var(--text-dim); font-size: 0.76rem; line-height: 1.4; }
 
