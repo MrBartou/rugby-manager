@@ -3412,8 +3412,13 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
   pointer-events: auto;
   transition: background 0.4s var(--ease);
 }
+/* V0.62.1 : le voile était teinté du fond de page, donc blanc en thème clair.
+   Il lavait l'écran au lieu de le mettre en retrait, et le tutoriel semblait
+   flotter au-dessus d'une capture délavée. Comme pour les fenêtres modales,
+   `--scrim` reste sombre dans les deux thèmes : mettre en retrait, c'est
+   assombrir, jamais éclaircir. */
 .onboarding-overlay.no-spot {
-  background: color-mix(in srgb, var(--bg-0) 78%, transparent);
+  background: rgb(var(--scrim) / 72%);
   backdrop-filter: blur(2px);
 }
 .onboarding-overlay.has-spot {
@@ -3421,8 +3426,8 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
     circle at var(--spot-x) var(--spot-y),
     transparent 0,
     transparent var(--spot-r),
-    color-mix(in srgb, var(--bg-0) 78%, transparent) calc(var(--spot-r) + 12px),
-    color-mix(in srgb, var(--bg-0) 85%, transparent) 100%
+    rgb(var(--scrim) / 72%) calc(var(--spot-r) + 12px),
+    rgb(var(--scrim) / 82%) 100%
   );
 }
 
@@ -4192,7 +4197,7 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
 
 .training-toolbar-title { display: flex; align-items: baseline; gap: var(--sp-3); }
 .training-toolbar-title .panel-tag { margin-bottom: 0; }
-.training-count { font-size: 12px; color: var(--text-dim); }
+.training-count { font-size: 13px; color: var(--text-dim); }
 
 .training-actions { display: flex; gap: var(--sp-3); flex-wrap: wrap; }
 
@@ -4216,7 +4221,7 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
   display: flex;
   align-items: baseline;
   gap: var(--sp-2);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-dim);
 }
 
@@ -4239,10 +4244,10 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
   align-items: center;
   gap: var(--sp-2);
   font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.12em;
+  font-size: 11px;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-dim);
 }
 
 .training-sort select,
@@ -4251,14 +4256,14 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
   color: var(--text);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-1);
-  padding: 4px 8px;
+  padding: 6px 10px;
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: 13px;
   letter-spacing: normal;
   text-transform: none;
 }
 
-.focus-select { width: 100%; max-width: 200px; }
+.focus-select { width: 100%; max-width: 170px; }
 .focus-select:hover { border-color: var(--accent); }
 
 /* Le tableau défile chez lui plutôt que d'allonger la page de mille quatre
@@ -4272,7 +4277,7 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
   border: 1px solid var(--border);
 }
 
-.training-table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
+.training-table { width: 100%; border-collapse: collapse; font-size: 13px; white-space: nowrap; }
 
 /* L'en-tête reste visible : vingt-huit lignes défilent sous elle, et sans cela
    on ne sait plus, à mi-tableau, ce que chiffre la colonne qu'on lit. */
@@ -4281,13 +4286,13 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
   top: 0;
   z-index: 2;
   background: var(--bg-2);
-  color: var(--text-muted);
+  color: var(--text-dim);
   font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-align: right;
-  padding: var(--sp-3);
+  padding: var(--sp-3) var(--sp-2);
   border-bottom: 1px solid var(--border-strong);
 }
 
@@ -4303,16 +4308,24 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
 .training-table th.col-rest,
 .training-table td.col-rest { text-align: center; width: 62px; }
 
-.training-table td.col-time { width: 38%; min-width: 230px; }
-.training-table td.col-pot { width: 130px; }
+/* Le nom peut passer a la ligne : c'est la seule colonne dont la largeur
+   depend des donnees, et l'empecher de plier poussait la derniere colonne hors
+   du cadre des que les tailles de texte remontaient. */
+.training-table td.col-player { white-space: normal; min-width: 150px; }
+.training-table td.col-time { width: 34%; min-width: 190px; }
+.training-table td.col-pot { width: 150px; }
 
 .training-table tbody td {
-  padding: var(--sp-3);
+  padding: var(--sp-3) var(--sp-2);
   text-align: right;
   border-bottom: 1px solid var(--border);
   color: var(--text-dim);
   vertical-align: middle;
 }
+/* La premiere et la derniere colonne gardent leur marge exterieure : sans
+   elle, le nom colle au bord du cadre. */
+.training-table td.col-player, .training-table th.col-player { padding-left: var(--sp-4); }
+.training-table td.col-rest, .training-table th.col-rest { padding-right: var(--sp-4); }
 .training-table tbody tr:last-child td { border-bottom: none; }
 .training-table tbody tr:hover td { background: var(--bg-2); }
 .training-table td.mono { font-family: var(--font-mono); font-feature-settings: 'tnum'; color: var(--text); }
@@ -4326,8 +4339,8 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
    Minutes, jauge et appréciation disent la même chose : les séparer en trois
    colonnes obligeait à lire de gauche à droite pour recomposer une évidence. */
 .tt-line { display: flex; align-items: baseline; gap: var(--sp-2); }
-.tt-minutes { font-size: 13px; color: var(--text); font-feature-settings: 'tnum'; }
-.tt-unit { font-size: 10px; color: var(--text-muted); margin-right: var(--sp-1); }
+.tt-minutes { font-size: 15px; font-weight: 600; color: var(--text); font-feature-settings: 'tnum'; }
+.tt-unit { font-size: 11px; color: var(--text-muted); margin-right: var(--sp-1); }
 
 .tt-bar {
   position: relative;
@@ -4358,19 +4371,56 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
 /* Nom et poste étaient côte à côte sur une même ligne, sans séparateur : on
    lisait « Ange Capuozzoailier droit ». Empilés, la colonne se relit d'un
    balayage vertical, comme le reste du tableau. */
-.training-table .col-player .sheet-name { display: block; font-weight: 600; }
-.training-table .col-player .sheet-pos { display: block; margin-top: 2px; }
+.training-table .col-player .sheet-name { display: block; font-size: 14px; font-weight: 600; color: var(--text); }
+.training-table .col-player .sheet-pos { display: block; margin-top: 3px; font-size: 11px; color: var(--text-dim); }
 
-.tp-value { display: block; font-size: 13px; color: var(--accent); }
-.tp-upside { display: block; font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+/* V0.62.1 : la moitie des textes de l'ecran etaient a 10 pixels.
+   Mesure sur les 487 elements textuels de la page : 133 a 10 px et 253 a
+   12 px, soit 390 sur 487 sous la barre des 13. Le tableau se lit ligne par
+   ligne pendant plusieurs minutes, c'est le pire endroit pour economiser du
+   pixel. Les tailles remontent ici, et seulement ici, pour ne pas redessiner
+   tout le jeu au passage. */
+.training-screen .panel-tag,
+.training-screen .staff-list-tag,
+.training-screen .prep-label {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--text-dim);
+}
+
+.training-screen .prep-hint,
+.training-screen .academy-note,
+.training-screen .deleg-desc,
+.training-screen .deleg-intro { font-size: 12.5px; line-height: 1.5; }
+
+.training-screen .deleg-label { font-size: 14px; }
+.training-screen .deleg-owner { font-size: 12px; }
+.training-screen .coaching-row { font-size: 13px; }
+.training-screen .coaching-label { color: var(--text-dim); }
+.training-screen .coaching-value { font-size: 13px; }
+.training-screen .staff-name { font-size: 13px; }
+.training-screen .staff-role { font-size: 11px; }
+.training-screen .staff-quality { font-size: 13px; }
+.training-screen .seg-btn button { font-size: 13px; padding: 7px 13px; }
+.training-screen .al-scale { font-size: 14px; }
+.training-screen .al-target { font-size: 12px; }
+.training-screen .prospect-summary li,
+.training-screen .prospect-row { font-size: 13px; }
+.training-screen .pr-intake,
+.training-screen .pr-age,
+.training-screen .pr-matches,
+.training-screen .pr-verdict { font-size: 12px; }
+
+.tp-value { display: block; font-size: 15px; font-weight: 600; color: var(--accent); }
+.tp-upside { display: block; font-size: 12px; color: var(--text-dim); margin-top: 3px; }
 
 .time-pill {
   display: inline-block;
-  padding: 1px 7px;
+  padding: 2px 8px;
   border-radius: var(--radius-pill);
   font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.04em;
+  font-size: 11px;
+  letter-spacing: 0.02em;
   border: 1px solid transparent;
 }
 .time-pill.good { color: var(--green); background: var(--green-soft); border-color: color-mix(in srgb, var(--green) 30%, transparent); }
