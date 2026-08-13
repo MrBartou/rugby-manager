@@ -268,6 +268,8 @@ import { MatchScreen } from './screens/MatchScreen.js';
 import { SeasonSetupScreen } from './screens/SeasonSetupScreen.js';
 import { DashboardScreen } from './screens/DashboardScreen.js';
 import { StandingsScreen } from './screens/StandingsScreen.js';
+import { SettingsScreen } from './screens/SettingsScreen.js';
+import { applySettings, loadSettings, saveSettings, type Settings } from './settings.js';
 import { ClubScreen } from './screens/ClubScreen.js';
 import { allLeaderboards } from '../engine/season/leaderboards.js';
 import { buildSeasonVerdict, topScorerOf } from '../engine/season/season-verdict.js';
@@ -371,7 +373,15 @@ type Screen =
    * Porte l'identifiant plutôt que le club : l'effectif et le classement
    * changent d'une journée à l'autre, et une copie figée mentirait.
    */
-  | { kind: 'club'; clubId: ClubId };
+  | { kind: 'club'; clubId: ClubId }
+  /**
+   * V0.62 — les réglages, atteignables avant même d'avoir une carrière.
+   *
+   * `from` retient d'où l'on vient : ouvrir les réglages depuis l'écran titre
+   * doit y ramener, pas jeter le joueur dans un tableau de bord qui n'existe
+   * pas encore.
+   */
+  | { kind: 'settings'; from: 'title' | 'game' };
 
 /**
  * Écran courant, tel que l'introduction le comprend.
@@ -380,7 +390,7 @@ type Screen =
  * tombent sur `autre` : rien ne doit s'afficher par-dessus un match.
  */
 const ONBOARDING_SCREEN: Readonly<Record<Screen['kind'], OnboardingScreen>> = {
-  club: 'autre',
+  club: 'autre', settings: 'autre',
   title: 'autre', 'season-setup': 'autre', 'match-setup': 'autre',
   'pre-match': 'autre', match: 'autre', highlights: 'autre',
   dashboard: 'dashboard', standings: 'standings', squad: 'squad',
@@ -438,6 +448,23 @@ export function App() {
     [allClubs, divisionEpoch],
   );
   const [screen, setScreen] = useState<Screen>({ kind: 'title' });
+  /**
+   * V0.62 — les préférences du joueur.
+   *
+   * Chargées une fois, appliquées au document à chaque changement : la feuille
+   * de style lit des attributs sur la racine plutôt que des styles en ligne.
+   */
+  const [settings, setSettings] = useState<Settings>(() => {
+    const chargees = loadSettings();
+    applySettings(chargees);
+    return chargees;
+  });
+
+  const updateSettings = (next: Settings): void => {
+    setSettings(next);
+    saveSettings(next);
+    applySettings(next);
+  };
 
   /**
    * V0.49 — leçons déjà lues, et refus global.
@@ -4004,6 +4031,7 @@ export function App() {
       active={navKey ?? 'dashboard'}
       onNavigate={navigateTo}
       onExitSeason={exitSeason}
+      onOpenSettings={() => setScreen({ kind: 'settings', from: 'game' })}
       onSave={saveSeasonNow}
       saveStatus={seasonSaveStatus}
       clubName={careerRef.current.kind === 'LIBRE' ? 'Sans club' : playerClubName}
@@ -4260,8 +4288,25 @@ export function App() {
             });
           }}
           onFreeMatch={() => setScreen({ kind: 'match-setup' })}
+          onOpenSettings={() => setScreen({ kind: 'settings', from: 'title' })}
         />
       )}
+
+      {/* V0.62 — les réglages s'ouvrent avant même d'avoir une carrière : le
+          confort de lecture et les animations réduites ne se découvrent pas
+          après coup, au milieu d'un match. */}
+      {screen.kind === 'settings' && (() => {
+        const ecran = (
+          <SettingsScreen
+            settings={settings}
+            onChange={updateSettings}
+            onBack={() => setScreen(
+              screen.from === 'title' ? { kind: 'title' } : { kind: 'dashboard' },
+            )}
+          />
+        );
+        return screen.from === 'game' && seasonState ? renderInGame(ecran) : ecran;
+      })()}
 
       {screen.kind === 'season-setup' && (
         <>
