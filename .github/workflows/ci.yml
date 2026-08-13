@@ -31,8 +31,14 @@ jobs:
         env:
           SIMULATION_MATCH_COUNT: 1000
 
+  # 10 000 matchs uniquement sur pull request : trop coûteux à chaque commit.
+  #
+  # V0.61 : ce job lançait `tests/simulation`, un dossier qui n'a jamais existé,
+  # et échouait donc sur « No test files found » à chaque pull request depuis le
+  # premier commit. La suite existe désormais, et `SIMULATION_MATCH_COUNT` est
+  # réellement lue : elle fixe la taille de l'échantillon, et les bornes des
+  # tests s'élargissent du bruit correspondant.
   test-simulation-deep:
-    # 10 000 matchs uniquement sur PR — trop coûteux à chaque commit
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -45,3 +51,6 @@ jobs:
       - run: npm run test:simulate
         env:
           SIMULATION_MATCH_COUNT: 10000
+      # La calibration est obligatoire avant toute pull request d'après les
+      # règles du projet : autant que le pipeline l'exige plutôt que la mémoire.
+      - run: npm run calibrate
