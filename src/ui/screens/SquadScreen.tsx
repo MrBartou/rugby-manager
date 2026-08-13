@@ -36,6 +36,7 @@ import {
 } from '../components/DataBits.js';
 import { roleFitness, type RoleDefinition } from '../../engine/match/roles.js';
 import { averageRating, type SeasonPlayerStat } from '../../engine/game/season-session.js';
+import { PlayerCompare, type CompareEntry } from '../components/PlayerCompare.js';
 
 interface Props {
   readonly clubName?: string;
@@ -144,6 +145,15 @@ export function SquadScreen({
   const [status, setStatus] = useState<StatusFilter>('ALL');
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'poste', desc: false });
   const [vue, setVue] = useState<Vue>('EFFECTIF');
+  /**
+   * V0.61 — les joueurs mis face à face.
+   *
+   * Trois au plus : au-delà, les colonnes se serrent au point qu'on ne compare
+   * plus rien, et la décision qu'on cherche à outiller se prend de toute façon
+   * entre deux ou trois noms.
+   */
+  const [compares, setCompares] = useState<readonly PlayerId[]>([]);
+  const [compareOuvert, setCompareOuvert] = useState(false);
   const [query, setQuery] = useState('');
 
   const active = useMemo(
@@ -262,6 +272,21 @@ export function SquadScreen({
 
   const sortMark = (key: SortKey): string => (sort.key === key ? (sort.desc ? ' ↓' : ' ↑') : '');
 
+  const toggleCompare = (playerId: PlayerId): void => {
+    setCompares(current => current.includes(playerId)
+      ? current.filter(id => id !== playerId)
+      : current.length >= 3 ? current : [...current, playerId]);
+  };
+
+  const compareEntries: readonly CompareEntry[] = compares
+    .map(id => rows.find(r => r.player.id === id))
+    .filter((r): r is Row => r !== undefined)
+    .map(r => ({
+      player: r.player,
+      familiarity: scouting.knowledge.get(r.player.id)?.familiarity ?? 0,
+      stat: r.stat,
+    }));
+
   return (
     <section className="squad-screen">
       <div className="screen-head">
@@ -352,6 +377,7 @@ export function SquadScreen({
         <table className="squad-table">
           <thead>
             <tr>
+              <th className="c-compare" title="Comparer jusqu'à trois joueurs">⇄</th>
               <th className="c-pos sortable" onClick={() => toggleSort('poste')}>Poste{sortMark('poste')}</th>
               <th className="c-name sortable" onClick={() => toggleSort('nom')}>Joueur{sortMark('nom')}</th>
               {vue === 'EFFECTIF' ? (
@@ -389,6 +415,15 @@ export function SquadScreen({
                 onClick={() => onSelectPlayer(row.player)}
                 title={row.unavailable ?? 'Voir la fiche'}
               >
+                <td className="c-compare" onClick={e => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={compares.includes(row.player.id)}
+                    disabled={!compares.includes(row.player.id) && compares.length >= 3}
+                    onChange={() => toggleCompare(row.player.id)}
+                    aria-label={`Comparer ${row.player.lastName}`}
+                  />
+                </td>
                 <td className="c-pos"><PositionBadge position={row.player.position} /></td>
                 <td className="c-name">
                   <span className="sq-name">{row.player.firstName} {row.player.lastName}</span>
@@ -461,6 +496,30 @@ export function SquadScreen({
           <p className="squad-empty">Aucun joueur ne correspond à ces filtres.</p>
         )}
       </div>
+
+      {compares.length > 0 && (
+        <div className="compare-bar">
+          <span>{compares.length} joueur{compares.length > 1 ? 's' : ''} sélectionné{compares.length > 1 ? 's' : ''}</span>
+          <button type="button" className="ghost" onClick={() => setCompares([])}>Vider</button>
+          <button
+            type="button"
+            className="primary"
+            disabled={compares.length < 2}
+            onClick={() => setCompareOuvert(true)}
+          >
+            Comparer
+          </button>
+        </div>
+      )}
+
+      {compareOuvert && (
+        <PlayerCompare
+          entries={compareEntries}
+          currentSeason={currentSeason}
+          onRemove={id => toggleCompare(id)}
+          onClose={() => setCompareOuvert(false)}
+        />
+      )}
     </section>
   );
 }
