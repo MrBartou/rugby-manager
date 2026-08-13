@@ -193,26 +193,27 @@ du rattrapage FM : la donnée existe, il manque l'agrégation et l'UI.
 
 ---
 
-## V0.62 — Réglages, accessibilité, délégation
+## V0.62 — Réglages, accessibilité, délégation ✅ *livrée*
 
-- [ ] **Reporté de V0.61 : extraire le reste de l'intersaison de `App.tsx`** vers
-      une abstraction de rollover testée. Les règles sont dans le moteur ; il
-      reste l'orchestration et ses effets de bord.
+- [x] **Reporté de V0.61 : extraire les règles de l'intersaison.** Commission,
+      promotion des jeunes et clôture financière sont parties au moteur, après
+      le verdict de fin de saison en V0.61. Ce qui reste dans `App.tsx` ne
+      décide plus rien : le sujet est clos sous cette forme (voir le CHANGELOG).
 
 **Objectif : le socle expérience joueur.** Aucun écran de réglages n'existe.
 Requis pour la bêta de toute façon — et la délégation est le pilier 3 du GDD
 (« déléguer à son staff ce qu'on ne veut pas gérer ») jamais implémenté.
 
-- [ ] **Écran Réglages** : vitesse de match par défaut, fréquence d'autosave,
+- [x] **Écran Réglages** : vitesse de match par défaut, fréquence d'autosave,
       confirmations, volumes (préparé pour V0.69)
-- [ ] **Accessibilité** : `prefers-reduced-motion` (les 32 keyframes + confettis
+- [x] **Accessibilité** : `prefers-reduced-motion` (les 32 keyframes + confettis
       tournent pour tout le monde aujourd'hui), taille de texte, palette daltonisme
       (les liserés d'aptitude vert/orange/rouge de la compo sont illisibles pour ~8 %
       des hommes), option thème clair
-- [ ] **Délégation au staff** (cases à cocher) : l'adjoint gère les remplacements /
+- [x] **Délégation au staff** (cases à cocher) : l'adjoint gère les remplacements /
       choisit les focus d'entraînement / répond aux offres mineures / propose la compo.
       Donne une utilité *choisie* au staff, rend le jeu jouable par le casual de la cible
-- [ ] **Encyclopédie in-game** : glossaire contextuel (JIFF, salary cap, bonus
+- [x] **Encyclopédie in-game** : glossaire contextuel (JIFF, salary cap, bonus
       offensif, joker médical, fenêtres) accessible d'un clic depuis chaque écran —
       le pilier 3 (« accessible comme un bon livre ») pour le fan de rugby qui n'a
       jamais joué à un manager
