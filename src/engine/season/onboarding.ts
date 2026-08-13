@@ -157,7 +157,7 @@ const LESSONS: Readonly<Record<LessonId, Lesson>> = {
   entrainement: {
     id: 'entrainement',
     title: 'La semaine d\'entraînement',
-    body: 'Une semaine dure fait progresser plus vite et blesse davantage. Une semaine légère préserve. Le choix se paie dans les deux sens — il n\'y a pas de réglage gagnant.',
+    body: 'Une semaine dure fait progresser plus vite et blesse davantage. Une semaine légère préserve. Le choix se paie dans les deux sens : il n\'y a pas de réglage gagnant.',
   },
   conversation: {
     id: 'conversation',

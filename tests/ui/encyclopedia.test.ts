@@ -16,6 +16,8 @@ import {
   GLOSSARY,
   GLOSSARY_TOPIC_LABEL,
   SCREEN_ENTRY_POINT,
+  entriesByTopic,
+  entryById,
   searchGlossary,
 } from '@/ui/encyclopedia.js';
 
@@ -37,6 +39,15 @@ describe('chaque entrée tient sa promesse', () => {
   it('range chaque terme dans un thème connu', () => {
     for (const entry of GLOSSARY) {
       expect(GLOSSARY_TOPIC_LABEL[entry.topic], entry.term).toBeDefined();
+    }
+  });
+
+  it('ouvre sur une phrase avant le paragraphe', () => {
+    // On ouvre un glossaire pour débloquer une décision, pas pour s'instruire :
+    // l'essentiel passe avant le détail, et tient en une ligne.
+    for (const entry of GLOSSARY) {
+      expect(entry.inShort.length, entry.term).toBeGreaterThan(20);
+      expect(entry.inShort.length, entry.term).toBeLessThan(140);
     }
   });
 
@@ -88,5 +99,61 @@ describe('les portes d\'entrée contextuelles', () => {
     for (const ecran of ['transfers', 'finances', 'standings', 'squad']) {
       expect(SCREEN_ENTRY_POINT[ecran], ecran).toBeDefined();
     }
+  });
+});
+
+describe('les renvois entre notions', () => {
+  it('pointent tous vers une entrée qui existe', () => {
+    // Un renvoi mort ouvrirait le vide, ce que personne ne remarquerait avant
+    // un joueur.
+    for (const entry of GLOSSARY) {
+      for (const id of entry.seeAlso ?? []) {
+        expect(entryById(id), `${entry.term} → ${id}`).toBeDefined();
+      }
+    }
+  });
+
+  it('ne renvoient jamais à eux-mêmes', () => {
+    for (const entry of GLOSSARY) {
+      expect(entry.seeAlso ?? [], entry.term).not.toContain(entry.id);
+    }
+  });
+
+  it('et la plupart des entrées en proposent', () => {
+    const avec = GLOSSARY.filter(e => (e.seeAlso ?? []).length > 0);
+    expect(avec.length).toBeGreaterThanOrEqual(GLOSSARY.length - 2);
+  });
+});
+
+describe('le rangement par thème', () => {
+  it('couvre toutes les entrées, sans doublon', () => {
+    const rangees = entriesByTopic().flatMap(g => g.entries.map(e => e.id));
+    expect(rangees).toHaveLength(GLOSSARY.length);
+    expect(new Set(rangees).size).toBe(GLOSSARY.length);
+  });
+
+  it('ne rend pas de thème vide', () => {
+    // Un titre de section sans rien dessous fait croire à un contenu manquant.
+    for (const groupe of entriesByTopic()) {
+      expect(groupe.entries.length, groupe.topic).toBeGreaterThan(0);
+    }
+  });
+
+  it('suit une recherche filtrée', () => {
+    const groupes = entriesByTopic(searchGlossary('mercato'));
+    expect(groupes.flatMap(g => g.entries).length).toBeGreaterThan(0);
+    expect(groupes.flatMap(g => g.entries).length).toBeLessThan(GLOSSARY.length);
+  });
+});
+
+describe('la couverture du glossaire', () => {
+  it('dépasse la poignée de termes de la première version', () => {
+    // Dix entrées ne font pas une encyclopédie : un débutant croise le double
+    // de mots inconnus dans sa première saison.
+    expect(GLOSSARY.length).toBeGreaterThanOrEqual(18);
+  });
+
+  it('couvre les quatre thèmes', () => {
+    expect(entriesByTopic()).toHaveLength(Object.keys(GLOSSARY_TOPIC_LABEL).length);
   });
 });
