@@ -23,6 +23,7 @@ import {
   rateMatch,
   ratePlayer,
 } from '@/engine/match/player-rating.js';
+import { averageRating } from '@/engine/game/season-session.js';
 import { simulateMatch } from '@/engine/match/simulate.js';
 import type { IndividualMatchStats } from '@/engine/match/types.js';
 import type { Player } from '@/engine/types.js';
@@ -176,5 +177,27 @@ describe('l\'homme du match', () => {
       if (cotéHome !== gagnantHome) perdant++;
     }
     expect(perdant).toBeGreaterThan(0);
+  });
+});
+
+describe('la note de saison se dérive des notes de match', () => {
+  it('moyenne les matchs notés, et rien d\'autre', () => {
+    // Somme et compteur plutôt qu'une moyenne stockée : une moyenne écrite en
+    // dur ne se met pas à jour sans se dénaturer, et ce projet a déjà payé
+    // trois fois le prix de deux sources de vérité pour la même donnée.
+    expect(averageRating({
+      tries: 0, matches: 3, minutes: 240, tackles: 0, meters: 0,
+      turnovers: 0, defendersBeaten: 0, lineBreaks: 0,
+      ratingSum: 19.5, ratedMatches: 3,
+    })).toBe(6.5);
+  });
+
+  it('reste absente pour un joueur jamais noté', () => {
+    // Sauvegardes antérieures à V0.61, et remplaçants toujours entrés trop tard.
+    expect(averageRating({
+      tries: 1, matches: 2, minutes: 40, tackles: 0, meters: 0,
+      turnovers: 0, defendersBeaten: 0, lineBreaks: 0,
+    })).toBeUndefined();
+    expect(averageRating(undefined)).toBeUndefined();
   });
 });
