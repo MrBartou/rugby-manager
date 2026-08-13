@@ -39,7 +39,6 @@ import { applyBadFitMoodPenalty, evaluateIdentityFit } from '../club/identity-fi
 import {
   applyMovement,
   computeAnnualPayroll,
-  computeMatchRevenue,
   computeRoundPayroll,
   initFinancesForAllClubs,
   type ClubFinances,
@@ -131,7 +130,13 @@ import {
   type TrainingFocus,
 } from '../club/development.js';
 import { coachingQualityFromStaff, generateStaffForClub, type StaffMember } from '../club/staff.js';
-import { matchdayRevenue } from '../club/club-management.js';
+import {
+  DEFAULT_PLAN,
+  INITIAL_FACILITIES,
+  matchdayRevenue,
+} from '../club/club-management.js';
+import { loanWageReliefPerRound } from '../club/loans.js';
+import { canRegister, type SigningCheck } from '../club/regulations.js';
 import { attendanceBonus, rivalryBetween } from '../season/rivalries.js';
 import {
   EMPTY_SCOUTING,
@@ -567,6 +572,34 @@ export interface SeasonSessionOptions {
    */
   readonly nationalPool?: () => readonly Player[];
   /**
+   * V0.60 — le règlement, tel qu'il s'applique au club dirigé.
+   *
+   * L'interdiction de recruter ne barrait que la signature d'un agent libre,
+   * parce qu'elle n'était testée que dans l'écran qui la propose. Une offre
+   * payante ou un joker médical passait sans rien croiser. Le moteur la lit
+   * donc lui-même, à toutes les portes d'entrée d'un joueur.
+   */
+  readonly recruitment?: () => {
+    readonly division: 'TOP14' | 'PRO_D2';
+    readonly transferBan: boolean;
+  };
+  /**
+   * V0.60 — les joueurs sans club, vus par l'interface.
+   *
+   * Le joker médical les cherchait dans les effectifs des clubs, d'où ils sont
+   * par définition absents : la liste des candidats était toujours vide et la
+   * fonctionnalité, morte depuis sa livraison.
+   */
+  readonly freeAgentPool?: () => readonly Player[];
+  /**
+   * V0.60 — les prêts en cours du club dirigé.
+   *
+   * Le club d'accueil prend en charge une part du salaire. Sans cette vue, le
+   * moteur facturait au prêteur la totalité de la masse salariale et la part
+   * négociée ne servait qu'à l'affichage.
+   */
+  readonly activeLoans?: () => readonly import('../club/loans.js').ActiveLoan[];
+  /**
    * V0.59 — retouches du sélectionneur, quand c'est le manager qui l'est.
    *
    * Le moteur propose un groupe classé au mérite ; le manager en retire et en
@@ -608,6 +641,8 @@ export interface SeasonSessionOptions {
     readonly playerStats?: ReadonlyMap<PlayerId, SeasonPlayerStat>;
     /** V0.58 — matchs déjà comptabilisés, dénominateur du temps de jeu. */
     readonly statsMatchCount?: number;
+    /** V0.60 — décisions humaines en attente au moment de la sauvegarde. */
+    readonly pendingEvents?: readonly HumanEvent[];
     /** V0.58 — capes internationales accumulées au fil des saisons. */
     readonly caps?: ReadonlyMap<PlayerId, import('../season/national-team.js').CapRecord>;
   };
@@ -634,12 +669,24 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
   if (opts.restoreFrom) {
     currentRound = opts.restoreFrom.currentRound;
     for (const h of opts.restoreFrom.history) history.push(h);
-    // V0.9 fix : ne pas écraser le classement initialisé si restoreFrom.standings est vide
-    if (opts.restoreFrom.standings.length > 0) {
-      const restoredStandings = new Map<ClubId, ClubStanding>();
-      for (const s of opts.restoreFrom.standings) restoredStandings.set(s.clubId, s);
-      standings = restoredStandings;
+    // V0.60 : le classement restauré se **superpose** au classement vide, il ne
+    // le remplace pas.
+    //
+    // L'intersaison ne transmet que les clubs frappés d'un retrait de points,
+    // ce qui est une entrée légitime : « voici les ajustements ». En remplaçant
+    // la table entière par cette liste partielle, la session perdait tous les
+    // autres clubs. `applyMatchToStandings` sort sans rien faire quand un des
+    // deux clubs manque : tous les matchs de la saison suivante étaient donc
+    // ignorés en silence, et la J27 plantait sur un « top 6 incomplet » faute
+    // de six clubs classés.
+    const restoredStandings = new Map<ClubId, ClubStanding>(standings);
+    for (const s of opts.restoreFrom.standings) {
+      // Un club qui ne fait plus partie de la division n'a rien à y faire :
+      // une sanction suit un club relégué, elle ne le ramène pas.
+      if (!restoredStandings.has(s.clubId)) continue;
+      restoredStandings.set(s.clubId, s);
     }
+    standings = restoredStandings;
   }
 
   // Phases finales : matchs générés à la fin de la saison régulière puis après chaque tour
@@ -652,7 +699,15 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
   let relations: RelationsState = generateInitialRelations(opts.playerClubRoster, opts.currentSeason, opts.seed);
   let moodDeltasByPlayer: Map<PlayerId, number> = new Map();
   let nextMatchTacticalBonus = 0;
-  let pendingEvents: HumanEvent[] = [];
+  /**
+   * V0.60 : les décisions en attente survivent au rechargement.
+   *
+   * Elles étaient perdues. Un conflit de vestiaire ouvert le vendredi
+   * disparaissait si l'on rechargeait le samedi, avec la décision qu'il
+   * appelait : la question se refermait toute seule, sans qu'on y réponde et
+   * sans que rien n'en découle.
+   */
+  let pendingEvents: HumanEvent[] = [...(opts.restoreFrom?.pendingEvents ?? [])];
   const resolvedEvents: { event: HumanEvent; chosenOptionId: string; resolvedAtRound: number }[] = [];
 
   // V0.6 : décisions de renouvellement de contrat (uniquement pour le club joueur)
@@ -1075,6 +1130,23 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
       tier: 'BUDGET_MOYEN', annualBudget: 20_000_000,
     } as Club);
 
+  /**
+   * V0.60 : une arrivée se contrôle au moteur, pas à l'écran qui la propose.
+   *
+   * Les prêts n'y figurent pas : ils ne vont que dans un sens, du club vers
+   * l'extérieur, et une interdiction de recruter n'a rien à y redire.
+   */
+  function registrationCheck(annualSalary: number): SigningCheck | undefined {
+    const rules = opts.recruitment?.();
+    if (!rules) return undefined;
+    return canRegister({
+      roster: playerClubRoster.filter(p => !p.retired),
+      division: rules.division,
+      annualSalary,
+      transferBan: rules.transferBan,
+    });
+  }
+
   function affordabilityFor(terms: BidTerms): AffordabilityCheck {
     const club = clubsById.get(opts.playerClubId);
     return canAffordTransfer({
@@ -1123,7 +1195,7 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
       // V0.30 — la contrainte calendaire vaut pour tout le monde. Laisser le
       // manager acheter en continu pendant que l'IA attend sa fenêtre lui
       // donnerait un avantage que rien ne justifie.
-      const window = transferWindowStatus(currentRound);
+      const window = transferWindowStatus(currentRound, calendar.totalRounds);
       if (!window.open) return window.summary;
       // Sans accès aux effectifs adverses, impossible de juger la profondeur du
       // vendeur — mieux vaut fermer la porte que décider à l'aveugle.
@@ -1420,10 +1492,19 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
     if (round <= calendar.totalRounds) {
       for (const clubId of financesByClub.keys()) {
         const roster = opts.rosterByClub(clubId);
-        const payroll = computeRoundPayroll(roster);
+        const payroll = computeRoundPayroll(roster, calendar.totalRounds);
+        // Les prêts allègent la feuille de paie de celui qui prête, et de lui
+        // seul : ce sont ses joueurs qui sont partis.
+        const relief = clubId === opts.playerClubId
+          ? loanWageReliefPerRound(
+            opts.activeLoans?.() ?? [],
+            (playerId) => playerClubRoster.find(p => p.id === playerId)?.contract.annualSalary,
+            calendar.totalRounds,
+          )
+          : 0;
         applyClubMovement(clubId, {
           kind: 'PAYROLL',
-          amount: -payroll,
+          amount: -Math.max(0, payroll - relief),
           round,
           note: `Salaires J${round}`,
         });
@@ -1436,20 +1517,30 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
       const standing = standings.get(m.homeClubId);
       const played = standing?.played ?? 0;
       const winsRatio = played > 0 ? (standing?.wins ?? 0) / played : 0.5;
-      // V0.45 — le club de l'utilisateur encaisse selon **sa** politique
-      // tarifaire et son stade agrandi ; les clubs IA gardent le modèle
-      // historique, faute d'avoir une direction à piloter.
       // V0.48 — un derby remplit l'enceinte quel que soit le classement.
       const rivalry = rivalryBetween(m.homeClubId, m.awayClubId);
-      const revenue = m.homeClubId === opts.playerClubId && opts.clubDirection
-        ? matchdayRevenue({
-          club,
-          facilities: opts.clubDirection().facilities,
-          plan: opts.clubDirection().plan,
-          winsRatio,
-          ...(rivalry ? { rivalryBonus: attendanceBonus(rivalry.intensity) } : {}),
-        }).revenue
-        : computeMatchRevenue(club, winsRatio);
+      // V0.60 — une seule billetterie pour tout le monde.
+      //
+      // Le club dirigé passait par `matchdayRevenue` (V0.45), les clubs IA par
+      // un `computeMatchRevenue` de V0.6 au billet à trente euros en dur. Deux
+      // économies parallèles, dont une seule tenait compte du stade agrandi, de
+      // la politique tarifaire et des derbys : les recettes du championnat
+      // n'étaient pas comparables entre elles.
+      //
+      // Un club IA n'a pas de direction à piloter : on lui prête la politique
+      // par défaut et ses installations d'origine. Sa campagne de communication
+      // est réputée incluse dans son budget annuel, faute d'un poste de dépense
+      // qui la facturerait.
+      const direction = m.homeClubId === opts.playerClubId && opts.clubDirection
+        ? opts.clubDirection()
+        : { facilities: INITIAL_FACILITIES, plan: DEFAULT_PLAN };
+      const revenue = matchdayRevenue({
+        club,
+        facilities: direction.facilities,
+        plan: direction.plan,
+        winsRatio,
+        ...(rivalry ? { rivalryBonus: attendanceBonus(rivalry.intensity) } : {}),
+      }).revenue;
       applyClubMovement(m.homeClubId, {
         kind: 'MATCH_REVENUE',
         amount: revenue,
@@ -1538,13 +1629,28 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
     return 'over';
   }
 
+  /**
+   * Les tableaux de phase finale, régénérés en cascade.
+   *
+   * V0.60 : ils ne l'étaient qu'à la journée qui les concerne. Recharger une
+   * sauvegarde en demi-finales trouvait donc des barrages vides, ne pouvait pas
+   * en déduire de qualifiés, ne composait aucune demie et déclarait la saison
+   * terminée sans champion : une carrière perdue au premier rechargement du
+   * mois de juin.
+   *
+   * Rien n'a besoin d'être sauvegardé pour cela. Les barrages se déduisent du
+   * classement, qui l'est, et leurs vainqueurs de l'historique, qui l'est
+   * aussi. Les phases finales ne rapportent aucun point de championnat, donc le
+   * classement dont on les tire ne bouge plus : le tableau reconstruit est
+   * exactement celui qu'on avait quitté.
+   */
   function ensurePlayoffMatches(): void {
     if (!hasPlayoffs) return;
-    if (currentRound === PLAYOFFS.PLAYOFFS && playoffMatches.length === 0) {
+    if (currentRound >= PLAYOFFS.PLAYOFFS && playoffMatches.length === 0) {
       const top6 = rankedStandings(standings).slice(0, 6).map(s => s.clubId);
       playoffMatches = generatePlayoffMatches(top6, calendar.totalRounds);
     }
-    if (currentRound === PLAYOFFS.SEMIFINALS && semifinalMatches.length === 0) {
+    if (currentRound >= PLAYOFFS.SEMIFINALS && semifinalMatches.length === 0) {
       const top2 = rankedStandings(standings).slice(0, 2).map(s => s.clubId);
       const winner1 = winnerOf(playoffMatches[0]);
       const winner2 = winnerOf(playoffMatches[1]);
@@ -1552,11 +1658,45 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
         semifinalMatches = generateSemifinals(top2, winner1, winner2, calendar.totalRounds);
       }
     }
-    if (currentRound === PLAYOFFS.FINAL && finalMatch === undefined) {
+    if (currentRound >= PLAYOFFS.FINAL && finalMatch === undefined) {
       const w1 = winnerOf(semifinalMatches[0]);
       const w2 = winnerOf(semifinalMatches[1]);
       if (w1 && w2) finalMatch = generateFinal(w1, w2, calendar.totalRounds);
     }
+    // Une finale déjà disputée avant le rechargement a un vainqueur : c'est le
+    // champion, et il ne se redéduit d'aucun classement.
+    if (champion === undefined && finalMatch) {
+      champion = winnerOf(finalMatch);
+    }
+  }
+
+  /**
+   * Le mieux classé des deux à l'issue de la saison régulière.
+   *
+   * C'est la règle des phases finales : à égalité au coup de sifflet final, le
+   * classement départage. Elle est appliquée ici de la même façon partout, au
+   * lieu de trois tranchages différents, dont un qui laissait tout simplement
+   * la finale sans vainqueur.
+   */
+  function betterRanked(a: ClubId, b: ClubId): ClubId {
+    const ranked = rankedStandings(standings).map(s => s.clubId);
+    const ia = ranked.indexOf(a);
+    const ib = ranked.indexOf(b);
+    if (ia < 0) return b;
+    if (ib < 0) return a;
+    return ia <= ib ? a : b;
+  }
+
+  /** Le qualifié d'un match à élimination directe, nul compris. */
+  function knockoutWinner(
+    homeClubId: ClubId,
+    awayClubId: ClubId,
+    homeScore: number,
+    awayScore: number,
+  ): ClubId {
+    if (homeScore > awayScore) return homeClubId;
+    if (awayScore > homeScore) return awayClubId;
+    return betterRanked(homeClubId, awayClubId);
   }
 
   function winnerOf(match: PlayoffMatch | undefined): ClubId | undefined {
@@ -1565,11 +1705,7 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
       h.round === match.round && h.homeClubId === match.homeClubId && h.awayClubId === match.awayClubId,
     );
     if (!played) return undefined;
-    if (played.homeScore === played.awayScore) {
-      // En cas d'égalité en V0.3 : on tranche par le seed (le receveur garde l'avantage classement)
-      return match.homeClubId;
-    }
-    return played.homeScore > played.awayScore ? match.homeClubId : match.awayClubId;
+    return knockoutWinner(match.homeClubId, match.awayClubId, played.homeScore, played.awayScore);
   }
 
   function currentRoundMatches(): readonly (ScheduledMatch | PlayoffMatch)[] {
@@ -1624,7 +1760,7 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
       pendingContractDecisions,
       resolvedContractDecisions,
       pendingIncomingOffers,
-      transferWindow: transferWindowStatus(currentRound),
+      transferWindow: transferWindowStatus(currentRound, calendar.totalRounds),
       bidCooldowns,
       jokersUsedFor,
       academy,
@@ -1739,9 +1875,9 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
       }
       // Si on vient de jouer la finale → désigner le champion
       if (playerMatch.round === PLAYOFFS.FINAL) {
-        if (homeScore > awayScore) champion = playerMatch.homeClubId;
-        else if (awayScore > homeScore) champion = playerMatch.awayClubId;
-        else champion = playerMatch.homeClubId; // tie-break
+        champion = knockoutWinner(
+          playerMatch.homeClubId, playerMatch.awayClubId, homeScore, awayScore,
+        );
       }
 
       // V0.9 : cumul des stats joueurs (essais)
@@ -1860,8 +1996,9 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
           standings = applyMatchToStandings(standings, m, result);
         }
         if (m.round === PLAYOFFS.FINAL) {
-          if (result.homeScore > result.awayScore) champion = m.homeClubId;
-          else if (result.awayScore > result.homeScore) champion = m.awayClubId;
+          // Une finale auto-simulée nulle ne laissait aucun champion, et toute
+          // la fin de saison en dépend.
+          champion = knockoutWinner(m.homeClubId, m.awayClubId, result.homeScore, result.awayScore);
         }
       }
       // V0.6 : finances de la journée
@@ -2035,6 +2172,13 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
     },
 
     submitBid(player: Player, terms: BidTerms): BidOutcome {
+      // Le règlement d'abord : une interdiction de recruter se constate sans
+      // rien savoir du joueur convoité ni de son club.
+      const registration = registrationCheck(terms.annualSalary);
+      if (registration && !registration.allowed) {
+        return { kind: 'BLOCKED', reason: registration.reason ?? 'Signature refusée par la commission.' };
+      }
+
       const preview = buildBidPreview(player);
       if (preview.blocked) return { kind: 'BLOCKED', reason: preview.blocked };
       if (preview.cooldownRounds > 0) {
@@ -2169,7 +2313,9 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
     },
 
     getJokerOptions() {
-      const freeAgents = [...(opts.allClubs ?? []).flatMap(c => opts.rosterByClub?.(c.id) ?? [])]
+      // Les effectifs de clubs ne contiennent aucun joueur libre : c'est ce qui
+      // les définit. Le vivier vient donc de la base complète.
+      const freeAgents = (opts.freeAgentPool?.() ?? [])
         .filter(p => p.freeAgent && !p.retired);
 
       return jokerCandidates(playerClubRoster, currentRound, jokersUsedFor).map(injured => ({
@@ -2190,6 +2336,11 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
 
       const check = canBeJoker(injured, candidate);
       if (!check.allowed) return { ok: false as const, reason: check.reason ?? 'Joker impossible.' };
+
+      const registration = registrationCheck(annualSalary);
+      if (registration && !registration.allowed) {
+        return { ok: false as const, reason: registration.reason ?? 'Signature refusée par la commission.' };
+      }
 
       const affordability = affordabilityFor({ fee: 0, annualSalary, years: 1 });
       if (!affordability.canAfford) {

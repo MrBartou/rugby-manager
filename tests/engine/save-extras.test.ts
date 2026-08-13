@@ -103,6 +103,14 @@ describe('tout ce qu\'on confie à la sauvegarde en ressort', () => {
     loans: [],
     expectations: [],
     headToHead: [],
+    nationalPicks: { added: ['a_9' as PlayerId], removed: ['a_1' as PlayerId] },
+    vacancies: ['b' as ClubId],
+    retiredSeedPlayerIds: ['a_0' as PlayerId],
+    pendingEvents: [{
+      id: 'evt_1', type: 'CONFLIT_VESTIAIRE', atRound: 12,
+      title: 'Conflit', context: 'Deux joueurs se sont accrochés.',
+      involvedPlayerIds: ['a_0' as PlayerId], options: [], defaultOptionId: 'x',
+    }],
     careerBook: [{
       playerId: 'a_0' as PlayerId,
       career: {
@@ -134,5 +142,37 @@ describe('tout ce qu\'on confie à la sauvegarde en ressort', () => {
     const book = save.careerBook as readonly { career: { lines: readonly unknown[] } }[];
     expect(book).toHaveLength(1);
     expect(book[0]!.career.lines).toHaveLength(1);
+  });
+});
+
+describe('une décision en attente survit au rechargement', () => {
+  const conflit = {
+    id: 'evt_1', type: 'CONFLIT_VESTIAIRE' as const, atRound: 12,
+    title: 'Conflit ouvert au vestiaire',
+    context: 'Deux joueurs se sont accrochés.',
+    involvedPlayerIds: ['a_0' as PlayerId, 'a_1' as PlayerId],
+    options: [{ id: 'mediate', label: 'Arbitrer', description: '...', effects: [] }],
+    defaultOptionId: 'mediate',
+  };
+
+  it('la session la retrouve telle quelle', () => {
+    // V0.60 : elle était perdue. La question se refermait toute seule, sans
+    // réponse et sans conséquence.
+    const session = createSeasonSession({
+      clubIds: CLUBS,
+      playerClubId: 'a' as ClubId,
+      seed: 'events',
+      buildMatchInput: buildInput,
+      playerClubRoster: POSITIONS.map((pos, i) => player('a' as ClubId, pos, i)),
+      currentSeason: 2025,
+      restoreFrom: {
+        currentRound: 12,
+        history: [],
+        standings: [],
+        pendingEvents: [conflit],
+      },
+    });
+
+    expect(session.getState().pendingEvents.map(e => e.id)).toContain('evt_1');
   });
 });

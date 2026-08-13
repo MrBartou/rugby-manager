@@ -329,55 +329,93 @@ function pickStartingFifteen(
   players: readonly Player[],
   unavailable: ReadonlySet<PlayerId> = new Set(),
 ): { starters: RosterEntry[]; substitutes: RosterEntry[] } {
-  const used = new Set<PlayerId>();
-  const starters: RosterEntry[] = [];
-  // V0.7+0.8 : exclure retraités / free agents / blessés / suspendus / sélectionnés en équipe nationale
-  const available = players.filter(p =>
-    !p.retired && !p.freeAgent && !p.dynamic.injury &&
-    p.dynamic.suspendedUntilRound === undefined &&
-    !unavailable.has(p.id),
-  );
+  // V0.7+0.8 : ni retraités, ni joueurs libres, jamais.
+  const auClub = players.filter(p => !p.retired && !p.freeAgent);
+  const valide = (p: Player): boolean =>
+    !p.dynamic.injury && p.dynamic.suspendedUntilRound === undefined;
 
-  for (const position of STARTER_POSITIONS) {
-    const candidates = available
-      .filter(p => p.position === position && !used.has(p.id))
-      .sort((a, b) => playerOverall(b) - playerOverall(a));
+  const dedupe = (list: readonly Player[]): readonly Player[] => {
+    const vus = new Set<PlayerId>();
+    return list.filter(p => (vus.has(p.id) ? false : (vus.add(p.id), true)));
+  };
 
-    let pick = candidates[0];
-    if (!pick) {
+  const disponibles = dedupe(auClub.filter(p => valide(p) && !unavailable.has(p.id)));
+  const appeles = dedupe(auClub.filter(p => valide(p) && unavailable.has(p.id)));
+  const infirmerie = dedupe(auClub.filter(p => !valide(p)));
+
+  /**
+   * Compose un XV dans un vivier donné, ou renonce s'il n'y a pas de quoi.
+   *
+   * L'ordre des recours est celui d'un vrai banc de touche : le spécialiste du
+   * poste, à défaut un joueur de la même moitié d'équipe, à défaut n'importe
+   * qui. Aligner quelqu'un hors de son poste coûte cher sur le terrain, ce qui
+   * est exactement le prix qu'un club décimé paie dans la réalité.
+   */
+  function composer(vivier: readonly Player[]): RosterEntry[] | undefined {
+    const used = new Set<PlayerId>();
+    const starters: RosterEntry[] = [];
+    const parNiveau = (a: Player, b: Player): number => playerOverall(b) - playerOverall(a);
+
+    for (const position of STARTER_POSITIONS) {
+      const libres = vivier.filter(p => !used.has(p.id));
       const isFwdSlot = FORWARDS.has(position);
-      const fallback = players
-        .filter(p => !used.has(p.id) && FORWARDS.has(p.position) === isFwdSlot)
-        .sort((a, b) => playerOverall(b) - playerOverall(a));
-      pick = fallback[0];
+      const pick = libres.filter(p => p.position === position).sort(parNiveau)[0]
+        ?? libres.filter(p => FORWARDS.has(p.position) === isFwdSlot).sort(parNiveau)[0]
+        ?? libres.sort(parNiveau)[0];
+      if (!pick) return undefined;
+      used.add(pick.id);
+      starters.push({ playerId: pick.id, position, captainArmband: false });
     }
-    if (!pick) {
-      // Dernier recours : n'importe quel joueur encore libre, avant à l'aile ou
-      // ailier en troisième ligne. Un club dont l'effectif s'est creusé à un
-      // poste — quatre saisons de mercato et de retraites y suffisent — faisait
-      // jusqu'ici **lever une exception non rattrapée** : la journée ne
-      // s'avançait plus, sans le moindre message, et la partie était morte.
-      // Aligner un joueur hors de son poste est mauvais pour l'équipe ; c'est
-      // exactement ce qu'un vrai club ferait, et c'est infiniment préférable à
-      // une saison qui se fige.
-      pick = players
-        .filter(p => !used.has(p.id))
-        .sort((a, b) => playerOverall(b) - playerOverall(a))[0];
-    }
-    if (!pick) {
-      throw new Error(
-        `pickStartingFifteen: effectif insuffisant (${players.length} joueurs) pour aligner un XV`,
-      );
-    }
-    used.add(pick.id);
-    starters.push({
-      playerId: pick.id,
-      position,
-      captainArmband: position === 'OUVREUR' || position === 'DEMI_DE_MELEE',
-    });
+    return starters;
   }
 
-  const remaining = available
+  /**
+   * V0.60 : l'indisponibilité se relâche par degrés, elle ne bloque jamais.
+   *
+   * Un club doit aligner quinze joueurs. Écarter d'un coup les blessés, les
+   * suspendus, les internationaux et les prêtés d'un effectif déjà creusé
+   * pouvait descendre sous ce seuil, et la journée levait alors une exception
+   * non rattrapée : la partie était morte, sans message. Vu en jeu dès la
+   * première trêve, sur un effectif de dix-sept.
+   *
+   * On tente donc les viviers dans l'ordre : les seuls joueurs disponibles,
+   * puis en rappelant ceux qui n'étaient écartés que par une sélection ou un
+   * prêt, et seulement en dernier ressort les blessés et les suspendus. Le
+   * dégradé est franc : on préfère un valide hors de son poste à un blessé
+   * dans le sien.
+   */
+  const starters = composer(disponibles)
+    ?? composer([...disponibles, ...appeles])
+    ?? composer([...disponibles, ...appeles, ...infirmerie]);
+
+  if (!starters) {
+    throw new Error(
+      `pickStartingFifteen: effectif insuffisant (${auClub.length} joueurs au club sur ${players.length}) pour aligner un XV`,
+    );
+  }
+  const used = new Set(starters.map(e => e.playerId));
+
+  // V0.60 : un seul brassard, et il va au meneur d'hommes.
+  //
+  // L'auto-composition en posait **deux**, à l'ouvreur et au demi de mêlée, ce
+  // qui n'existe pas sur un terrain. Elle ignorait au passage le capitaine
+  // désigné par le manager, alors que la composition manuelle le respecte
+  // depuis la v0.50. Le moteur lit l'autorité du porteur du brassard : deux
+  // capitaines, c'est une donnée que rien ne sait interpréter.
+  const capitaine = suggestCaptain(
+    starters
+      .map(e => players.find(p => p.id === e.playerId))
+      .filter((p): p is Player => p !== undefined),
+  );
+  if (capitaine) {
+    const index = starters.findIndex(e => e.playerId === capitaine.id);
+    const entree = starters[index];
+    if (entree) starters[index] = { ...entree, captainArmband: true };
+  }
+
+  // Le banc ne se garnit que de joueurs réellement disponibles : un club
+  // décimé se présente à quinze plutôt que d'asseoir un blessé.
+  const remaining = disponibles
     .filter(p => !used.has(p.id))
     .sort((a, b) => playerOverall(b) - playerOverall(a))
     .slice(0, 8);
@@ -406,6 +444,15 @@ export interface MatchSeedOptions {
    * libre ou une rencontre auto-simulée ne doit pas hériter d'un stade plein.
    */
   readonly homeFans?: import('../engine/match/crowd.js').CrowdLevel;
+  /**
+   * V0.60 — joueurs qu'on ne peut pas aligner : sélection nationale, prêt.
+   *
+   * Le champ manquait, et la composition automatique d'une journée de trêve
+   * alignait donc vos internationaux partis avec le XV de France. Simuler la
+   * journée au lieu de la jouer était un avantage net, ce qui est la définition
+   * d'un exploit.
+   */
+  readonly unavailable?: ReadonlySet<PlayerId>;
   /** Compo override pour HOME (15 titulaires + 8 remplaçants). Sinon auto-pick. */
   readonly homeLineup?: ManualLineup;
   /** Compo override pour AWAY (utilisé pour replay). Sinon auto-pick. */
@@ -520,12 +567,13 @@ export function makeMatchInputFromSeed(
   const homePlayers = rosterOf(opts.homeClubId);
   const awayPlayers = rosterOf(opts.awayClubId);
 
+  const indisponibles = opts.unavailable ?? new Set<PlayerId>();
   const homePicks = opts.homeLineup
     ? buildSquadFromManualLineup(homePlayers, opts.homeLineup)
-    : pickStartingFifteen(homePlayers);
+    : pickStartingFifteen(homePlayers, indisponibles);
   const awayPicks = opts.awayLineup
     ? buildSquadFromManualLineup(awayPlayers, opts.awayLineup)
-    : pickStartingFifteen(awayPlayers);
+    : pickStartingFifteen(awayPlayers, indisponibles);
 
   const playersById = new Map<PlayerId, Player>();
   for (const p of homePlayers) playersById.set(p.id, p);

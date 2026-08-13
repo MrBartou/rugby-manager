@@ -11,10 +11,7 @@
 
 export type PlayerId = string & { readonly __brand: 'PlayerId' };
 export type ClubId = string & { readonly __brand: 'ClubId' };
-export type StaffId = string & { readonly __brand: 'StaffId' };
 export type MatchId = string & { readonly __brand: 'MatchId' };
-export type SeasonId = string & { readonly __brand: 'SeasonId' };
-export type LeagueId = string & { readonly __brand: 'LeagueId' };
 
 // =============================================================================
 // Joueur
@@ -157,14 +154,20 @@ export interface HiddenAttributes {
   adaptabilite: StatValue;
 }
 
-/** Contrat. */
+/**
+ * Contrat.
+ *
+ * V0.60 : `performanceBonus` et `releaseClause` sont retirés. Déclarés en V0.1,
+ * jamais renseignés, jamais lus : le mercato les ignorait, la masse salariale ne
+ * les comptait pas, aucun écran ne les affichait. Un champ qui existe sans
+ * exister est pire qu'un champ absent, parce qu'on croit pouvoir s'y fier.
+ * Ils reviendront avec la clause libératoire, prévue en V0.64.
+ */
 export interface Contract {
   startSeason: number;
   endSeason: number;
   annualSalary: number;                // en euros
   signingBonus?: number;
-  performanceBonus?: number;
-  releaseClause?: number;
 }
 
 /** Le joueur (entité complète). */
@@ -202,17 +205,11 @@ export interface Player {
 
 export type RelationType = 'MENTOR' | 'RIVAL' | 'AMI' | 'NEUTRE' | 'CONFLIT';
 
-/**
- * Relation orientée d'un joueur A vers un joueur B.
- * Score [-100, +100], + type optionnel.
+/*
+ * Le graphe des relations, lui, vit dans `human/relationships.ts` : c'est là
+ * qu'il est construit, lu et sauvegardé. La version déclarée ici n'a jamais été
+ * instanciée.
  */
-export interface PlayerRelation {
-  readonly from: PlayerId;
-  readonly to: PlayerId;
-  readonly score: number;              // [-100, +100]
-  readonly type: RelationType;
-  readonly lastInteractionTick: number;
-}
 
 // =============================================================================
 // Club et staff
@@ -242,64 +239,24 @@ export interface Club {
   readonly reputation: StatValue;
 }
 
-/** Rôle staff (8 NPCs voix — cf. 04-modele-equipe-club.md). */
-export type StaffRole =
-  | 'ENTRAINEUR_CHEF'
-  | 'ADJOINT_AVANTS'
-  | 'ADJOINT_TROIS_QUARTS'
-  | 'MEDECIN'
-  | 'PREPARATEUR_MENTAL'
-  | 'ENTRAINEUR_SKILLS'
-  | 'SCOUT_PRINCIPAL'
-  | 'PRESIDENT';
+/**
+ * V0.60 : le staff vit dans `club/staff.ts`, et là seulement.
+ *
+ * `StaffRole` et `StaffMember` étaient déclarés ici **aussi**, dans une version
+ * concurrente et jamais utilisée : rôles identiques, champs différents. Deux
+ * définitions du même mot dans le même moteur, dont l'une ne servait qu'à un
+ * squelette de V0.1 (`GameState`) que rien n'a jamais construit.
+ */
 
-export interface StaffMember {
-  readonly id: StaffId;
-  readonly clubId: ClubId;
-  readonly firstName: string;
-  readonly lastName: string;
-  readonly role: StaffRole;
-  readonly traits: readonly TraitId[];   // 1-2 traits qui modulent ses prises de position
-  readonly relationWithManager: number;  // [-100, +100]
-}
 
-// =============================================================================
-// Saison, calendrier, match (squelette — détail dans engine/match/types.ts)
-// =============================================================================
 
-export interface SeasonState {
-  readonly id: SeasonId;
-  readonly year: number;
-  readonly currentRound: number;
-  readonly clubsStanding: readonly ClubStanding[];
-}
+/**
+ * V0.60 : le squelette de V0.1 est retiré.
+ *
+ * `GameState`, `SeasonState`, `ClubStanding` et l'horloge de simulation
+ * décrivaient une architecture à réducteur d'événements qui n'a jamais été
+ * branchée. Trois de ces noms existaient déjà ailleurs, portés par les types
+ * réellement utilisés (`game/season-session.ts`, `season/standings.ts`), et
+ * lire le mauvais était une erreur qui compilait.
+ */
 
-export interface ClubStanding {
-  readonly clubId: ClubId;
-  readonly played: number;
-  readonly wins: number;
-  readonly draws: number;
-  readonly losses: number;
-  readonly pointsFor: number;
-  readonly pointsAgainst: number;
-  readonly bonusPoints: number;
-  readonly leaguePoints: number;
-}
-
-// =============================================================================
-// État global du jeu
-// =============================================================================
-
-/** Horloge du jeu — substitut à new Date() (déterminisme requis). */
-export type SimulationClock = number; // tick monotone, à convertir en date dans l'UI
-
-export interface GameState {
-  readonly simulationClock: SimulationClock;
-  readonly playerClubId: ClubId;
-  readonly currentSeason: SeasonState;
-  readonly clubs: ReadonlyMap<ClubId, Club>;
-  readonly players: ReadonlyMap<PlayerId, Player>;
-  readonly staff: ReadonlyMap<StaffId, StaffMember>;
-  readonly relations: readonly PlayerRelation[];
-  readonly seedState: string;          // état sérialisé du RNG (cf. rng.ts)
-}

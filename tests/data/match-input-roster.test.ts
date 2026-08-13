@@ -14,7 +14,7 @@ import {
   makeMatchInputFromSeed,
   rosterForClub,
 } from '@/data/seed.js';
-import type { ClubId, Player } from '@/engine/types.js';
+import type { ClubId, Player, PlayerId } from '@/engine/types.js';
 
 const CLUBS_CSV = [
   'id,name,shortName,city,tier,tacticalIdentity,stadiumCapacity,annualBudget,reputation',
@@ -139,5 +139,114 @@ describe('composition d\'un match auto-simulé', () => {
     const input = makeMatchInputFromSeed(SEED, { homeClubId: 'alpha', awayClubId: 'beta' });
     expect(input.home.squad.starters).toHaveLength(15);
     expect(input.away.squad.starters).toHaveLength(15);
+  });
+});
+
+/**
+ * Ce que la v0.60 y ajoute.
+ *
+ * Trois défauts au même endroit : l'auto-composition ne savait pas qu'un joueur
+ * pouvait être parti en sélection, son repli piochait dans l'effectif brut au
+ * lieu des disponibles (donc réalignait les blessés dès qu'un poste manquait de
+ * candidat), et elle posait deux brassards de capitaine.
+ */
+describe('les absents restent absents', () => {
+  const compo = (unavailable: ReadonlySet<string>) => makeMatchInputFromSeed(SEED, {
+    homeClubId: 'alpha',
+    awayClubId: 'beta',
+    unavailable: unavailable as ReadonlySet<PlayerId>,
+  });
+
+  it('un international parti en sélection ne joue pas avec son club', () => {
+    const titulaire = compo(new Set()).home.squad.starters[0]!.playerId as string;
+    const après = compo(new Set([titulaire])).home;
+
+    expect(après.squad.starters.map(s => s.playerId as string)).not.toContain(titulaire);
+    expect(après.squad.substitutes.map(s => s.playerId as string)).not.toContain(titulaire);
+  });
+
+  it('et l\'absence vaut pour les deux camps, pas seulement le nôtre', () => {
+    const titulaire = compo(new Set()).away.squad.starters[0]!.playerId as string;
+    expect(compo(new Set([titulaire])).away.squad.starters.map(s => s.playerId as string))
+      .not.toContain(titulaire);
+  });
+
+  it('le repli sur un poste dégarni ne rappelle pas un blessé', () => {
+    // Effectif réduit à seize joueurs, dont le seul arrière est sur le flanc :
+    // le repli doit sortir un valide de son poste, jamais rappeler le blessé.
+    const base = rosterForClub(SEED, 'alpha');
+    const seize = POSTES
+      .map(pos => base.find(p => p.position === pos)!)
+      .concat(base.filter(p => p.position === 'AILIER_GAUCHE')[1]!);
+    const arrière = seize.find(p => p.position === 'ARRIERE')!;
+    const provider = (clubId: string): readonly Player[] => (
+      clubId === 'alpha'
+        ? seize.map(p => (p.id === arrière.id
+          ? { ...p, dynamic: { ...p.dynamic, injury: { type: 'FRACTURE' as const, startedAt: 1, estimatedReturnAt: 20, hasSequela: false } } }
+          : p))
+        : rosterForClub(SEED, clubId)
+    );
+
+    const alignés = starterIds('alpha', provider);
+    expect(alignés).toHaveLength(15);
+    expect(alignés).not.toContain(arrière.id as string);
+  });
+});
+
+describe('un effectif décimé se présente quand même', () => {
+  /** Dix-sept joueurs, dont quatre partis en sélection : il en reste treize. */
+  const effectifCourt = (): readonly Player[] =>
+    rosterForClub(SEED, 'alpha').slice(0, 17);
+
+  it('aligne quinze joueurs plutôt que de lever une exception', () => {
+    // V0.60, trouvé en jeu : écarter d'un coup blessés, suspendus et
+    // internationaux d'un effectif déjà creusé descendait sous quinze, et la
+    // journée s'arrêtait sur une exception non rattrapée. La partie était
+    // morte, sans message.
+    const court = effectifCourt();
+    const partis = new Set(court.slice(0, 4).map(p => p.id));
+
+    const input = makeMatchInputFromSeed(SEED, {
+      homeClubId: 'alpha',
+      awayClubId: 'beta',
+      rosterProvider: (clubId) => (clubId === 'alpha' ? court : rosterForClub(SEED, clubId)),
+      unavailable: partis,
+    });
+
+    expect(input.home.squad.starters).toHaveLength(15);
+  });
+
+  it('et rappelle les sélectionnés avant de rappeler les blessés', () => {
+    const court = effectifCourt();
+    const partis = new Set(court.slice(0, 4).map(p => p.id));
+    const blesse = court[16]!;
+    const avecBlesse = court.map(p => (p.id === blesse.id
+      ? { ...p, dynamic: { ...p.dynamic, injury: { type: 'FRACTURE' as const, startedAt: 1, estimatedReturnAt: 20, hasSequela: false } } }
+      : p));
+
+    const input = makeMatchInputFromSeed(SEED, {
+      homeClubId: 'alpha',
+      awayClubId: 'beta',
+      rosterProvider: (clubId) => (clubId === 'alpha' ? avecBlesse : rosterForClub(SEED, clubId)),
+      unavailable: partis,
+    });
+
+    const alignes = input.home.squad.starters.map(s => s.playerId as string);
+    expect(alignes).toHaveLength(15);
+    expect(alignes).not.toContain(blesse.id as string);
+  });
+});
+
+describe('un seul capitaine sur le terrain', () => {
+  it('l\'auto-composition pose un brassard, pas deux', () => {
+    const input = makeMatchInputFromSeed(SEED, { homeClubId: 'alpha', awayClubId: 'beta' });
+    for (const side of [input.home, input.away]) {
+      expect(side.squad.starters.filter(s => s.captainArmband)).toHaveLength(1);
+    }
+  });
+
+  it('et aucun remplaçant ne porte le sien', () => {
+    const input = makeMatchInputFromSeed(SEED, { homeClubId: 'alpha', awayClubId: 'beta' });
+    expect(input.home.squad.substitutes.some(s => s.captainArmband)).toBe(false);
   });
 });

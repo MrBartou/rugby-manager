@@ -3,24 +3,24 @@
  *
  * Modèle simple : un compte courant par club, alimenté par
  *  - une enveloppe annuelle (sponsors + TV, prise sur club.annualBudget)
- *  - des recettes de billetterie à chaque match à domicile
+ *  - des recettes de billetterie à chaque match à domicile, calculées par
+ *    `club-management.ts` pour tous les clubs sans exception
  * et débité par
- *  - la masse salariale (payroll), répartie sur les 26 journées de saison régulière
+ *  - la masse salariale (payroll), répartie sur les journées de saison régulière
  *
  * Pas de banqueroute en V0.6 — le solde peut devenir négatif, c'est juste un warning.
  */
 
-import type { Club, ClubId, ClubTier, Player } from '../types.js';
+import type { Club, ClubId, Player } from '../types.js';
 
-/** Nombre de journées de saison régulière sur lesquelles répartir le payroll. */
+/**
+ * Nombre de journées de saison régulière sur lesquelles répartir le payroll.
+ *
+ * C'est le calendrier du Top 14. La Pro D2 en joue trente : lui appliquer ce
+ * chiffre laissait quatre journées de salaires jamais facturées, soit un cadeau
+ * de 15 % de masse salariale à chaque club de la division.
+ */
 export const REGULAR_ROUNDS = 26;
-
-/** Prix moyen du billet (euros). Constante V0.6, évoluera plus tard. */
-const AVERAGE_TICKET_PRICE = 30;
-
-/** Taux de remplissage minimum (perdants en série) et maximum (champions en forme). */
-const FILL_RATE_FLOOR = 0.55;
-const FILL_RATE_CEIL = 0.98;
 
 export interface ClubFinances {
   /** Solde de trésorerie courante (euros). Peut être négatif. */
@@ -64,9 +64,17 @@ export function computeAnnualPayroll(playersOfClub: readonly Player[]): number {
   return total;
 }
 
-/** Charge salariale pour une journée de saison régulière (annuel / 26). */
-export function computeRoundPayroll(playersOfClub: readonly Player[]): number {
-  return Math.round(computeAnnualPayroll(playersOfClub) / REGULAR_ROUNDS);
+/**
+ * Charge salariale d'une journée de saison régulière : annuel divisé par le
+ * nombre de journées de la division, et non par un 26 valable pour le seul
+ * Top 14.
+ */
+export function computeRoundPayroll(
+  playersOfClub: readonly Player[],
+  regularRounds: number = REGULAR_ROUNDS,
+): number {
+  const rounds = regularRounds > 0 ? regularRounds : REGULAR_ROUNDS;
+  return Math.round(computeAnnualPayroll(playersOfClub) / rounds);
 }
 
 /** Recette annuelle "sponsor + TV" — V0.6 : prise sur annualBudget du club. */
@@ -74,27 +82,15 @@ export function computeAnnualSponsorRevenue(club: Club): number {
   return club.annualBudget;
 }
 
-/**
- * Recette de billetterie d'un match à domicile.
- * fillRate dépend du tier (baseline) et du ratio victoires de la saison.
+/*
+ * V0.60 : `computeMatchRevenue` a disparu.
+ *
+ * Elle vendait le billet trente euros en dur et ignorait le stade, la politique
+ * tarifaire et les derbys, alors que `club-management.ts` savait tout cela
+ * depuis la V0.45 mais ne servait qu'au club dirigé. Deux billetteries pour un
+ * même championnat produisaient des recettes que rien ne rendait comparables.
+ * Tout passe désormais par `matchdayRevenue`.
  */
-export function computeMatchRevenue(
-  club: Club,
-  winsRatioThisSeason: number,
-): number {
-  const baseFill = baselineFillByTier(club.tier);
-  const formBonus = (winsRatioThisSeason - 0.5) * 0.3;            // -0.15 .. +0.15
-  const fill = Math.max(FILL_RATE_FLOOR, Math.min(FILL_RATE_CEIL, baseFill + formBonus));
-  return Math.round(club.stadiumCapacity * fill * AVERAGE_TICKET_PRICE);
-}
-
-function baselineFillByTier(tier: ClubTier): number {
-  switch (tier) {
-    case 'GROS_BUDGET': return 0.92;
-    case 'BUDGET_MOYEN': return 0.78;
-    case 'PETIT_BUDGET': return 0.68;
-  }
-}
 
 // =============================================================================
 // Mutations (renvoient un nouveau ClubFinances, immutable)

@@ -145,6 +145,13 @@ describe('montées et descentes', () => {
         { top14Ranking, proD2Ranking, strengthOf: () => 55 }, createRng(`n${i}`),
       );
       expect(out.barrage!.top14Score).not.toBe(out.barrage!.challengerScore);
+      // V0.60 : le nul se tranchait en retirant trois points au visiteur, ce
+      // qui pouvait afficher un score négatif, et un 0-0 comptait comme une
+      // descente. Le verdict doit toujours se lire dans le score.
+      expect(out.barrage!.challengerScore).toBeGreaterThanOrEqual(0);
+      expect(out.barrage!.top14Score).toBeGreaterThanOrEqual(0);
+      expect(out.barrage!.top14Survives)
+        .toBe(out.barrage!.top14Score > out.barrage!.challengerScore);
     }
   });
 

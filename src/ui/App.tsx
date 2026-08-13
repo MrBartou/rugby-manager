@@ -2,10 +2,12 @@ import { useMemo, useRef, useState } from 'react';
 import {
   autoLineup,
   clearPlayerOverrides,
+  isSeedPlayer,
   listAllPlayersWithOverrides,
   listClubs,
   listRoster,
   makeMatchInput,
+  retiredSeedPlayers,
   setPlayerOverrides,
 } from '../data/seed-browser.js';
 import type { ManualLineup } from '../data/seed-browser.js';
@@ -25,7 +27,11 @@ import {
   type SeasonState,
 } from '../engine/game/season-session.js';
 import { rolloverSeason } from '../engine/season/rollover.js';
-import { runAiMarket, type AiTransfer } from '../engine/club/ai-market.js';
+import {
+  runAiMarket,
+  runAiMarketAcrossDivisions,
+  type AiTransfer,
+} from '../engine/club/ai-market.js';
 import {
   applyBoardVerdict,
   clubStature,
@@ -198,6 +204,7 @@ import {
   capReport,
   jiffReport,
   reviewSeason,
+  countsAsOffence,
   sanctionSummary,
 } from '../engine/club/regulations.js';
 import {
@@ -211,7 +218,7 @@ import {
   newsFromInternationalWindow,
   type NewsFeed,
 } from '../engine/season/news.js';
-import { isWindowOpeningRound } from '../engine/season/transfer-window.js';
+import { isWindowOpeningRound, transferWindowStatus } from '../engine/season/transfer-window.js';
 import { applyMovement as applyFinancesMovement, closeSeason as closeSeasonFinances, initFinancesForAllClubs } from '../engine/club/finances.js';
 import { defaultAcademyLevel, generateFreeAgentPool, generateYouthIntake } from '../engine/club/youth-generation.js';
 import { EMPTY_PROSPECTS, trackProspects, type ProspectRecord } from '../engine/club/academy.js';
@@ -224,6 +231,7 @@ import {
 } from '../engine/club/academy.js';
 import { appendSeason, EMPTY_HISTORY, type CareerHistory, type SeasonRecord } from '../engine/season/records.js';
 import {
+  compactBook,
   EMPTY_BOOK,
   fromLegacyTotals,
   recordSeason,
@@ -244,6 +252,9 @@ import { simulateMatch } from '../engine/match/simulate.js';
 import { createRng } from '../engine/rng.js';
 import {
   buildSeasonSaveFromState,
+  pruneRetiredOverrides,
+  RETIREMENT_GRACE_SEASONS,
+  SaveWriteError,
   generateSeasonSaveId,
   seasonSaveRepository,
 } from '../data/season-save-repository.js';
@@ -913,6 +924,7 @@ export function App() {
         homeClubId: homeId,
         awayClubId: awayId,
         ...weatherForSim(homeId),
+        unavailable: unavailableNow(),
         matchId: `s_${seed}_${homeId}_${awayId}`,
       }),
       playerClubRoster: listRoster(playerClubId),
@@ -921,6 +933,14 @@ export function App() {
       rosterByClub: (cid) => listRoster(cid),
       // V0.58 — le XV de France se recrute dans les deux divisions.
       nationalPool: () => listAllPlayersWithOverrides(),
+      // V0.60 — le vivier des agents libres et le règlement en vigueur, lus par
+      // le moteur à chaque arrivée de joueur.
+      freeAgentPool: () => listAllPlayersWithOverrides().filter(p => p.freeAgent && !p.retired),
+      recruitment: () => ({
+        division: playerDivisionRef.current,
+        transferBan: transferBanRef.current,
+      }),
+      activeLoans: () => loansRef.current,
       nationalPicks: () => nationalPicksRef.current,
       clubDirection: () => ({ facilities: facilitiesRef.current, plan: clubPlanRef.current }),
       wantAwayIds: () => transferRequestsRef.current
@@ -965,7 +985,13 @@ export function App() {
   const loadSeason = async (saveId: string): Promise<void> => {
     const save = await seasonSaveRepository.load(saveId);
     if (!save) return;
-    setPlayerOverrides(save.playerOverrides);
+    // V0.60 : les retraités élagués reviennent depuis les données de base. Sans
+    // cette reconstruction, ils ressusciteraient : absents des overrides, le
+    // CSV les rendrait à nouveau jouables.
+    setPlayerOverrides([
+      ...save.playerOverrides,
+      ...retiredSeedPlayers(save.retiredSeedPlayerIds ?? [], save.currentSeason),
+    ]);
 
     // V0.44 — la division doit être restaurée **avant** de construire la
     // session : c'est elle qui dit quels quatorze clubs composent le
@@ -1007,6 +1033,7 @@ export function App() {
         homeClubId: homeId,
         awayClubId: awayId,
         ...weatherForSim(homeId),
+        unavailable: unavailableNow(),
         matchId: `s_${save.seed}_${homeId}_${awayId}`,
       }),
       playerClubRoster: listRoster(save.playerClubId),
@@ -1015,6 +1042,14 @@ export function App() {
       rosterByClub: (cid) => listRoster(cid),
       // V0.58 — le XV de France se recrute dans les deux divisions.
       nationalPool: () => listAllPlayersWithOverrides(),
+      // V0.60 — le vivier des agents libres et le règlement en vigueur, lus par
+      // le moteur à chaque arrivée de joueur.
+      freeAgentPool: () => listAllPlayersWithOverrides().filter(p => p.freeAgent && !p.retired),
+      recruitment: () => ({
+        division: playerDivisionRef.current,
+        transferBan: transferBanRef.current,
+      }),
+      activeLoans: () => loansRef.current,
       nationalPicks: () => nationalPicksRef.current,
       clubDirection: () => ({ facilities: facilitiesRef.current, plan: clubPlanRef.current }),
       wantAwayIds: () => transferRequestsRef.current
@@ -1060,6 +1095,7 @@ export function App() {
           : {}),
         ...(save.statsMatchCount !== undefined ? { statsMatchCount: save.statsMatchCount } : {}),
         ...(save.caps ? { caps: new Map(save.caps.map(e => [e.playerId, e.record])) } : {}),
+        ...(save.pendingEvents ? { pendingEvents: save.pendingEvents } : {}),
       },
     });
     aiMarketRef.current = save.aiMarket ?? [];
@@ -1076,14 +1112,18 @@ export function App() {
     prospectsRef.current = save.prospects ?? EMPTY_PROSPECTS;
     // V0.44 — une sauvegarde antérieure aux deux étages repart d'un Top 14
     // complet : ses quatorze clubs sont exactement ceux du CSV.
-    vacanciesRef.current = [];
+    vacanciesRef.current = save.vacancies ?? [];
     sanctionedLastSeasonRef.current = save.regulation?.sanctionedLastSeason ?? false;
     transferBanRef.current = save.regulation?.transferBan ?? false;
     repeatOffendersRef.current = new Set(
       (save.regulation?.repeatOffenders ?? []).map(id => id as string),
     );
-    pointsPenaltyByClubRef.current = new Map();
-    pointsPenaltyRef.current = 0;
+    // V0.60 : le retrait de points survit au rechargement. Le classement portait
+    // la sanction, mais plus rien ne disait d'où venaient les points manquants.
+    pointsPenaltyByClubRef.current = new Map(
+      (save.regulation?.pointsPenaltyByClub ?? []).map(e => [e.clubId, e.points]),
+    );
+    pointsPenaltyRef.current = pointsPenaltyByClubRef.current.get(save.playerClubId) ?? 0;
     expectationsRef.current = save.expectations ?? [];
     headToHeadRef.current = new Map(
       (save.headToHead ?? []).map(e => [e.clubId as string, e.record]),
@@ -1097,6 +1137,9 @@ export function App() {
     // reconstitue, plutôt que de laisser le championnat anonyme.
     honoursRef.current = save.honours ?? [];
     // V0.59 — le registre, ou sa reconstitution depuis l'ancien cumul.
+    nationalPicksRef.current = save.nationalPicks
+      ? { added: [...save.nationalPicks.added], removed: [...save.nationalPicks.removed] }
+      : { added: [], removed: [] };
     careerBookRef.current = save.careerBook
       ? new Map(save.careerBook.map(e => [e.playerId, e.career]))
       : fromLegacyTotals(
@@ -1149,18 +1192,29 @@ export function App() {
     const prefix = kind === 'auto' ? '⟲ Auto · ' : '';
     const displayName = `${prefix}${playerClub?.shortName ?? state.playerClubId} • ${seasonLabel} • ${phaseLabel}`;
     try {
+      // V0.60 : les retraités de longue date sortent de la sauvegarde, réduits
+      // à leur identifiant quand les données de base savent les reconstruire.
+      // Sans cela, vingt saisons de retraites suffisaient à faire heurter le
+      // quota du navigateur, et la partie mourait d'un stockage plein.
+      const elagage = pruneRetiredOverrides(
+        listAllPlayersWithOverrides(),
+        state.currentSeason,
+        isSeedPlayer,
+      );
+
       await seasonSaveRepository.save(buildSeasonSaveFromState(
         saveId,
         state,
         seasonSeedRef.current,
         clubs.map(c => c.id),
         displayName,
-        listAllPlayersWithOverrides(),
+        elagage.overrides,
         careerHistoryRef.current,
         reputationRef.current,
         objectiveRef.current ?? undefined,
         confidenceRef.current,
         {
+          retiredSeedPlayerIds: elagage.retiredSeedPlayerIds,
           aiMarket: aiMarketRef.current,
           ...(winterMarketRef.current !== null ? { winterMarketSeason: winterMarketRef.current } : {}),
           news: newsRef.current.items,
@@ -1171,12 +1225,25 @@ export function App() {
           managerContract: contractRef.current,
           prospects: prospectsRef.current,
           divisions: divisionsRef.current,
-          careerBook: [...careerBookRef.current].map(([playerId, career]) => ({ playerId, career })),
+          // V0.60 : les carrières achevées sont repliées en une ligne par club.
+          // Leur détail saison par saison ne s'affiche plus nulle part, et les
+          // totaux comme les records se dérivent de la somme des lignes, qui
+          // est préservée à l'unité près.
+          careerBook: [...compactBook(
+            careerBookRef.current,
+            state.currentSeason,
+            RETIREMENT_GRACE_SEASONS,
+          )].map(([playerId, career]) => ({ playerId, career })),
+          nationalPicks: nationalPicksRef.current,
           regulation: {
             sanctionedLastSeason: sanctionedLastSeasonRef.current,
             transferBan: transferBanRef.current,
             repeatOffenders: [...repeatOffendersRef.current].map(id => id as ClubId),
+            pointsPenaltyByClub: [...pointsPenaltyByClubRef.current]
+              .map(([clubId, points]) => ({ clubId, points })),
           },
+          vacancies: vacanciesRef.current,
+          pendingEvents: state.pendingEvents,
           expectations: expectationsRef.current,
           headToHead: [...headToHeadRef.current].map(([clubId, record]) => ({
             clubId: clubId as ClubId, record,
@@ -1205,9 +1272,15 @@ export function App() {
       // L'auto-save est silencieuse : la signaler à chaque journée serait du bruit.
       if (kind === 'manual') notify('Partie sauvegardée', 'success');
       setTimeout(() => setSeasonSaveStatus('idle'), 2500);
-    } catch {
+    } catch (e) {
       setSeasonSaveStatus('error');
-      notify('Échec de la sauvegarde', 'warn');
+      // V0.60 : dire la cause et le remède. « Échec de la sauvegarde » laissait
+      // le joueur sans la moindre piste, et le stockage plein est de loin la
+      // cause la plus fréquente.
+      notify(
+        e instanceof SaveWriteError ? e.message : 'Échec de la sauvegarde.',
+        'warn',
+      );
     }
   };
 
@@ -1221,8 +1294,13 @@ export function App() {
     const state = session.getState();
     if (state.phase !== 'over') return;
 
-    // V0.9 — Archive la saison qui se termine dans l'historique de carrière
-    if (state.champion) {
+    // V0.9 — Archive la saison qui se termine dans l'historique de carrière.
+    //
+    // V0.60 : tout ce bloc était sous un `if (state.champion)`. Une saison
+    // close sans titre décerné ne laissait donc aucune trace : ni ligne au
+    // parcours, ni verdict du président, ni réputation mise à jour, ni mail. Le
+    // manager passait une année entière pour rien, sans que rien ne l'explique.
+    {
       const ranking = [...state.standings.values()].sort((a, b) => {
         if (b.leaguePoints !== a.leaguePoints) return b.leaguePoints - a.leaguePoints;
         return (b.pointsFor - b.pointsAgainst) - (a.pointsFor - a.pointsAgainst);
@@ -1231,8 +1309,11 @@ export function App() {
       // Détecter le runner-up : finale = dernière entrée history avec round = FINAL
       const finalMatches = state.history.filter(h => h.round === state.playoffRounds.FINAL);
       const finalMatch = finalMatches.length > 0 ? finalMatches[finalMatches.length - 1] : undefined;
-      const runnerUp = finalMatch
-        ? (finalMatch.homeScore > finalMatch.awayScore ? finalMatch.awayClubId : finalMatch.homeClubId)
+      // Le finaliste, c'est celui des deux qui n'a pas le titre : le déduire du
+      // score se trompait sur une finale nulle, que le règlement tranche au
+      // classement de la saison régulière.
+      const runnerUp = finalMatch && state.champion
+        ? (finalMatch.homeClubId === state.champion ? finalMatch.awayClubId : finalMatch.homeClubId)
         : undefined;
       // Top scorer de la saison côté club joueur
       const playerRoster = state.playerClubRoster;
@@ -1245,7 +1326,7 @@ export function App() {
       const topScorerPlayer = topScorerEntry ? playerRoster.find(p => p.id === topScorerEntry!.playerId) : undefined;
       const seasonRecord: SeasonRecord = {
         seasonStart: state.currentSeason,
-        champion: state.champion,
+        ...(state.champion !== undefined ? { champion: state.champion } : {}),
         ...(runnerUp ? { runnerUp } : {}),
         playerClubFinalRank: playerRank > 0 ? playerRank : 0,
         playerClubReachedFinal: state.history.some(h => h.round === state.playoffRounds.FINAL && (h.homeClubId === state.playerClubId || h.awayClubId === state.playerClubId)),
@@ -1275,7 +1356,7 @@ export function App() {
       // V0.9 Phase 2 — update réputation manager
       reputationRef.current = updateReputation(reputationRef.current, {
         playerClubId: state.playerClubId,
-        champion: state.champion,
+        ...(state.champion !== undefined ? { champion: state.champion } : {}),
         playerClubReachedFinal: seasonRecord.playerClubReachedFinal,
         playerClubFinalRank: seasonRecord.playerClubFinalRank,
         objectiveMet,
@@ -1392,6 +1473,13 @@ export function App() {
       seed: seasonSeedRef.current,
       development: withLoanMinutes,
     });
+    // V0.60 : on retient qui était prêté **avant** de vider la liste.
+    //
+    // Le registre de carrière lit cette information plus bas, pour marquer la
+    // ligne de saison d'un joueur parti jouer ailleurs. Elle était vidée ici,
+    // trois cents lignes plus haut : le marqueur n'a jamais été posé depuis son
+    // introduction en v0.59.
+    const pretsDeLaSaison = loansRef.current;
     loansRef.current = [];
     setLoanEpoch(e => e + 1);
     developmentReportsRef.current = rollover.developmentReports;
@@ -1402,7 +1490,14 @@ export function App() {
     // V0.39 — le centre du club utilisateur suit son investissement ; les clubs
     // IA gardent le niveau dicté par leur taille.
     const playerAcademy = academyRef.current;
-    for (const club of clubs) {
+    // V0.60 : les deux divisions reçoivent leur promotion de jeunes.
+    //
+    // La boucle ne parcourait que la division du manager, alors que le
+    // vieillissement et les retraites frappent tout le monde. La division qu'on
+    // ne joue pas perdait donc des joueurs chaque saison sans jamais en
+    // recevoir : au bout de quelques années elle était exsangue, et la remontée
+    // se jouait contre des fantômes.
+    for (const club of allClubs) {
       const isMine = club.id === state.playerClubId;
       const intake = generateYouthIntake({
         club,
@@ -1544,7 +1639,8 @@ export function App() {
       });
       if (verdicts.length === 0) continue;
 
-      nextRepeat.add(club.id as string);
+      // V0.60 : seul un verdict qui sanctionne vraiment fait un antécédent.
+      if (verdicts.some(countsAsOffence)) nextRepeat.add(club.id as string);
       const points = verdicts.reduce((n, x) => n + x.pointsDeducted, 0);
       if (points > 0) penalties.set(club.id, points);
       if (verdicts.some(x => x.transferBan)) bannedClubs.add(club.id);
@@ -1597,16 +1693,24 @@ export function App() {
     // trésorerie de l'an dernier. Et après la promotion des jeunes, pour qu'un
     // club qui vient de faire monter un espoir n'aille pas acheter un doublon
     // au même poste.
-    const aiMarket = runAiMarket({
-      players: playersAfterIntake,
-      clubs,
-      playerClubId: state.playerClubId,
-      balanceByClub: new Map([...closedFinances].map(([id, f]) => [id, f.balance])),
-      currentSeason: rollover.newSeason,
-      rankedClubIds: session.getRanking().map(s => s.clubId),
+    // V0.60 : le mercato tourne dans les deux divisions, chacune avec son
+    // plafond salarial. La logique vit dans le moteur, où elle est testable.
+    const aiMarket = runAiMarketAcrossDivisions({
       seed: seasonSeedRef.current,
-      division: playerDivisionRef.current,
-      transferBannedClubs: bannedClubs,
+      base: {
+        players: playersAfterIntake,
+        playerClubId: state.playerClubId,
+        balanceByClub: new Map([...closedFinances].map(([id, f]) => [id, f.balance])),
+        currentSeason: rollover.newSeason,
+        rankedClubIds: session.getRanking().map(s => s.clubId),
+        transferBannedClubs: bannedClubs,
+      },
+      byDivision: (['TOP14', 'PRO_D2'] as const).map(division => ({
+        division,
+        clubs: clubsOfDivision(divisionsRef.current, division)
+          .map(id => allClubs.find(c => c.id === id))
+          .filter((c): c is Club => c !== undefined),
+      })),
     });
     commitRoster(aiMarket.players);
     aiMarketRef.current = aiMarket.transfers;
@@ -1652,10 +1756,24 @@ export function App() {
       if (p.retired || p.freeAgent) continue;
       countByClub.set(p.clubId as string, (countByClub.get(p.clubId as string) ?? 0) + 1);
     }
+    /**
+     * Force moyenne d'un club, pour le championnat qu'on ne joue pas.
+     *
+     * V0.60 : le repli valait 50, soit un club parfaitement moyen. Il masquait
+     * exactement le défaut corrigé plus haut : une division privée de jeunes et
+     * de mercato finissait par se vider, et ses clubs sans joueur continuaient
+     * d'afficher un niveau honorable au classement fantôme.
+     *
+     * On garde un repli, car un effectif vide donnerait une division par zéro
+     * et un classement de `NaN`, mais il vient désormais de la réputation du
+     * club. Un club exsangue ne se fait plus passer pour un club moyen. Depuis
+     * que les deux divisions sont alimentées, ce repli ne devrait plus servir.
+     */
     const strengthOf = (clubId: ClubId): number => {
       const total = playersByClub.get(clubId as string);
       const n = countByClub.get(clubId as string);
-      return total !== undefined && n ? total / n : 50;
+      if (total !== undefined && n) return total / n;
+      return allClubs.find(c => c.id === clubId)?.reputation ?? 40;
     };
 
     const shadowRanking = shadowSeason(
@@ -1734,6 +1852,7 @@ export function App() {
         homeClubId: homeId,
         awayClubId: awayId,
         ...weatherForSim(homeId),
+        unavailable: unavailableNow(),
         matchId: `s_${newSeed}_${homeId}_${awayId}`,
       }),
       playerClubRoster: listRoster(state.playerClubId),
@@ -1742,6 +1861,14 @@ export function App() {
       rosterByClub: (cid) => listRoster(cid),
       // V0.58 — le XV de France se recrute dans les deux divisions.
       nationalPool: () => listAllPlayersWithOverrides(),
+      // V0.60 — le vivier des agents libres et le règlement en vigueur, lus par
+      // le moteur à chaque arrivée de joueur.
+      freeAgentPool: () => listAllPlayersWithOverrides().filter(p => p.freeAgent && !p.retired),
+      recruitment: () => ({
+        division: playerDivisionRef.current,
+        transferBan: transferBanRef.current,
+      }),
+      activeLoans: () => loansRef.current,
       nationalPicks: () => nationalPicksRef.current,
       clubDirection: () => ({ facilities: facilitiesRef.current, plan: clubPlanRef.current }),
       wantAwayIds: () => transferRequestsRef.current
@@ -1830,7 +1957,7 @@ export function App() {
     // pas plus tôt, parce qu'il faut les honneurs : une ligne de saison porte
     // aussi les titres individuels.
     (() => {
-      const enLoan = new Set(loansRef.current.map(l => l.playerId as string));
+      const enLoan = new Set(pretsDeLaSaison.map(l => l.playerId as string));
       const entries: SeasonEntry[] = [];
       for (const player of listAllPlayersWithOverrides()) {
         const stat = state.seasonPlayerStats.get(player.id);
@@ -1980,12 +2107,17 @@ export function App() {
     refillVacantBenches(state.currentSeason, offers.map(o => o.clubId));
     setPendingOffers(offers);
 
-    // V0.59 — la fédération, elle, n'écrit pas tous les ans. Le poste ne se
-    // cumule pas : la lettre le dit franchement, sans quoi ce serait un piège
-    // et non une proposition.
+    // La fédération n'écrit pas tous les ans. Le poste ne se cumule pas : la
+    // lettre le dit franchement, sans quoi ce serait un piège et non une
+    // proposition.
+    //
+    // V0.60 : le banc s'ouvre une saison sur deux, contre une sur quatre
+    // auparavant. Avec quatre saisons de métier et un titre exigés, la première
+    // fenêtre atteignable tombait en 2032, soit huit saisons de carrière. Un
+    // poste qu'on ne voit jamais n'existe pas.
     if (federationApproaches({
       reputation: reputationRef.current,
-      vacant: (state.currentSeason - 2024) % 4 === 0,
+      vacant: (state.currentSeason - 2024) % 2 === 0,
       alreadyInPost: careerRef.current.kind === 'SELECTIONNEUR',
     })) {
       const clubActuel = careerRef.current.kind === 'EN_POSTE'
@@ -2830,7 +2962,7 @@ export function App() {
     const session = seasonRef.current;
     if (!session) return;
     const state = session.getState();
-    if (!isWindowOpeningRound(state.currentRound, 'HIVERNAL')) return;
+    if (!isWindowOpeningRound(state.currentRound, 'HIVERNAL', state.calendar.totalRounds)) return;
     if (winterMarketRef.current === state.currentSeason) return;
     winterMarketRef.current = state.currentSeason;
 
@@ -3187,6 +3319,7 @@ export function App() {
       homeClubId: ctx.homeClubId,
       awayClubId: ctx.awayClubId,
       matchId: `r_${ctx.seed}`,
+      unavailable: unavailableNow(),
       homeFans: crowdForHomeMatch(ctx.homeClubId, isHomeForPlayer),
       ...ctx.conditions,
       // Le joueur fournit sa compo : si HOME, on l'applique côté HOME, sinon côté AWAY
@@ -3309,6 +3442,7 @@ export function App() {
       homeClubId: playerMatch.homeClubId,
       awayClubId: playerMatch.awayClubId,
       matchId: `auto_${state.currentRound}`,
+      unavailable: unavailableThisRound(state),
       homeFans: crowdForHomeMatch(
         playerMatch.homeClubId as string,
         playerMatch.homeClubId === state.playerClubId,
@@ -3398,30 +3532,6 @@ export function App() {
       if (offers.length > 0) {
         setPendingOffers(offers);
 
-    // V0.59 — la fédération, elle, n'écrit pas tous les ans. Le poste ne se
-    // cumule pas : la lettre le dit franchement, sans quoi ce serait un piège
-    // et non une proposition.
-    if (federationApproaches({
-      reputation: reputationRef.current,
-      vacant: (state.currentSeason - 2024) % 4 === 0,
-      alreadyInPost: careerRef.current.kind === 'SELECTIONNEUR',
-    })) {
-      const clubActuel = careerRef.current.kind === 'EN_POSTE'
-        ? allClubs.find(c => c.id === (careerRef.current as { clubId: ClubId }).clubId)?.name
-        : undefined;
-      setNationalOffer({
-        season: state.currentSeason,
-        letter: federationLetter(reputationRef.current, clubActuel),
-      });
-      sendMail([{
-        season: state.currentSeason,
-        round: 0,
-        sender: 'FEDERATION',
-        subject: 'Le banc du XV de France vous est proposé',
-        body: federationLetter(reputationRef.current, clubActuel),
-        importance: 'HAUTE',
-      }]);
-    }
         sendMail([mailJobOffers({
           season: state.currentSeason,
           clubNames: offers.map(o => o.clubName),
@@ -3550,21 +3660,47 @@ export function App() {
   };
 
   /** Pour V0.4 phase 1 : ratio simplifié — supposé 1.0 pour titulaires auto-pickés. */
+  /**
+   * Part de matchs réellement disputés, par joueur.
+   *
+   * V0.60 : ce ratio était **factice**. Il valait 0,85 pour un titulaire de la
+   * composition automatique du jour, 0,45 pour un remplaçant et 0,1 pour les
+   * autres, alors que le compte réel des matchs existe depuis la v0.9 et
+   * survit au rechargement depuis la v0.58.
+   *
+   * Ce n'était pas un détail d'affichage : ce nombre décide du moral (source
+   * « statut dans l'équipe »), des verdicts de hiérarchie, du pronostic d'une
+   * conversation, de l'agenda du manager et de qui peut partir en prêt. Un
+   * cadre blessé six mois passait pour un titulaire heureux parce qu'il
+   * figurait dans la compo auto du jour.
+   *
+   * Le dénominateur est le nombre de matchs du club effectivement comptabilisés,
+   * pas la journée courante : une trêve ou un report ne doit pas faire passer
+   * tout le monde pour un remplaçant.
+   */
   const playRatioByPlayerForPlayerClub = (): ReadonlyMap<string, number> => {
-    // V0.4 phase 1 : on n'a pas encore le tracking de qui a joué chaque match.
-    // On retourne un ratio uniforme de 0.6 (rotation "moyenne") + bump pour les
-    // joueurs qui sont dans l'auto-lineup actuel.
     const map = new Map<string, number>();
     if (!seasonState) return map;
-    const lineup = autoLineup(seasonState.playerClubId);
-    const starterIds = new Set(lineup.starters.map(s => s.playerId));
-    const subIds = new Set(lineup.substitutes);
+    const played = seasonState.statsMatchCount;
     const roster = listRoster(seasonState.playerClubId);
+
+    // Avant le premier match de la saison, aucun temps de jeu n'est constaté.
+    // On se rabat alors sur l'intention du manager, faute de mieux : la
+    // composition automatique dit qui il compte aligner.
+    if (played === 0) {
+      const lineup = autoLineup(seasonState.playerClubId);
+      const starterIds = new Set(lineup.starters.map(s => s.playerId));
+      const subIds = new Set(lineup.substitutes);
+      for (const p of roster) {
+        const id = p.id as string;
+        map.set(id, starterIds.has(id) ? 0.85 : subIds.has(id) ? 0.45 : 0.1);
+      }
+      return map;
+    }
+
     for (const p of roster) {
-      const id = p.id as string;
-      if (starterIds.has(id)) map.set(id, 0.85);
-      else if (subIds.has(id)) map.set(id, 0.45);
-      else map.set(id, 0.1);
+      const matches = seasonState.seasonPlayerStats.get(p.id)?.matches ?? 0;
+      map.set(p.id as string, Math.min(1, matches / played));
     }
     return map;
   };
@@ -3631,6 +3767,19 @@ export function App() {
   };
 
   /**
+   * V0.60 : les indisponibles du moment, pour toute rencontre auto-simulée.
+   *
+   * Le groupe France est tiré des deux divisions, donc cet ensemble vaut pour
+   * tous les clubs, pas seulement le nôtre : les autres perdent eux aussi leurs
+   * internationaux la journée de trêve.
+   */
+  const unavailableNow = (): ReadonlySet<PlayerId> => (
+    seasonRef.current
+      ? unavailableThisRound(seasonRef.current.getState())
+      : new Set<PlayerId>()
+  );
+
+  /**
    * V0.55 — envoie un joueur jouer ailleurs pour la saison.
    *
    * Le prêt est un arbitrage, pas un rangement : on gagne un joueur formé dans
@@ -3641,6 +3790,15 @@ export function App() {
     const session = seasonRef.current;
     if (!session) return;
     const state = session.getState();
+
+    // V0.60 : un prêt est un mouvement de joueur comme un autre. Le conclure
+    // pendant les barrages, quand le marché est fermé depuis des mois, était
+    // une porte de sortie que personne n'a jamais eue.
+    const marché = transferWindowStatus(state.currentRound, state.calendar.totalRounds);
+    if (!marché.open) {
+      notify(`Prêt impossible : ${marché.summary.toLowerCase()}.`, 'warn');
+      return;
+    }
 
     loansRef.current = [
       ...loansRef.current.filter(l => l.playerId !== player.id),
@@ -3724,6 +3882,7 @@ export function App() {
         homeClubId: homeId,
         awayClubId: awayId,
         ...weatherForSim(homeId),
+        unavailable: unavailableNow(),
         matchId: `s_${seed}_${homeId}_${awayId}`,
       }),
       playerClubRoster: listRoster(offer.clubId as string),
@@ -3732,6 +3891,14 @@ export function App() {
       rosterByClub: (cid) => listRoster(cid),
       // V0.58 — le XV de France se recrute dans les deux divisions.
       nationalPool: () => listAllPlayersWithOverrides(),
+      // V0.60 — le vivier des agents libres et le règlement en vigueur, lus par
+      // le moteur à chaque arrivée de joueur.
+      freeAgentPool: () => listAllPlayersWithOverrides().filter(p => p.freeAgent && !p.retired),
+      recruitment: () => ({
+        division: playerDivisionRef.current,
+        transferBan: transferBanRef.current,
+      }),
+      activeLoans: () => loansRef.current,
       nationalPicks: () => nationalPicksRef.current,
       clubDirection: () => ({ facilities: facilitiesRef.current, plan: clubPlanRef.current }),
       wantAwayIds: () => transferRequestsRef.current
@@ -4115,7 +4282,7 @@ export function App() {
             Le Quinze
           </h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span className="alpha-tag">Alpha V0.10</span>
+            <span className="alpha-tag">Alpha v{__APP_VERSION__}</span>
           </div>
         </header>
       )}
@@ -4123,7 +4290,13 @@ export function App() {
       {screen.kind === 'title' && (
         <TitleScreen
           onNewCareer={() => setScreen({ kind: 'season-setup' })}
-          onContinue={(saveId) => loadSeason(saveId)}
+          onContinue={(saveId) => {
+            // Une promesse sans `catch` casse le rendu sans rien dire : le
+            // joueur reste sur l'écran titre, persuadé que son clic est passé.
+            void loadSeason(saveId).catch(() => {
+              notify('Cette partie n\'a pas pu être chargée.', 'warn');
+            });
+          }}
           onFreeMatch={() => setScreen({ kind: 'match-setup' })}
         />
       )}
@@ -4239,7 +4412,14 @@ export function App() {
       )}
 
       {screen.kind === 'standings' && seasonState && renderInGame(
-        <StandingsScreen state={seasonState} clubs={clubs} division={playerDivisionRef.current} />
+        <StandingsScreen
+          state={seasonState}
+          clubs={clubs}
+          division={playerDivisionRef.current}
+          pointsPenalties={new Map(
+            [...pointsPenaltyByClubRef.current].map(([clubId, points]) => [clubId as string, points]),
+          )}
+        />
       )}
 
       {screen.kind === 'squad' && seasonState && renderInGame(

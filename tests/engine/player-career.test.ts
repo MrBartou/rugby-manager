@@ -13,6 +13,8 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  compactBook,
+  compactCareer,
   EMPTY_BOOK,
   careerTotals,
   clubLeaders,
@@ -176,5 +178,49 @@ describe('la reprise d\'un cumul antérieur', () => {
     expect(fromLegacyTotals([
       { playerId: 'x' as PlayerId, playerName: 'X', clubId: TOULOUSE, tries: 0, matches: 0 },
     ], 2027).size).toBe(0);
+  });
+});
+
+describe('le repli d\'une carrière achevée', () => {
+  it('résume chaque club en une ligne sans rien perdre des totaux', () => {
+    // V0.60 : le registre garde une ligne par saison pour tout le rugby
+    // français. Sur vingt saisons, il pèse autant que la base joueurs dans une
+    // sauvegarde bornée par les cinq mégaoctets du navigateur.
+    const complete = recordSeason(book(), 2028, [entry({ clubId: PAU, matches: 20, tries: 3, caps: 0 })])
+      .get('p1' as PlayerId)!;
+    const replie = compactCareer(complete);
+
+    expect(replie.lines).toHaveLength(2);
+    expect(careerTotals(replie)).toEqual(careerTotals(complete));
+    expect(totalsAtClub(replie, TOULOUSE)).toEqual(totalsAtClub(complete, TOULOUSE));
+  });
+
+  it('garde la première saison sous chaque maillot', () => {
+    const replie = compactCareer(book().get('p1' as PlayerId)!);
+    expect(replie.lines[0]!.season).toBe(2025);
+  });
+
+  it('ne perd pas les distinctions', () => {
+    const avecTitres = recordSeason(book(), 2028, [entry({ honours: ['XV type'] })])
+      .get('p1' as PlayerId)!;
+    expect(compactCareer(avecTitres).lines[0]!.honours).toContain('XV type');
+  });
+
+  it('ne touche pas à une carrière en cours', () => {
+    // C'est son détail saison par saison qui fait l'intérêt de la fiche.
+    const livre = compactBook(book(), 2028, 3);
+    expect(livre.get('p1' as PlayerId)!.lines).toHaveLength(3);
+  });
+
+  it('replie celle qui n\'a plus rien produit depuis longtemps', () => {
+    const livre = compactBook(book(), 2035, 3);
+    expect(livre.get('p1' as PlayerId)!.lines).toHaveLength(1);
+    expect(careerTotals(livre.get('p1' as PlayerId))).toEqual(careerTotals(book().get('p1' as PlayerId)));
+  });
+
+  it('et les records de club restent les mêmes', () => {
+    const avant = clubLeaders(book(), TOULOUSE, 'tries', 3);
+    const apres = clubLeaders(compactBook(book(), 2035, 3), TOULOUSE, 'tries', 3);
+    expect(apres).toEqual(avant);
   });
 });
