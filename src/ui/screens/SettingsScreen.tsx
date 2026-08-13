@@ -18,6 +18,7 @@
 
 import type { Settings, MatchSpeed, TextScale } from '../settings.js';
 import { systemPrefersReducedMotion } from '../settings.js';
+import { Interrupteur } from '../components/Interrupteur.js';
 
 interface Props {
   readonly settings: Settings;
@@ -39,35 +40,6 @@ const SCALES: readonly { readonly value: TextScale; readonly label: string }[] =
   { value: 'GRAND', label: 'Grand' },
   { value: 'TRES_GRAND', label: 'Très grand' },
 ];
-
-/**
- * L'interrupteur.
- *
- * L'`input` reste sous le rail dessiné : il porte le clavier, le libellé pour
- * les lecteurs d'écran et l'état coché. Redessiner un contrôle ne doit jamais
- * revenir à en construire un qui n'obéit qu'à la souris.
- */
-function Interrupteur({
-  checked, onChange, label, disabled,
-}: {
-  readonly checked: boolean;
-  readonly onChange: (value: boolean) => void;
-  readonly label: string;
-  readonly disabled?: boolean;
-}) {
-  return (
-    <span className="switch">
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled ?? false}
-        aria-label={label}
-        onChange={e => onChange(e.target.checked)}
-      />
-      <span className="switch-rail" aria-hidden />
-    </span>
-  );
-}
 
 export function SettingsScreen({ settings, onChange, onBack }: Props) {
   const set = <K extends keyof Settings>(key: K, value: Settings[K]): void =>
