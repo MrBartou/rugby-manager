@@ -136,6 +136,7 @@ import {
   matchdayRevenue,
 } from '../club/club-management.js';
 import { loanWageReliefPerRound } from '../club/loans.js';
+import { rateMatch } from '../match/player-rating.js';
 import { canRegister, type SigningCheck } from '../club/regulations.js';
 import { attendanceBonus, rivalryBetween } from '../season/rivalries.js';
 import {
@@ -195,6 +196,22 @@ export interface SeasonPlayerStat {
   readonly turnovers: number;
   readonly defendersBeaten: number;
   readonly lineBreaks: number;
+  /**
+   * V0.61 — somme des notes de match, et nombre de matchs notés.
+   *
+   * On garde la somme et le compte plutôt que la moyenne : une moyenne
+   * stockée ne se met pas à jour sans se dénaturer, et la note de saison est
+   * une dérivée comme les autres. Facultatifs pour qu'une sauvegarde
+   * antérieure se charge sans mentir sur ce qu'elle contient.
+   */
+  readonly ratingSum?: number;
+  readonly ratedMatches?: number;
+}
+
+/** Note moyenne d'un joueur sur la saison, ou `undefined` s'il n'a pas été noté. */
+export function averageRating(stat: SeasonPlayerStat | undefined): number | undefined {
+  if (!stat?.ratedMatches) return undefined;
+  return Math.round(((stat.ratingSum ?? 0) / stat.ratedMatches) * 10) / 10;
 }
 
 export interface SeasonState {
@@ -771,6 +788,7 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
     stat: IndividualMatchStats | undefined,
     countMatch: boolean,
     fallbackMinutes = 0,
+    rating?: number,
   ): void {
     const cur = into.get(id) ?? EMPTY_STAT;
     into.set(id, {
@@ -782,7 +800,34 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
       turnovers: cur.turnovers + (stat?.turnoversWon ?? 0),
       defendersBeaten: cur.defendersBeaten + (stat?.defendersBeaten ?? 0),
       lineBreaks: cur.lineBreaks + (stat?.lineBreaks ?? 0),
+      ...(rating !== undefined ? {
+        ratingSum: (cur.ratingSum ?? 0) + rating,
+        ratedMatches: (cur.ratedMatches ?? 0) + 1,
+      } : {
+        ...(cur.ratingSum !== undefined ? { ratingSum: cur.ratingSum } : {}),
+        ...(cur.ratedMatches !== undefined ? { ratedMatches: cur.ratedMatches } : {}),
+      }),
     });
+  }
+
+  /**
+   * V0.61 — les notes d'une rencontre, prêtes à être cumulées.
+   *
+   * La note de saison est une moyenne de notes de match : elle se calcule donc
+   * au moment où le match est encore entier, pas après coup sur des cumuls qui
+   * auraient perdu le découpage par rencontre.
+   */
+  function ratingsOf(result: MatchResult, input: MatchInput): ReadonlyMap<PlayerId, number> {
+    const camp = (side: MatchInput['home']): readonly Player[] =>
+      [...side.squad.starters, ...side.squad.substitutes]
+        .map(e => input.playersById.get(e.playerId))
+        .filter((p): p is Player => p !== undefined);
+    const diff = result.homeScore - result.awayScore;
+    const { byPlayer } = rateMatch([
+      { players: camp(input.home), pointsDifference: diff },
+      { players: camp(input.away), pointsDifference: -diff },
+    ], result.individualStats);
+    return new Map([...byPlayer].map(([id, note]) => [id, note.rating]));
   }
 
   /**
@@ -793,28 +838,35 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
    */
   function accumulateLeagueStats(result: MatchResult, input: MatchInput): void {
     const next = new Map(seasonPlayerStats);
+    const notes = ratingsOf(result, input);
     for (const side of [input.home, input.away]) {
       if (side.squad.clubId === opts.playerClubId) continue;
       const starters = new Set(side.squad.starters.map(e => e.playerId));
-      for (const id of starters) addStat(next, id, result.individualStats.get(id), true, 80);
+      for (const id of starters) {
+        addStat(next, id, result.individualStats.get(id), true, 80, notes.get(id));
+      }
       for (const [id, stat] of result.individualStats.entries()) {
         if (starters.has(id)) continue;
         if (!side.squad.substitutes.some(e => e.playerId === id)) continue;
         if (stat.minutesPlayed <= 0 && stat.tries <= 0) continue;
-        addStat(next, id, stat, stat.minutesPlayed > 0);
+        addStat(next, id, stat, stat.minutesPlayed > 0, 0, notes.get(id));
       }
     }
     seasonPlayerStats = next;
   }
 
-  function accumulatePlayerStats(result: MatchResult, starterIds: readonly PlayerId[]): void {
+  function accumulatePlayerStats(
+    result: MatchResult,
+    starterIds: readonly PlayerId[],
+    notes: ReadonlyMap<PlayerId, number> = new Map(),
+  ): void {
     const next = new Map(seasonPlayerStats);
     const starterSet = new Set(starterIds);
     // V0.56 — le dénominateur du temps de jeu se compte ici, avec le numérateur.
     statsMatchCount++;
 
     for (const id of starterIds) {
-      addStat(next, id, result.individualStats.get(id), true, 80);
+      addStat(next, id, result.individualStats.get(id), true, 80, notes.get(id));
     }
 
     // V0.14 : les remplaçants entrés en jeu comptent eux aussi — c'est le banc
@@ -822,7 +874,7 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
     for (const [id, stat] of result.individualStats.entries()) {
       if (starterSet.has(id)) continue;
       if (stat.minutesPlayed <= 0 && stat.tries <= 0) continue;
-      addStat(next, id, stat, stat.minutesPlayed > 0);
+      addStat(next, id, stat, stat.minutesPlayed > 0, 0, notes.get(id));
     }
 
     seasonPlayerStats = next;
@@ -1882,7 +1934,19 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
 
       // V0.9 : cumul des stats joueurs (essais)
       if (starterIds && starterIds.length > 0) {
-        accumulatePlayerStats(result, starterIds);
+        // V0.61 : la note de chaque joueur du club dirigé. Seul son effectif
+        // est cumulé ici, l'adversaire l'ayant déjà été par le championnat.
+        const chezNous = playerMatch.homeClubId === opts.playerClubId;
+        const ecart = chezNous ? homeScore - awayScore : awayScore - homeScore;
+        const { byPlayer } = rateMatch(
+          [{ players: playerClubRoster, pointsDifference: ecart }],
+          result.individualStats,
+        );
+        accumulatePlayerStats(
+          result,
+          starterIds,
+          new Map([...byPlayer].map(([id, note]) => [id, note.rating])),
+        );
       }
 
       // V0.4 : évolution des relations entre titulaires

@@ -105,6 +105,7 @@ describe('tout ce qu\'on confie à la sauvegarde en ressort', () => {
     headToHead: [],
     nationalPicks: { added: ['a_9' as PlayerId], removed: ['a_1' as PlayerId] },
     vacancies: ['b' as ClubId],
+    shortlist: [{ playerId: 'b_3' as PlayerId, clubId: 'b' as ClubId }],
     retiredSeedPlayerIds: ['a_0' as PlayerId],
     pendingEvents: [{
       id: 'evt_1', type: 'CONFLIT_VESTIAIRE', atRound: 12,

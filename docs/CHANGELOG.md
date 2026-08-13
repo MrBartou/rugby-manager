@@ -2,6 +2,46 @@
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/). Versions sémantiques.
 
+## [V0.61] : La donnée parle
+
+Le moteur capture treize statistiques individuelles par rencontre depuis la
+V0.13. Elles n'ont jamais servi qu'à des agrégats de fin de saison. Après un
+match, le manager lisait un score, un récit, et rien qui lui dise qui avait tenu
+son poste. Le meilleur rapport entre l'effort et l'effet du rattrapage : la
+donnée existe déjà, il manquait de quoi la lire.
+
+### Ajouté
+
+- **La note du joueur, sur dix** ([match/player-rating.ts](../src/engine/match/player-rating.ts)), et **l'homme du match**. Affichées sur la feuille de statistiques, qui se trie désormais par note.
+- **Une vue statistiques de l'effectif** : mètres, défenseurs battus, franchissements, plaquages, grattages, essais, minutes. Tout était calculé depuis la V0.13 et n'apparaissait nulle part.
+- **Les classements individuels du championnat** ([season/leaderboards.ts](../src/engine/season/leaderboards.ts)) : meilleurs marqueurs, meilleures notes, mètres, plaquages, ballons grattés. Sous la table du championnat, clubs adverses compris.
+- **La fiche d'un club** ([ui/screens/ClubScreen.tsx](../src/ui/screens/ClubScreen.tsx)) : classement, forme, stade, masse salariale, âge moyen, confrontations, effectif. On croisait un adversaire quatorze fois par saison sans jamais pouvoir l'ouvrir.
+- **Le comparateur** : deux ou trois joueurs face à face, saison et attributs.
+- **La liste de suivi** ([club/shortlist.ts](../src/engine/club/shortlist.ts)) : garder un joueur à l'œil sans consommer de créneau d'observation, avec les alertes qui comptent (libre, fin de contrat, dernière année, changement de club, blessure longue).
+- **Ce qui s'ouvre se signale** : une ligne de classement mène à la fiche du club, un billet du fil à son club ou au joueur dont il parle, un gros salaire à sa fiche, une ligne de classement individuel au joueur.
+
+### Modifié
+
+- **Le verdict de fin de saison a quitté l'interface** ([season/season-verdict.ts](../src/engine/season/season-verdict.ts)). Archives, objectif, réputation, confiance du président, limogeage et ligne de parcours : ces règles décident du sort du manager et vivaient dans un composant React, mêlées à la publication des actualités et à la mise à jour d'une trentaine de références. Elles sont désormais dans le moteur, et testées.
+
+### Corrigé
+
+- **Le classement des notes se calculait sur le mauvais dénominateur.** Vu en jeu sur une partie reprise : les notes n'existaient que depuis une journée, le compteur de matchs en affichait treize, et une moyenne tirée d'une seule rencontre trônait en tête. Le seuil de présence porte maintenant sur les matchs **notés**, c'est à dire sur ce qui fait la moyenne.
+- **La fiche club lisait la familiarité du scouting à la mauvaise échelle** (de 0 à 1 au lieu de 0 à 100) : tout adversaire affichait son niveau chiffré, et le club dirigé se voyait attribuer une connaissance quasi nulle de ses propres joueurs. Deux erreurs de la même origine.
+
+### Notes de modélisation
+
+- **La note est un rang, pas un barème.** Mesuré sur 400 rencontres : le moteur crédite 1,09 plaquage et 1,5 mètre par match à un pilier, 0,21 essai à un trois-quarts. C'est très en dessous du rugby réel, parce que l'attribution nominative ne récompense que le porteur et le plaqueur de la phase résolue. **La moitié des joueurs ne produit rien de mesurable dans un match donné.** Une note bâtie sur une échelle inventée aurait été du bruit habillé en chiffre. On situe donc la contribution dans la distribution mesurée **de sa ligne** : 6 est la médiane du poste, 7,5 le neuvième décile, 9 le centième. Le chiffre dit quelque chose de vérifiable.
+- **Dix n'existe pas.** La note s'approche de 9,9 par une asymptote : un match exceptionnel ne doit pas se confondre avec un match record, et une copie parfaite n'existe pas.
+- **L'homme du match peut être un vaincu.** Le bonus de résultat, un quart de point, penche vers le vainqueur sans l'imposer : mesuré, 14 % des distinctions vont au camp perdant. Un titre qui suivrait mécaniquement le score ne dirait rien du joueur.
+- **Une fourchette ne se compare pas.** Le comparateur ne désigne un meilleur que lorsque les estimations ne se chevauchent pas. Trancher entre « 68–81 » et « 72–85 » serait inventer une précision que le scouting n'a pas rapportée.
+- **Suivre n'est pas observer.** La liste de suivi n'apprend rien sur un joueur : elle veille. Les confondre aurait vidé le scouting de son intérêt, puisqu'il suffirait de mettre en liste pour savoir.
+- **La note de saison est une dérivée.** On stocke la somme des notes et le nombre de matchs notés, jamais la moyenne : une moyenne écrite en dur ne se met pas à jour sans se dénaturer. Ce projet a déjà payé trois fois le prix de deux sources de vérité pour la même donnée.
+
+### Reporté
+
+- **L'extraction complète de l'intersaison.** Le verdict de fin de saison, qui en était le bloc de règles le plus dense, est parti au moteur. Ce qui reste dans `App.tsx` est de l'orchestration : appeler le moteur, publier des actualités, écrire dans une trentaine de références React. L'extraire demande de concevoir une abstraction de rollover à part entière, avec ses entrées et ses sorties, ce qui reste un chantier de version. Reporté en V0.62.
+
 ## [V0.60] : Fondations, le monde tient vingt saisons
 
 Cinquante-neuf versions ont ajouté des règles. Celle-ci vérifie qu'elles tiennent

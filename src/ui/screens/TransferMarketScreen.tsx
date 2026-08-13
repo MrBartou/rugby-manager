@@ -14,6 +14,7 @@ import type { BidOutcome, BidPreview, BidTerms } from '../../engine/game/season-
 import { estimateMarketValue as marketValueOf } from '../../engine/club/transfer-offers.js';
 import type { AiTransfer } from '../../engine/club/ai-market.js';
 import type { LoanOffer } from '../../engine/club/loans.js';
+import type { ShortlistEntry } from '../../engine/club/shortlist.js';
 import type { TransferWindowStatus } from '../../engine/season/transfer-window.js';
 import {
   KeyAttributes,
@@ -47,6 +48,18 @@ interface Props {
   };
   readonly currentSeason: number;
   readonly seed: string;
+  /**
+   * V0.61 — la liste de suivi.
+   *
+   * Distincte des créneaux de scouting : elle n'apprend rien sur un joueur, elle
+   * garde l'œil dessus. Confondre les deux viderait l'observation de son
+   * intérêt.
+   */
+  readonly shortlist?: {
+    readonly entries: readonly ShortlistEntry[];
+    readonly watched: ReadonlySet<string>;
+    readonly onToggle: (playerId: PlayerId) => void;
+  };
   readonly freeAgents: readonly Player[];
   readonly incomingOffers: readonly IncomingOffer[];
   readonly onSignFreeAgent: (player: Player, offer: { years: number; annualSalary: number }) => void;
@@ -70,6 +83,8 @@ interface Props {
     readonly onSend: (player: Player, offer: LoanOffer) => void;
   };
   readonly onBack?: () => void;
+  /** V0.61 — ouvrir la fiche d'un joueur suivi. */
+  readonly onOpenPlayer?: (player: Player) => void;
   /**
    * V0.21 — tous les joueurs du championnat, hors club utilisateur.
    * Sans eux, l'onglet Transferts se limitait aux agents libres : un écran vide
@@ -117,13 +132,15 @@ function approximateOverall(p: Player): number {
 
 export function TransferMarketScreen({
   playerClubId, playerClub, currentSeason, seed,
-  freeAgents, incomingOffers, scouting, scoutingSlots,
+  freeAgents, incomingOffers, scouting, scoutingSlots, shortlist,
   onAssignScout, onUnassignScout,
   onSignFreeAgent, onResolveIncomingOffer,
-  leaguePlayers, clubNameById,
+  leaguePlayers, clubNameById, onOpenPlayer,
   previewBid, onSubmitBid, aiMarket, transferWindow, jokerOptions, onSignJoker, regulation, loans,
 }: Props) {
-  const [tab, setTab] = useState<'RECHERCHE' | 'MERCATO' | 'LIBRES' | 'JOKER' | 'OFFRES' | 'PRETS'>('RECHERCHE');
+  const [tab, setTab] = useState<
+    'RECHERCHE' | 'SUIVIS' | 'MERCATO' | 'LIBRES' | 'JOKER' | 'OFFRES' | 'PRETS'
+  >('RECHERCHE');
   /** V0.55 — joueur dont on examine les propositions de prêt. */
   const [loanTarget, setLoanTarget] = useState<Player | null>(null);
   const [posFilter, setPosFilter] = useState<'ALL' | PositionLine>('ALL');
@@ -254,6 +271,7 @@ export function TransferMarketScreen({
       <div className="market-tabs">
         {([
           ['RECHERCHE', `Recherche de joueurs (${leaguePlayers.length})`],
+          ['SUIVIS', `Liste de suivi (${shortlist?.entries.length ?? 0})`],
           ['MERCATO', `Mercato du championnat (${aiMarket.filter(t => t.kind === 'TRANSFERT').length})`],
           ['LIBRES', `Agents libres (${freeAgents.length})`],
           ['JOKER', `Joker médical (${jokerOptions.length})`],
@@ -270,6 +288,62 @@ export function TransferMarketScreen({
           </button>
         ))}
       </div>
+
+      {tab === 'SUIVIS' && (
+        <div className="market-panel">
+          <div className="panel-tag">Liste de suivi ({shortlist?.entries.length ?? 0})</div>
+          {(!shortlist || shortlist.entries.length === 0) && (
+            <p className="empty">
+              Aucun joueur suivi. L'étoile, dans la recherche ou sur une fiche,
+              garde un joueur à l'œil sans consommer de créneau d'observation.
+            </p>
+          )}
+          {shortlist && shortlist.entries.length > 0 && (
+            <table className="squad-table">
+              <thead>
+                <tr>
+                  <th className="c-pos">Poste</th>
+                  <th className="c-name">Joueur</th>
+                  <th className="num-head">Âge</th>
+                  <th>Club</th>
+                  <th className="num-head">Fin de contrat</th>
+                  <th>Alerte</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {shortlist.entries.map(({ player, alert }) => (
+                  <tr
+                    key={player.id}
+                    className="clickable"
+                    onClick={() => onOpenPlayer?.(player)}
+                    title="Voir la fiche"
+                  >
+                    <td className="c-pos"><PositionBadge position={player.position} /></td>
+                    <td className="c-name"><span className="sq-name">{player.firstName} {player.lastName}</span></td>
+                    <td className="num">{currentSeason - Number(player.birthDate.slice(0, 4))}</td>
+                    <td>{player.freeAgent ? 'Sans club' : clubNameById(player.clubId as string)}</td>
+                    <td className="num">{player.freeAgent ? '—' : player.contract.endSeason}</td>
+                    <td className={alert?.urgent ? 'shortlist-alert urgent' : 'shortlist-alert'}>
+                      {alert?.message ?? '—'}
+                    </td>
+                    <td onClick={e => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={() => shortlist.onToggle(player.id)}
+                        title="Retirer de la liste de suivi"
+                      >
+                        ★
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
 
       {tab === 'RECHERCHE' && (() => {
         const slotsFull = scouting.assignments.length >= scoutingSlots;
@@ -351,6 +425,21 @@ export function TransferMarketScreen({
                       <tr key={p.id}>
                         <td className="c-pos"><PositionBadge position={p.position} /></td>
                         <td className="c-name">
+                          {/* V0.61 — l'étoile garde un joueur à l'œil sans
+                              consommer de créneau d'observation : suivre et
+                              observer sont deux gestes différents. */}
+                          {shortlist && (
+                            <button
+                              type="button"
+                              className={`watch-star ${shortlist.watched.has(p.id as string) ? 'on' : ''}`}
+                              onClick={() => shortlist.onToggle(p.id)}
+                              title={shortlist.watched.has(p.id as string)
+                                ? 'Retirer de la liste de suivi'
+                                : 'Suivre ce joueur'}
+                            >
+                              ★
+                            </button>
+                          )}
                           <span className="sq-name">{p.firstName} {p.lastName}</span>
                           <span className="sq-tags">
                             {p.isJiff && <span className="sq-tag jiff">JIFF</span>}

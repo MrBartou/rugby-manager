@@ -185,6 +185,13 @@ export interface SeasonSave extends SeasonSaveMeta {
     readonly pointsPenaltyByClub?: readonly { readonly clubId: ClubId; readonly points: number }[];
   };
   /**
+   * V0.61 — joueurs gardés à l'œil, et le club qu'ils occupaient alors.
+   *
+   * Le club d'origine sert à signaler un départ : sans lui, un joueur suivi qui
+   * change de club le fait dans le dos du manager.
+   */
+  readonly shortlist?: readonly { readonly playerId: PlayerId; readonly clubId: ClubId }[];
+  /**
    * V0.60 — décisions humaines en attente au moment de la sauvegarde.
    *
    * Un conflit de vestiaire ouvert disparaissait au rechargement, avec la
@@ -664,6 +671,8 @@ export function buildSeasonSaveFromState(
     readonly vacancies?: readonly ClubId[];
     /** V0.60 — décisions humaines en attente. */
     readonly pendingEvents?: readonly HumanEvent[];
+    /** V0.61 — liste de suivi. */
+    readonly shortlist?: readonly { readonly playerId: PlayerId; readonly clubId: ClubId }[];
     readonly direction?: {
       readonly facilities: ClubFacilities;
       readonly plan: ClubPlan;
@@ -724,6 +733,7 @@ export function buildSeasonSaveFromState(
     ...(extras.retiredSeedPlayerIds ? { retiredSeedPlayerIds: extras.retiredSeedPlayerIds } : {}),
     ...(extras.vacancies !== undefined ? { vacancies: extras.vacancies } : {}),
     ...(extras.pendingEvents !== undefined ? { pendingEvents: extras.pendingEvents } : {}),
+    ...(extras.shortlist !== undefined ? { shortlist: extras.shortlist } : {}),
     financesByClub: [...state.financesByClub.entries()].map(([clubId, finances]) => ({ clubId, finances })),
     careerHistory,
     managerReputation,

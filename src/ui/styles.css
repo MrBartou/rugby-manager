@@ -9789,3 +9789,345 @@ button:active:not(:disabled) { transform: scale(0.97); }
   font-weight: 600;
   white-space: nowrap;
 }
+
+/* V0.61 — la note du joueur et l'homme du match. La note est un rang dans la
+   distribution de son poste : elle mérite d'être lue d'un coup d'œil, sans
+   dégradé continu qui transformerait la feuille en tableur. */
+.statsheet-table td.note {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.statsheet-table td.note-haute { color: var(--accent); }
+.statsheet-table td.note-basse { color: var(--red); }
+
+.motm {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin: 1rem 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border-accent);
+  border-radius: 10px;
+  background: var(--accent-soft);
+}
+
+.motm-badge {
+  flex: 0 0 auto;
+  width: 3rem;
+  height: 3rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-size: 1.15rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.motm-name {
+  margin-top: 0.15rem;
+  font-size: 1.02rem;
+  font-weight: 600;
+}
+
+.motm-pos {
+  margin-left: 0.45rem;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+}
+
+.motm-line {
+  margin-top: 0.15rem;
+  color: var(--text-dim);
+  font-size: 0.82rem;
+}
+
+/* V0.61 — bascule entre les deux lectures de l'effectif, et la note de saison. */
+.squad-view-switch {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.squad-view-switch button {
+  padding: 0.3rem 0.7rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.76rem;
+}
+
+.squad-view-switch button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.squad-table td.sq-note {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.squad-table td.sq-note.haute { color: var(--accent); }
+.squad-table td.sq-note.basse { color: var(--red); }
+.squad-table td.sq-note.dim { color: var(--text-muted); }
+
+/* V0.61 — les classements individuels, sous la table du championnat. */
+.leaderboards { margin-top: 1.6rem; }
+
+.leaderboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0.9rem;
+  margin-top: 0.6rem;
+}
+
+.leaderboard {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-1);
+  overflow: hidden;
+}
+
+.leaderboard-head {
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.leaderboard-list {
+  margin: 0;
+  padding: 0.3rem 0;
+  list-style: none;
+}
+
+.leaderboard-list li {
+  display: grid;
+  grid-template-columns: 1.4rem 1fr auto;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.28rem 0.7rem;
+  font-size: 0.82rem;
+}
+
+.leaderboard-list li.clickable { cursor: pointer; }
+.leaderboard-list li.clickable:hover { background: var(--bg-2); }
+.leaderboard-list li.mine { background: var(--accent-soft); }
+
+.lb-rank { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.lb-name { display: flex; flex-direction: column; }
+.lb-club { color: var(--text-muted); font-size: 0.7rem; }
+
+.lb-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.lb-unit {
+  margin-left: 0.3rem;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 400;
+}
+
+/* V0.61 — la fiche club : ce qu'un adversaire est, au-delà de sa ligne de classement. */
+.standings-table tr.clickable { cursor: pointer; }
+.standings-table tr.clickable:hover { background: var(--bg-2); }
+
+.club-hero {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-1);
+}
+
+.club-hero-body { flex: 1; }
+.club-hero-name { font-size: 1.2rem; font-weight: 700; }
+.club-hero-sub { color: var(--text-dim); font-size: 0.82rem; }
+
+.club-form { display: flex; gap: 0.25rem; }
+
+.club-form-dot {
+  width: 1.35rem;
+  height: 1.35rem;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: var(--bg-3);
+  color: var(--text-dim);
+}
+
+.club-form-dot.V { background: var(--accent-soft); color: var(--accent); }
+.club-form-dot.D { background: var(--red-soft); color: var(--red); }
+
+.club-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: 0.6rem;
+  margin: 0.9rem 0;
+}
+
+.cf-item {
+  display: flex;
+  flex-direction: column;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-1);
+}
+
+.cf-value { font-size: 1.05rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cf-label { color: var(--text-muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; }
+
+.club-h2h { margin: 0.9rem 0; }
+.h2h-line { color: var(--text-dim); font-size: 0.88rem; }
+.h2h-streak { margin-left: 0.5rem; font-weight: 600; }
+.h2h-streak.good { color: var(--accent); }
+.h2h-streak.bad { color: var(--red); }
+
+.club-roster-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin: 1.2rem 0 0.4rem;
+}
+
+.club-roster-hint { color: var(--text-muted); font-size: 0.78rem; margin: 0 0 0.5rem; }
+
+/* V0.61 — le comparateur : deux ou trois joueurs mis face à face. */
+.c-compare { width: 1.8rem; text-align: center; }
+.c-compare input { cursor: pointer; }
+
+.compare-bar {
+  position: sticky;
+  bottom: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 0.8rem;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid var(--border-accent);
+  border-radius: 10px;
+  background: var(--bg-2);
+  font-size: 0.82rem;
+}
+
+.compare-bar span { flex: 1; color: var(--text-dim); }
+
+.modal.compare {
+  max-width: 46rem;
+  width: 92vw;
+  max-height: 86vh;
+  overflow-y: auto;
+}
+
+.compare-grid {
+  display: grid;
+  gap: 0;
+  margin-top: 0.6rem;
+}
+
+.compare-head {
+  position: relative;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.compare-name { font-weight: 600; font-size: 0.92rem; }
+.compare-sub { color: var(--text-dim); font-size: 0.72rem; }
+.compare-sub.dim { color: var(--text-muted); }
+
+.compare-remove {
+  position: absolute;
+  top: 0.2rem;
+  right: 0.2rem;
+  padding: 0 0.3rem;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.compare-remove:hover { color: var(--red); }
+
+.compare-family {
+  padding: 0.5rem 0.6rem 0.25rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.compare-label {
+  padding: 0.28rem 0.6rem;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+
+.compare-cell {
+  padding: 0.28rem 0.6rem;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.compare-cell.best {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.compare-note {
+  margin-top: 0.7rem;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+
+/* V0.61 — ce qui s'ouvre se signale : un fil d'actualité et un tableau de
+   salaires sont des points de départ, pas des culs-de-sac. */
+.post-avatar.clickable { cursor: pointer; }
+.post-avatar.clickable:hover { opacity: 0.85; }
+
+.post-link {
+  margin-left: 0.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 0.78rem;
+  text-decoration: underline;
+}
+
+.squad-table tr.clickable { cursor: pointer; }
+.squad-table tr.clickable:hover { background: var(--bg-2); }
+
+/* V0.61 — la liste de suivi : veiller sans observer. */
+.watch-star {
+  margin-right: 0.35rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.watch-star.on { color: var(--accent); }
+.watch-star:hover { color: var(--accent-strong); }
+
+.shortlist-alert { color: var(--text-dim); font-size: 0.8rem; }
+.shortlist-alert.urgent { color: var(--accent); font-weight: 600; }

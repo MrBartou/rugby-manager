@@ -2,7 +2,21 @@ import type { IndividualMatchStats, MatchResult } from '../../engine/match/types
 import type { Club, Player, PlayerId } from '../../engine/types.js';
 import { buildRichNarrative } from '../../engine/match/narrative.js';
 import { computeTeamStats, readPlanOutcome, type TeamMatchStats } from '../../engine/match/team-stats.js';
+import { rateMatch } from '../../engine/match/player-rating.js';
 import type { PreMatchTacticalPlan } from '../../engine/match/types.js';
+
+/**
+ * La couleur de la note.
+ *
+ * Trois paliers seulement : au dessus du neuvième décile, sous la moyenne, et
+ * le reste. Un dégradé continu ferait ressembler la feuille à un tableur.
+ */
+function noteClass(rating: number | undefined): string {
+  if (rating === undefined) return 'dim';
+  if (rating >= 7.5) return 'note note-haute';
+  if (rating < 5) return 'note note-basse';
+  return 'note';
+}
 
 interface Props {
   readonly result: MatchResult;
@@ -89,6 +103,18 @@ export function MatchSummary({
     clubId === undefined ? [] : statRows.filter(r => r.player.clubId === clubId);
   const homeRows = rowsFor(homeId);
   const awayRows = rowsFor(awayClub?.id);
+
+  // V0.61 — la note du joueur, et l'homme du match. Treize statistiques
+  // individuelles existaient depuis la V0.13 sans que rien ne dise qui avait
+  // tenu son poste : le manager lisait un score et un récit, jamais un jugement.
+  const diff = result.homeScore - result.awayScore;
+  const { byPlayer: notes, manOfTheMatch } = rateMatch([
+    { players: homeRows.map(r => r.player), pointsDifference: diff },
+    { players: awayRows.map(r => r.player), pointsDifference: -diff },
+  ], result.individualStats);
+  const hommeDuMatch = manOfTheMatch
+    ? { note: manOfTheMatch, player: playersById.get(manOfTheMatch.playerId) }
+    : undefined;
 
   const totalPenalties = result.phases.filter(p => p.outcome.penaltyAwarded).length;
   const goalLineSequences = result.phases.filter(
@@ -248,12 +274,28 @@ export function MatchSummary({
         )}
       </div>
 
+      {hommeDuMatch?.player && (
+        <div className="motm">
+          <div className="motm-badge">{hommeDuMatch.note.rating.toFixed(1)}</div>
+          <div className="motm-body">
+            <div className="panel-tag">Homme du match</div>
+            <div className="motm-name">
+              {hommeDuMatch.player.firstName} {hommeDuMatch.player.lastName}
+              <span className="motm-pos">{shortPosition(hommeDuMatch.player.position)}</span>
+            </div>
+            {hommeDuMatch.note.highlight && (
+              <div className="motm-line">{hommeDuMatch.note.highlight}</div>
+            )}
+          </div>
+        </div>
+      )}
+
       {(homeRows.length > 0 || awayRows.length > 0) && (
         <div className="statsheet">
           <div className="statsheet-head">
             <div className="players-tag">Feuille de statistiques</div>
             <span className="statsheet-hint">
-              Triée par mètres gagnés · valeurs à l'échelle du moteur
+              Triée par note · 6 est la médiane du poste, 7,5 le neuvième décile
             </span>
           </div>
           {[
@@ -278,11 +320,14 @@ export function MatchSummary({
                         <th title="Plaquages manqués">MQ</th>
                         <th title="Ballons grattés">GRT</th>
                         <th title="Essais">E</th>
+                        <th title="Note sur 10, situées dans la distribution du poste">NOTE</th>
                       </tr>
                     </thead>
                     <tbody>
                       {[...side.rows]
-                        .sort((a, b) => b.stats.metersWithBall - a.stats.metersWithBall)
+                        .sort((a, b) =>
+                          (notes.get(b.player.id)?.rating ?? 0) - (notes.get(a.player.id)?.rating ?? 0)
+                          || b.stats.metersWithBall - a.stats.metersWithBall)
                         .map(({ player, stats }) => (
                           <tr key={player.id}>
                             <td className="col-player">
@@ -298,6 +343,9 @@ export function MatchSummary({
                             <td className={stats.tacklesMissed > 0 ? 'warn' : ''}>{stats.tacklesMissed || '—'}</td>
                             <td className={stats.turnoversWon > 0 ? 'accent' : ''}>{stats.turnoversWon || '—'}</td>
                             <td className={stats.tries > 0 ? 'accent' : ''}>{stats.tries || '—'}</td>
+                            <td className={noteClass(notes.get(player.id)?.rating)}>
+                              {notes.get(player.id)?.rating.toFixed(1) ?? '—'}
+                            </td>
                           </tr>
                         ))}
                     </tbody>

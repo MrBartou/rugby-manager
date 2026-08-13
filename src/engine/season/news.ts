@@ -18,7 +18,7 @@
  * années plus tard.
  */
 
-import type { ClubId } from '../types.js';
+import type { ClubId, PlayerId } from '../types.js';
 
 // =============================================================================
 // Modèle
@@ -47,6 +47,15 @@ export interface NewsItem {
   readonly clubId?: ClubId;
   /** Vrai quand l'entrée concerne directement le club de l'utilisateur. */
   readonly involvesPlayer: boolean;
+  /**
+   * V0.61 — joueur dont il est question, quand l'entrée en désigne un.
+   *
+   * Le fil ne portait que du texte : lire « Untel se blesse » et vouloir sa
+   * fiche obligeait à le retrouver à la main dans l'effectif. On note donc
+   * l'identifiant à la publication, plutôt que d'aller chercher un nom dans une
+   * phrase, ce qui échouerait au premier homonyme.
+   */
+  readonly playerId?: PlayerId;
 }
 
 export const NEWS_KIND_LABEL: Readonly<Record<NewsKind, string>> = {
@@ -219,6 +228,8 @@ export function newsFromInjury(args: {
   readonly season: number;
   readonly round: number;
   readonly clubId: ClubId;
+  /** V0.61 — pour que le fil renvoie à la fiche du blessé. */
+  readonly playerId?: PlayerId;
 }): Omit<NewsItem, 'id'> {
   return {
     season: args.season,
@@ -227,6 +238,7 @@ export function newsFromInjury(args: {
     headline: `${args.playerName} out jusqu'à la J${args.returnsAtRound}`,
     detail: args.injuryType.toLowerCase(),
     clubId: args.clubId,
+    ...(args.playerId !== undefined ? { playerId: args.playerId } : {}),
     involvesPlayer: true,
   };
 }

@@ -12,7 +12,13 @@ import { DIVISION_LABEL, type Division } from '../../engine/season/divisions.js'
 import { ClubCrest } from '../components/ClubCrest.js';
 import { FormGuide } from '../components/DataBits.js';
 import { COMPETITION_LABEL, competitionForRank } from '../../engine/season/european-cup.js';
-import type { Club } from '../../engine/types.js';
+import type { Club, ClubId, PlayerId } from '../../engine/types.js';
+import {
+  LEADERBOARD_LABEL,
+  LEADERBOARD_UNIT,
+  type LeaderRow,
+  type LeaderboardKind,
+} from '../../engine/season/leaderboards.js';
 
 interface Props {
   readonly state: SeasonState;
@@ -27,6 +33,20 @@ interface Props {
    * longtemps d'où venait le trou.
    */
   readonly pointsPenalties?: ReadonlyMap<string, number>;
+  /**
+   * V0.61 — les classements individuels du championnat.
+   *
+   * Les statistiques de tous les joueurs des deux divisions étaient tenues
+   * depuis la V0.53 et ne ressortaient qu'une fois l'an, en trophées. Absents
+   * pour une sauvegarde qui n'en a pas encore.
+   */
+  readonly leaderboards?: readonly {
+    readonly kind: LeaderboardKind;
+    readonly rows: readonly LeaderRow[];
+  }[];
+  readonly onSelectPlayer?: (playerId: PlayerId) => void;
+  /** V0.61 — une ligne de classement ouvre la fiche du club. */
+  readonly onSelectClub?: (clubId: ClubId) => void;
 }
 
 interface FormResult {
@@ -56,7 +76,9 @@ function computeForm(state: SeasonState, clubId: string): FormResult[] {
   });
 }
 
-export function StandingsScreen({ state, clubs, division, pointsPenalties }: Props) {
+export function StandingsScreen({
+  state, clubs, division, pointsPenalties, leaderboards, onSelectPlayer, onSelectClub,
+}: Props) {
   const ranking = [...state.standings.values()].sort((a, b) => {
     if (b.leaguePoints !== a.leaguePoints) return b.leaguePoints - a.leaguePoints;
     const aDiff = a.pointsFor - a.pointsAgainst;
@@ -174,7 +196,12 @@ export function StandingsScreen({ state, clubs, division, pointsPenalties }: Pro
                 rank <= QUALIF_BARRAGE ? 'zone-barrage' : '';
               const europe = competitionForRank(rank);
               return (
-                <tr key={s.clubId} className={`${zoneClass} ${isPlayer ? 'is-player' : ''}`}>
+                <tr
+                  key={s.clubId}
+                  className={`${zoneClass} ${isPlayer ? 'is-player' : ''} ${onSelectClub ? 'clickable' : ''}`}
+                  onClick={onSelectClub ? () => onSelectClub(s.clubId) : undefined}
+                  title={onSelectClub ? 'Voir la fiche du club' : undefined}
+                >
                   <td className="col-rank">{rank}</td>
                   <td className="col-club">
                     <ClubCrest clubId={s.clubId as string} initials={clubShort(clubs, s.clubId)} size={24} />
@@ -235,6 +262,41 @@ export function StandingsScreen({ state, clubs, division, pointsPenalties }: Pro
       <p className="standings-footnote">
         Top 14 : <b>4 pts</b> par victoire, <b>2 pts</b> par nul, <b>1 pt</b> bonus offensif (≥3 essais d'écart) ou défensif (défaite ≤7 pts).
       </p>
+
+      {/* V0.61 — les classements individuels. Un championnat sans meilleur
+          marqueur affiché n'est qu'une table de points. */}
+      {leaderboards && leaderboards.some(l => l.rows.length > 0) && (
+        <div className="leaderboards">
+          <div className="panel-tag">Classements individuels</div>
+          <div className="leaderboard-grid">
+            {leaderboards.filter(l => l.rows.length > 0).map(({ kind, rows }) => (
+              <div key={kind} className="leaderboard">
+                <div className="leaderboard-head">{LEADERBOARD_LABEL[kind]}</div>
+                <ol className="leaderboard-list">
+                  {rows.map((row, i) => (
+                    <li
+                      key={row.playerId as string}
+                      className={`${row.clubId === playerClubId ? 'mine' : ''} ${onSelectPlayer ? 'clickable' : ''}`}
+                      onClick={onSelectPlayer ? () => onSelectPlayer(row.playerId) : undefined}
+                      title={onSelectPlayer ? 'Voir la fiche' : undefined}
+                    >
+                      <span className="lb-rank">{i + 1}</span>
+                      <span className="lb-name">
+                        {row.playerName}
+                        <span className="lb-club">{row.clubName}</span>
+                      </span>
+                      <span className="lb-value">
+                        {row.value}
+                        <span className="lb-unit">{LEADERBOARD_UNIT[kind]}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
