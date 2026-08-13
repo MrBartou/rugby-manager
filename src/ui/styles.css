@@ -9876,3 +9876,64 @@ button:active:not(:disabled) { transform: scale(0.97); }
 .squad-table td.sq-note.haute { color: var(--accent); }
 .squad-table td.sq-note.basse { color: var(--red); }
 .squad-table td.sq-note.dim { color: var(--text-muted); }
+
+/* V0.61 — les classements individuels, sous la table du championnat. */
+.leaderboards { margin-top: 1.6rem; }
+
+.leaderboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0.9rem;
+  margin-top: 0.6rem;
+}
+
+.leaderboard {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-1);
+  overflow: hidden;
+}
+
+.leaderboard-head {
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.leaderboard-list {
+  margin: 0;
+  padding: 0.3rem 0;
+  list-style: none;
+}
+
+.leaderboard-list li {
+  display: grid;
+  grid-template-columns: 1.4rem 1fr auto;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.28rem 0.7rem;
+  font-size: 0.82rem;
+}
+
+.leaderboard-list li.clickable { cursor: pointer; }
+.leaderboard-list li.clickable:hover { background: var(--bg-2); }
+.leaderboard-list li.mine { background: var(--accent-soft); }
+
+.lb-rank { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.lb-name { display: flex; flex-direction: column; }
+.lb-club { color: var(--text-muted); font-size: 0.7rem; }
+
+.lb-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.lb-unit {
+  margin-left: 0.3rem;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 400;
+}
