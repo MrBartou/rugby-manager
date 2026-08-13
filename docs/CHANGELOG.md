@@ -2,6 +2,46 @@
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/). Versions sémantiques.
 
+## [V0.62] : Réglages, accessibilité, délégation
+
+Aucun écran de réglages n'existait. Les trente-deux animations tournaient pour
+tout le monde, un joueur qui distingue mal le rouge du vert n'avait aucun recours
+devant les liserés de la composition, et le troisième pilier du GDD, déléguer à
+son staff ce qu'on ne veut pas gérer, n'avait jamais été implémenté.
+
+### Ajouté
+
+- **Un écran de réglages** ([ui/settings.ts](../src/ui/settings.ts)) : vitesse de match par défaut, sauvegarde automatique, confirmations, volume (préparé pour la V0.69). Atteignable depuis l'écran titre comme en cours de partie.
+- **L'accessibilité** : animations réduites (respectant `prefers-reduced-motion` d'emblée), quatre tailles de texte, palette daltonienne, thème clair.
+- **La délégation au staff** ([club/delegation.ts](../src/engine/club/delegation.ts)) : composition, remplacements, focus d'entraînement, offres mineures. Quatre cases à cocher, rien de délégué par défaut, et tout se reprend d'un clic.
+- **L'encyclopédie** ([ui/encyclopedia.ts](../src/ui/encyclopedia.ts)) : dix entrées (JIFF, salary cap, commission, bonus, phases finales, joker médical, fenêtres de mercato, feuille de match, barrage d'accession, note de match), ouvertes depuis n'importe quel écran sur le terme qu'on y rencontre.
+
+### Modifié
+
+- **Le contrôle de la commission a quitté l'interface** ([club/regulations.ts](../src/engine/club/regulations.ts)) : il décidait des points retirés, des interdictions et des amendes de toute une division depuis un composant React.
+- **La promotion des jeunes aussi** ([season/rollover.ts](../src/engine/season/rollover.ts)) : la boucle porte deux règles, tous les clubs reçoivent leur promotion et seul le centre du club dirigé suit l'investissement du manager.
+- **La clôture d'exercice également** ([club/finances.ts](../src/engine/club/finances.ts)) : le club dirigé encaisse selon sa politique commerciale, les autres gardent l'enveloppe sèche de leur budget.
+
+### Corrigé
+
+- **Cinquante-deux lignes de couleurs écrites en dur** court-circuitaient les variables CSS, dont les liserés d'aptitude de la composition : c'est exactement l'exemple que la roadmap citait, et le réglage de palette n'y aurait rien changé.
+- **La minute passée à l'adjoint était divisée deux fois.** La session expose déjà des minutes, le compteur en secondes est interne : l'adjoint serait resté figé à la première minute et le banc ne serait jamais entré. Trouvé en lisant le code de la session avant de le brancher, pas après.
+- **La palette daltonienne confondait deux de ses trois états** en thème clair : le jaune et l'orange se ressemblaient trop, et l'échelle à trois crans redevenait une échelle à deux.
+
+### Notes de modélisation
+
+- **Déléguer coûte quelque chose.** L'adjoint décide comme un adjoint : sa compétence fixe la qualité de ce qu'il choisit, et le facteur ne dépasse jamais un. Déléguer ne peut pas rendre meilleur que décider soi-même, sans quoi le jeu se jouerait tout seul.
+- **Une offre sur un cadre remonte toujours au manager**, quoi qu'il arrive. Déléguer les petites décisions ne doit jamais faire partir un titulaire dans votre dos.
+- **La compo déléguée porte les erreurs de son auteur.** Le quinze proposé par défaut a toujours été le meilleur possible : sans cette imperfection, déléguer la composition n'aurait rien changé et la case aurait été un décor. L'adjoint se trompe sur la hiérarchie, jamais sur le poste, et le manager garde la main.
+- **Personne ne sort avant l'heure de jeu.** Vider son banc à la vingtième minute n'est pas une délégation, c'est un sabotage. Un adjoint dépassé laisse en outre ses joueurs s'épuiser plus longtemps avant de réagir.
+- **Une préférence suit le joueur, une délégation suit la carrière.** Le confort de lecture ne doit pas se réinitialiser parce qu'on démarre une partie ; confier sa composition à son adjoint, si, puisque cet adjoint reste au club qu'on quitte.
+- **`prefers-reduced-motion` est respecté d'emblée.** Un joueur sujet au mal des transports ne devrait pas avoir à découvrir un écran de réglages pour cesser d'être malade.
+- **Une entrée d'encyclopédie dit ce que le mot implique**, pas seulement ce qu'il désigne, et annonce les écarts assumés avec le règlement réel. Laisser un connaisseur découvrir l'écart lui ferait croire à un défaut.
+
+### Reporté
+
+- **L'orchestration de l'intersaison.** Ses trois derniers blocs de règles (commission, promotion des jeunes, clôture financière) sont partis au moteur, après le verdict de fin de saison en V0.61. Ce qui reste dans `App.tsx` ne décide plus rien : appeler le moteur, publier des actualités, écrire dans une trentaine de références React. Le sortir demanderait une abstraction de rollover dont le seul bénéfice serait esthétique, et ce n'est plus une dette de règles. Le sujet est clos sous cette forme.
+
 ## [V0.61] : La donnée parle
 
 Le moteur capture treize statistiques individuelles par rencontre depuis la
