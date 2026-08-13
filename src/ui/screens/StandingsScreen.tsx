@@ -12,7 +12,7 @@ import { DIVISION_LABEL, type Division } from '../../engine/season/divisions.js'
 import { ClubCrest } from '../components/ClubCrest.js';
 import { FormGuide } from '../components/DataBits.js';
 import { COMPETITION_LABEL, competitionForRank } from '../../engine/season/european-cup.js';
-import type { Club, PlayerId } from '../../engine/types.js';
+import type { Club, ClubId, PlayerId } from '../../engine/types.js';
 import {
   LEADERBOARD_LABEL,
   LEADERBOARD_UNIT,
@@ -45,6 +45,8 @@ interface Props {
     readonly rows: readonly LeaderRow[];
   }[];
   readonly onSelectPlayer?: (playerId: PlayerId) => void;
+  /** V0.61 — une ligne de classement ouvre la fiche du club. */
+  readonly onSelectClub?: (clubId: ClubId) => void;
 }
 
 interface FormResult {
@@ -75,7 +77,7 @@ function computeForm(state: SeasonState, clubId: string): FormResult[] {
 }
 
 export function StandingsScreen({
-  state, clubs, division, pointsPenalties, leaderboards, onSelectPlayer,
+  state, clubs, division, pointsPenalties, leaderboards, onSelectPlayer, onSelectClub,
 }: Props) {
   const ranking = [...state.standings.values()].sort((a, b) => {
     if (b.leaguePoints !== a.leaguePoints) return b.leaguePoints - a.leaguePoints;
@@ -194,7 +196,12 @@ export function StandingsScreen({
                 rank <= QUALIF_BARRAGE ? 'zone-barrage' : '';
               const europe = competitionForRank(rank);
               return (
-                <tr key={s.clubId} className={`${zoneClass} ${isPlayer ? 'is-player' : ''}`}>
+                <tr
+                  key={s.clubId}
+                  className={`${zoneClass} ${isPlayer ? 'is-player' : ''} ${onSelectClub ? 'clickable' : ''}`}
+                  onClick={onSelectClub ? () => onSelectClub(s.clubId) : undefined}
+                  title={onSelectClub ? 'Voir la fiche du club' : undefined}
+                >
                   <td className="col-rank">{rank}</td>
                   <td className="col-club">
                     <ClubCrest clubId={s.clubId as string} initials={clubShort(clubs, s.clubId)} size={24} />

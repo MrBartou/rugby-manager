@@ -9937,3 +9937,73 @@ button:active:not(:disabled) { transform: scale(0.97); }
   font-size: 0.68rem;
   font-weight: 400;
 }
+
+/* V0.61 — la fiche club : ce qu'un adversaire est, au-delà de sa ligne de classement. */
+.standings-table tr.clickable { cursor: pointer; }
+.standings-table tr.clickable:hover { background: var(--bg-2); }
+
+.club-hero {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-1);
+}
+
+.club-hero-body { flex: 1; }
+.club-hero-name { font-size: 1.2rem; font-weight: 700; }
+.club-hero-sub { color: var(--text-dim); font-size: 0.82rem; }
+
+.club-form { display: flex; gap: 0.25rem; }
+
+.club-form-dot {
+  width: 1.35rem;
+  height: 1.35rem;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: var(--bg-3);
+  color: var(--text-dim);
+}
+
+.club-form-dot.V { background: var(--accent-soft); color: var(--accent); }
+.club-form-dot.D { background: var(--red-soft); color: var(--red); }
+
+.club-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: 0.6rem;
+  margin: 0.9rem 0;
+}
+
+.cf-item {
+  display: flex;
+  flex-direction: column;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-1);
+}
+
+.cf-value { font-size: 1.05rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cf-label { color: var(--text-muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; }
+
+.club-h2h { margin: 0.9rem 0; }
+.h2h-line { color: var(--text-dim); font-size: 0.88rem; }
+.h2h-streak { margin-left: 0.5rem; font-weight: 600; }
+.h2h-streak.good { color: var(--accent); }
+.h2h-streak.bad { color: var(--red); }
+
+.club-roster-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin: 1.2rem 0 0.4rem;
+}
+
+.club-roster-hint { color: var(--text-muted); font-size: 0.78rem; margin: 0 0 0.5rem; }
