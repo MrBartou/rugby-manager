@@ -102,7 +102,7 @@ describe('ce qui n\'entre pas au parcours', () => {
     // résultat qui ne lui appartient pas.
     const out = buildSeasonVerdict({
       ...base,
-      career: { kind: 'LIBRE', since: 2026, failures: 1 },
+      career: { kind: 'LIBRE' as const, since: 2026, reason: 'LIMOGE' as const },
     });
     expect(out.managerSeason).toBeUndefined();
     // Les archives du championnat, elles, gardent la saison.
