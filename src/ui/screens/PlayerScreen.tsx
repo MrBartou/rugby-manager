@@ -87,6 +87,20 @@ interface Props {
    */
   readonly caps?: number;
   /**
+   * V0.63 : ce qu'il a produit **en sélection** cette saison.
+   *
+   * Depuis que les tests internationaux sont joués par le moteur, une sélection
+   * n'est plus une ligne d'absence. La fiche disait « 12 sélections » et rien
+   * d'autre ; elle peut désormais dire ce qu'il y a fait.
+   */
+  readonly internationalStat?: {
+    readonly matches: number;
+    readonly minutes: number;
+    readonly tries: number;
+    readonly tackles: number;
+    readonly meters: number;
+  };
+  /**
    * V0.59 — sa carrière, saison par saison.
    *
    * La fiche ne montrait que la saison en cours : huit ans de formation, de
@@ -150,7 +164,7 @@ const TALK_TOPICS: readonly TalkTopic[] = [
   'FELICITER', 'RECADRER', 'RASSURER_ROLE', 'PROMETTRE_TEMPS_DE_JEU', 'DEMANDER_EFFORT',
 ];
 
-export function PlayerScreen({ player, currentSeason, recentResults, playRatio, relations, playersById, onBack, onSelectPlayer , familiarity, seasonStat, isCaptain, squadStatus, honours, currentRound, adaptation, caps, career, clubNameOf, talk }: Props) {
+export function PlayerScreen({ player, currentSeason, recentResults, playRatio, relations, playersById, onBack, onSelectPlayer , familiarity, seasonStat, isCaptain, squadStatus, honours, currentRound, adaptation, caps, internationalStat, career, clubNameOf, talk }: Props) {
   // V0.15 — le joueur n'est pas forcément bien connu : chaque attribut est
   // présenté via l'estimation du scout plutôt qu'en valeur brute.
   const est = (key: string, value: number) =>
@@ -267,6 +281,16 @@ export function PlayerScreen({ player, currentSeason, recentResults, playRatio, 
             <div className="talk-request" style={{ color: 'var(--accent)' }}>
               🇫🇷 {caps} sélection{caps > 1 ? 's' : ''} en équipe de France
               {caps >= 10 ? ' — international confirmé' : ''}
+            </div>
+          )}
+
+          {/* V0.63 : et ce qu'il y a fait cette saison. */}
+          {internationalStat && internationalStat.matches > 0 && (
+            <div className="talk-request" style={{ color: 'var(--text-dim)' }}>
+              Cette saison en bleu : {internationalStat.matches} match
+              {internationalStat.matches > 1 ? 's' : ''}, {internationalStat.minutes} minutes,
+              {' '}{internationalStat.tries} essai{internationalStat.tries > 1 ? 's' : ''},
+              {' '}{internationalStat.tackles} plaquages.
             </div>
           )}
 
