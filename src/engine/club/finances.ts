@@ -156,3 +156,74 @@ export function initFinancesForAllClubs(
   }
   return out;
 }
+
+// =============================================================================
+// La clôture d'exercice, pour tout le championnat
+// =============================================================================
+
+/**
+ * Ce que chaque club encaisse en passant à la saison suivante : V0.62.
+ *
+ * Le bloc vivait dans `App.tsx`. Il porte une règle et non du câblage : **le
+ * club dirigé encaisse selon sa politique commerciale**, sponsors majorés par
+ * la campagne, recettes de boutique, et coût de cette même campagne ; les clubs
+ * gérés par la machine gardent l'enveloppe sèche de leur budget annuel.
+ *
+ * Sans cette asymétrie, la direction du club (V0.45) serait un écran de
+ * réglages sans conséquence : investir en marketing ne rapporterait rien, et le
+ * choix se ferait tout seul.
+ */
+export interface SeasonCloseInput {
+  readonly previous: ReadonlyMap<ClubId, ClubFinances>;
+  readonly clubs: readonly Club[];
+  readonly playerClubId: ClubId;
+  readonly newSeason: number;
+  /** Recettes commerciales du club dirigé, déjà calculées par sa direction. */
+  readonly playerClubCommercial: {
+    readonly sponsors: number;
+    readonly merchandising: number;
+    /** Coût de la campagne, en positif : il sera débité. */
+    readonly campaignCost: number;
+  };
+}
+
+export function closeSeasonForAllClubs(input: SeasonCloseInput): Map<ClubId, ClubFinances> {
+  const out = new Map<ClubId, ClubFinances>();
+
+  for (const [clubId, previous] of input.previous) {
+    const club = input.clubs.find(c => c.id === clubId);
+    if (!club) continue;
+
+    let next = closeSeason(previous, input.newSeason);
+
+    if (clubId === input.playerClubId) {
+      next = applyMovement(next, {
+        kind: 'SPONSOR',
+        amount: input.playerClubCommercial.sponsors,
+        note: 'Sponsors + TV (saison)',
+      });
+      next = applyMovement(next, {
+        kind: 'SPONSOR',
+        amount: input.playerClubCommercial.merchandising,
+        note: 'Boutique et merchandising',
+      });
+      if (input.playerClubCommercial.campaignCost > 0) {
+        next = applyMovement(next, {
+          kind: 'TRANSFER_OUT',
+          amount: -input.playerClubCommercial.campaignCost,
+          note: 'Campagne marketing',
+        });
+      }
+    } else {
+      next = applyMovement(next, {
+        kind: 'SPONSOR',
+        amount: club.annualBudget,
+        note: 'Sponsors + TV (saison)',
+      });
+    }
+
+    out.set(clubId, next);
+  }
+
+  return out;
+}

@@ -7,11 +7,13 @@ import {
   applyMovement,
   closeSeason,
   computeAnnualPayroll,
+  closeSeasonForAllClubs,
   computeRoundPayroll,
   emptyFinances,
   initFinancesForAllClubs,
   REGULAR_ROUNDS,
 } from '@/engine/club/finances.js';
+import type { ClubFinances } from '@/engine/club/finances.js';
 import type { Club, ClubId, Player, PlayerId } from '@/engine/types.js';
 
 function makeClub(overrides: Partial<Club> = {}): Club {
@@ -140,5 +142,65 @@ describe('finances — initialisation', () => {
     // Solde initial = 30% budget + sponsor (= budget) = 1.3 * budget
     expect(a.balance).toBe(13_000_000);
     expect(a.seasonRevenue).toBe(10_000_000);
+  });
+});
+
+describe('la clôture d\'exercice, pour tout le championnat', () => {
+  const club = (id: string, budget: number): Club =>
+    makeClub({ id: id as ClubId, annualBudget: budget });
+
+  const depart = (solde: number): ClubFinances => ({
+    balance: solde,
+    seasonStart: 2026,
+    seasonRevenue: 1_000_000,
+    seasonExpenses: 400_000,
+    pastSeasons: [],
+  });
+
+  const entree = (over: Partial<Parameters<typeof closeSeasonForAllClubs>[0]> = {}) => ({
+    previous: new Map([
+      ['mine' as ClubId, depart(5_000_000)],
+      ['autre' as ClubId, depart(3_000_000)],
+    ]),
+    clubs: [club('mine', 10_000_000), club('autre', 8_000_000)],
+    playerClubId: 'mine' as ClubId,
+    newSeason: 2027,
+    playerClubCommercial: { sponsors: 12_000_000, merchandising: 900_000, campaignCost: 600_000 },
+    ...over,
+  });
+
+  it('clôt la saison de chaque club', () => {
+    const out = closeSeasonForAllClubs(entree());
+    for (const f of out.values()) {
+      expect(f.seasonStart).toBe(2027);
+      expect(f.pastSeasons).toHaveLength(1);
+    }
+  });
+
+  it('le club dirigé encaisse selon sa politique commerciale', () => {
+    // Sans cette asymétrie, la direction du club serait un écran de réglages
+    // sans conséquence : investir en marketing ne rapporterait rien.
+    const out = closeSeasonForAllClubs(entree());
+    const mine = out.get('mine' as ClubId)!;
+    expect(mine.balance).toBe(5_000_000 + 12_000_000 + 900_000 - 600_000);
+  });
+
+  it('les autres gardent l\'enveloppe sèche de leur budget', () => {
+    const out = closeSeasonForAllClubs(entree());
+    expect(out.get('autre' as ClubId)!.balance).toBe(3_000_000 + 8_000_000);
+  });
+
+  it('une campagne à zéro ne débite rien', () => {
+    const out = closeSeasonForAllClubs(entree({
+      playerClubCommercial: { sponsors: 10_000_000, merchandising: 0, campaignCost: 0 },
+    }));
+    expect(out.get('mine' as ClubId)!.balance).toBe(5_000_000 + 10_000_000);
+  });
+
+  it('et un club absent de la liste ne ressort pas', () => {
+    // Un club relégué hors du monde connu ne doit pas réapparaître par la
+    // clôture : on ne sait plus quel budget lui appliquer.
+    const out = closeSeasonForAllClubs(entree({ clubs: [club('mine', 10_000_000)] }));
+    expect([...out.keys()]).toEqual(['mine']);
   });
 });
