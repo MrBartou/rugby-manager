@@ -274,11 +274,15 @@ import { ClubScreen } from './screens/ClubScreen.js';
 import { allLeaderboards } from '../engine/season/leaderboards.js';
 import { buildSeasonVerdict, topScorerOf } from '../engine/season/season-verdict.js';
 import { buildShortlist } from '../engine/club/shortlist.js';
+import { estimateMarketValue } from '../engine/club/transfer-offers.js';
 import {
   DELEGATION_LABEL,
   NO_DELEGATION,
+  delegateQuality,
+  decideMinorOffer,
   focusForPlayer,
   isDelegated,
+  lineupMistakes,
   summarise as summariseDelegation,
   toggleDelegation,
   type DelegationArea,
@@ -2341,6 +2345,45 @@ export function App() {
     return crowdFromFillRate(revenue.fillRate);
   };
 
+  /**
+   * V0.62 — l'adjoint traite les offres qu'on lui a confiées.
+   *
+   * Il ne touche qu'aux joueurs dont le départ ne coûte rien. Une offre sur un
+   * cadre, ou sur quelqu'un qui joue la moitié des matchs, remonte toujours au
+   * manager : déléguer les petites décisions ne doit jamais faire partir un
+   * titulaire dans le dos de celui qui dirige.
+   */
+  const traiterOffresDeleguees = (): void => {
+    const session = seasonRef.current;
+    if (!session || !isDelegated(delegationRef.current, 'OFFRES_MINEURES')) return;
+
+    const state = session.getState();
+    const statuts = squadStatusRef.current;
+    const ratios = playRatioByPlayerForPlayerClub();
+
+    for (const offre of state.pendingIncomingOffers) {
+      const joueur = state.playerClubRoster.find(p => p.id === offre.playerId);
+      if (!joueur) continue;
+
+      const valeur = estimateMarketValue(joueur, state.currentSeason);
+      const decision = decideMinorOffer({
+        isKeyPlayer: statuts.get(joueur.id) === 'CADRE',
+        playRatio: ratios.get(joueur.id as string) ?? 0,
+        offerRatio: valeur > 0 ? offre.transferAmount / valeur : 0,
+      });
+      if (decision === 'AU_MANAGER') continue;
+
+      const resolution = session.resolveIncomingOffer(offre.id, decision === 'ACCEPTER');
+      if (!resolution) continue;
+      notify(
+        decision === 'ACCEPTER'
+          ? `Votre adjoint a accepté l'offre sur ${joueur.lastName}.`
+          : `Votre adjoint a décliné l'offre sur ${joueur.lastName}.`,
+        'info',
+      );
+    }
+  };
+
   const publishRoundNews = (): void => {
     const session = seasonRef.current;
     if (!session) return;
@@ -3212,7 +3255,30 @@ export function App() {
         playerIsHome,
         playerClubId: state.playerClubId,
         seed: `${state.currentRound}_${state.playerNextMatch.homeClubId}_${state.playerNextMatch.awayClubId}`,
-        initialLineup: autoLineup(state.playerClubId, calledUp),
+        // V0.62 — la compo de l'adjoint, quand on la lui a confiée. Le quinze
+        // proposé a toujours été le meilleur possible : déléguer n'aurait rien
+        // changé sans cette imperfection, et la case aurait été un décor.
+        initialLineup: (() => {
+          const auto = autoLineup(state.playerClubId, calledUp);
+          if (!isDelegated(delegationRef.current, 'COMPOSITION')) return auto;
+          const swaps = lineupMistakes(
+            delegateQuality(session.getStaff(), 'COMPOSITION'),
+            auto.starters.length,
+            auto.substitutes.length,
+            createRng(`compo_${seasonSeedRef.current}_${state.currentRound}`),
+          );
+          if (swaps.length === 0) return auto;
+          const starters = [...auto.starters];
+          const substitutes = [...auto.substitutes];
+          for (const swap of swaps) {
+            const titulaire = starters[swap.starterIndex];
+            const remplacant = substitutes[swap.substituteIndex];
+            if (!titulaire || !remplacant) continue;
+            starters[swap.starterIndex] = { ...titulaire, playerId: remplacant };
+            substitutes[swap.substituteIndex] = titulaire.playerId;
+          }
+          return { ...auto, starters, substitutes };
+        })(),
         conditions: weatherFor(
           state.currentSeason, state.currentRound, state.playerNextMatch.homeClubId,
         ),
@@ -3451,6 +3517,7 @@ export function App() {
     // 2. Commit le match du joueur (incrémente currentRound + déclenche détection events + évolue relations)
     session.commitPlayerMatch(homeScore, awayScore, result, starterIds);
     maybeRunWinterMarket();
+    traiterOffresDeleguees();
     publishRoundNews();
     refreshSeason();
     setScreen({ kind: 'dashboard' });
@@ -5008,6 +5075,13 @@ export function App() {
       {screen.kind === 'match' && (
         <MatchScreen
           defaultSpeed={settings.matchSpeed}
+          {...(isDelegated(delegationRef.current, 'REMPLACEMENTS')
+            ? {
+              delegatedSubstitutions: {
+                quality: delegateQuality(seasonRef.current?.getStaff() ?? [], 'REMPLACEMENTS'),
+              },
+            }
+            : {})}
           setup={screen.setup}
           onBack={backToHome}
           {...(screen.setup.returnToSeason ? { onMatchFinished } : {})}
