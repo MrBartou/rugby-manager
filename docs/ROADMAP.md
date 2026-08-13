@@ -163,36 +163,41 @@ identifiés à l'audit + la dette d'architecture qui les a produits.
 
 ---
 
-## V0.61 — La donnée parle
-
-- [ ] **Reporté de V0.60 : extraire l'intersaison de `App.tsx` vers le moteur**
-      (`season/rollover.ts` testé). Les règles sont déjà dans le moteur ; ce qui
-      reste est l'orchestration et ses effets de bord sur une trentaine de
-      références React. Demande une abstraction de rollover à part entière.
+## V0.61 — La donnée parle ✅ *livrée*
 
 **Objectif : montrer la profondeur déjà calculée.** `IndividualMatchStats` capture
 13 métriques riches (mètres, franchissements, défenseurs battus, grattages, plaquages
 manqués…) exploitées uniquement en agrégats textuels. Le meilleur ratio effort/impact
 du rattrapage FM : la donnée existe, il manque l'agrégation et l'UI.
 
-- [ ] **Notes de match par joueur** (sur 10, dérivées des stats individuelles) +
+- [x] **Notes de match par joueur** (sur 10, dérivées des stats individuelles) +
       **homme du match** dans `MatchSummary`
-- [ ] **Stats de saison par joueur** : tableau triable (essais, mètres, plaquages,
+- [x] **Stats de saison par joueur** : tableau triable (essais, mètres, plaquages,
       minutes…) dans l'effectif et sur la fiche joueur
-- [ ] **Classements du championnat** : meilleur marqueur, meilleur réalisateur,
+- [x] **Classements du championnat** : meilleur marqueur, meilleur réalisateur,
       meilleures notes — onglet dans Compétition
-- [ ] **Comparateur de joueurs** (2-3 côte à côte, fourchettes de scouting respectées)
-- [ ] **Tout devient cliquable** : noms de joueurs/clubs dans les Actus, lignes du
+- [x] **Comparateur de joueurs** (2-3 côte à côte, fourchettes de scouting respectées)
+- [x] **Tout devient cliquable** : noms de joueurs/clubs dans les Actus, lignes du
       classement (→ fiche club : effectif, forme, historique H2H), top salaires des
       Finances (→ fiche joueur)
-- [ ] **Fiche club adverse** (nouvel écran léger : palmarès, H2H, effectif visible
+- [x] **Fiche club adverse** (nouvel écran léger : palmarès, H2H, effectif visible
       selon scouting)
-- [ ] **Shortlist / liste de suivi** distincte des créneaux de scouting, avec alertes
+- [x] **Shortlist / liste de suivi** distincte des créneaux de scouting, avec alertes
       fin de contrat
+- [ ] **Reporté en V0.62 : extraire le reste de l'intersaison de `App.tsx`.**
+      Le verdict de fin de saison, son bloc de règles le plus dense, est parti au
+      moteur (`season/season-verdict.ts`, testé). Ce qui reste est de
+      l'orchestration : appeler le moteur, publier des actualités, écrire dans
+      une trentaine de références React. Demande une abstraction de rollover à
+      part entière.
 
 ---
 
 ## V0.62 — Réglages, accessibilité, délégation
+
+- [ ] **Reporté de V0.61 : extraire le reste de l'intersaison de `App.tsx`** vers
+      une abstraction de rollover testée. Les règles sont dans le moteur ; il
+      reste l'orchestration et ses effets de bord.
 
 **Objectif : le socle expérience joueur.** Aucun écran de réglages n'existe.
 Requis pour la bêta de toute façon — et la délégation est le pilier 3 du GDD

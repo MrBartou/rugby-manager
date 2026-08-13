@@ -1,6 +1,6 @@
-# Statut global — V0.60
+# Statut global — V0.61
 
-> Dernière mise à jour : V0.60 livrée. **1264/1264 tests verts. Calibration 12/12 cibles atteintes (8000 matchs par scénario).**
+> Dernière mise à jour : V0.61 livrée. **1314/1314 tests verts. Calibration 12/12 cibles atteintes (8000 matchs par scénario).**
 >
 > Ce document a longtemps annoncé V0.5 alors que le code était déjà en V0.10+ : les jalons
 > V0.6 à V0.12 (carrière, transferts, finances, JIFF, formation, internationaux, records)
@@ -316,6 +316,17 @@
 - [x] Deux divisions, deux calendriers : jeunes et mercato partout, salaires sur trente journées, mercato d'hiver à mi-parcours
 - [x] Une seule vérité : squelette de V0.1 retiré, ancienne sélection purgée, champs morts supprimés, version affichée réelle
 - [ ] Extraire l'intersaison vers le moteur, reporté en V0.61 (voir le CHANGELOG)
+
+### ✅ V0.61 : La donnée parle
+- [x] Note du joueur sur dix et homme du match, situées dans la distribution du poste
+- [x] Vue statistiques de l'effectif : mètres, battus, franchissements, plaquages, grattages
+- [x] Classements individuels du championnat sous la table
+- [x] Fiche club, adversaire compris, avec confrontations et effectif filtré par le scouting
+- [x] Comparateur de deux ou trois joueurs, fourchettes de scouting respectées
+- [x] Liste de suivi avec alertes de fin de contrat, distincte du scouting
+- [x] Classements, fil d'actualité, salaires et classement mènent aux fiches
+- [x] Verdict de fin de saison extrait vers le moteur et testé
+- [ ] Extraction complète de l'intersaison, reportée en V0.62 (voir le CHANGELOG)
 
 ### ⬜ V0.9 — Bêta privée
 - [ ] Init Tauri (binaire desktop)
