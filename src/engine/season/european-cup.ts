@@ -24,6 +24,7 @@
 
 import { createRng, type Rng } from '../rng.js';
 import type { ClubId } from '../types.js';
+import type { ForeignCountry } from './foreign-players.js';
 
 // =============================================================================
 // Compétitions
@@ -60,25 +61,42 @@ export interface EuropeanOpponent {
   readonly name: string;
   /** Ville d'origine — sert à garantir des adversaires distincts dans une poule. */
   readonly city: string;
-  readonly country: 'ANGLETERRE' | 'IRLANDE' | 'ECOSSE' | 'PAYS_DE_GALLES' | 'ITALIE' | 'AFRIQUE_DU_SUD';
+  readonly country: ForeignCountry;
   /** Force globale 40-85, comparable au « niveau » d'un effectif. */
   readonly strength: number;
+  /**
+   * V0.63 : graine d'effectif du club, quand il vient du monde persistant.
+   *
+   * Sans elle, la feuille de match était dérivée de la saison : le même club
+   * revenait l'année suivante avec vingt-trois autres joueurs. Voir
+   * `european-world.ts`.
+   */
+  readonly squadSeed?: string;
+  /** V0.63 : saison de fondation, dont dérive l'âge des joueurs. */
+  readonly foundedSeason?: number;
 }
 
-interface CityPool {
-  readonly country: EuropeanOpponent['country'];
+export interface CityPool {
+  readonly country: ForeignCountry;
   readonly cities: readonly string[];
   /** Force moyenne du championnat d'origine. */
   readonly baseStrength: number;
 }
 
-const EUROPEAN_POOLS: readonly CityPool[] = [
-  { country: 'ANGLETERRE', baseStrength: 66, cities: ['Northfield', 'Bexley', 'Ashcombe', 'Draymoor', 'Kingsholm Park', 'Whitfield'] },
-  { country: 'IRLANDE', baseStrength: 70, cities: ['Ballymore', 'Rathcairn', 'Dunmara', 'Kilbrennan'] },
-  { country: 'ECOSSE', baseStrength: 60, cities: ['Craigmuir', 'Inverloch', 'Glenmarnock'] },
-  { country: 'PAYS_DE_GALLES', baseStrength: 58, cities: ['Aberdare Vale', 'Llanfaren', 'Cwmbrach'] },
-  { country: 'ITALIE', baseStrength: 54, cities: ['Valsecca', 'Montebruno', 'Ripalta'] },
-  { country: 'AFRIQUE_DU_SUD', baseStrength: 68, cities: ['Highveld', 'Karoo Bay', 'Stellenkloof'] },
+/**
+ * Les villes du continent.
+ *
+ * V0.63 : portées de vingt-deux à trente-deux. Ce n'est pas de la décoration,
+ * c'est le nombre de clubs qu'il faut pour remplir deux compétitions
+ * persistantes (dix-huit et quatorze) sans qu'un club joue les deux.
+ */
+export const EUROPEAN_POOLS: readonly CityPool[] = [
+  { country: 'ANGLETERRE', baseStrength: 66, cities: ['Northfield', 'Bexley', 'Ashcombe', 'Draymoor', 'Kingsholm Park', 'Whitfield', 'Marlbury', 'Southstead'] },
+  { country: 'IRLANDE', baseStrength: 70, cities: ['Ballymore', 'Rathcairn', 'Dunmara', 'Kilbrennan', 'Ardnacree', 'Loughmara'] },
+  { country: 'ECOSSE', baseStrength: 60, cities: ['Craigmuir', 'Inverloch', 'Glenmarnock', 'Dunbarrow', 'Strathaven Park'] },
+  { country: 'PAYS_DE_GALLES', baseStrength: 58, cities: ['Aberdare Vale', 'Llanfaren', 'Cwmbrach', 'Penarwel', 'Tredynas'] },
+  { country: 'ITALIE', baseStrength: 54, cities: ['Valsecca', 'Montebruno', 'Ripalta', 'Castelvento'] },
+  { country: 'AFRIQUE_DU_SUD', baseStrength: 68, cities: ['Highveld', 'Karoo Bay', 'Stellenkloof', 'Drakensrand'] },
 ];
 
 const CLUB_SUFFIXES: readonly string[] = ['RFC', 'Rugby', 'Warriors', 'Athletic', 'United', 'Rugby Club'];
@@ -176,6 +194,15 @@ export interface EuropeanResult {
 export function generatePoolCampaign(
   competition: CompetitionId,
   seed: string,
+  /**
+   * V0.63 : adversaires tirés du monde européen persistant.
+   *
+   * Quand ils sont fournis, on ne génère plus personne : ces clubs-là existent
+   * en dehors de cette saison, et c'est tout l'intérêt. La génération à la
+   * volée reste le chemin de secours d'une partie créée avant la V0.63, dont
+   * la sauvegarde ne porte pas encore de monde européen.
+   */
+  drawn?: readonly EuropeanOpponent[],
 ): EuropeanCampaign {
   const rng = createRng(`eu_pool_${seed}`);
   const fixtures: EuropeanFixture[] = [];
@@ -183,12 +210,15 @@ export function generatePoolCampaign(
 
   for (let i = 0; i < EUROPEAN_ROUNDS.length; i++) {
     const round = EUROPEAN_ROUNDS[i]!;
-    const opponent = generateEuropeanOpponent(`${seed}_${i}`, rng, usedCities);
+    const fromWorld = drawn?.[i];
+    const opponent = fromWorld ?? generateEuropeanOpponent(`${seed}_${i}`, rng, usedCities);
     usedCities.add(opponent.city);
     fixtures.push({
       round,
       stage: 'POOL',
-      opponent: adjustForCompetition(opponent, competition),
+      // Un club du monde porte déjà son niveau : le rabais de Challenge est
+      // dans son classement, pas dans une retouche de dernière minute.
+      opponent: fromWorld ? fromWorld : adjustForCompetition(opponent, competition),
       atHome: i % 2 === 0,          // alternance domicile / extérieur
       competition,
     });
@@ -249,6 +279,13 @@ export function summarisePool(campaign: EuropeanCampaign): PoolOutcome {
 export function nextKnockoutFixture(
   campaign: EuropeanCampaign,
   seed: string,
+  /**
+   * V0.63 : adversaires possibles de phase finale, tirés du monde persistant.
+   *
+   * Ceux qu'on croise en avril sont les clubs qui existent depuis septembre,
+   * pas des inconnus fabriqués pour l'occasion.
+   */
+  knockoutPool?: readonly EuropeanOpponent[],
 ): EuropeanFixture | undefined {
   const outcome = summarisePool(campaign);
   if (!outcome.qualified) return undefined;
@@ -269,7 +306,12 @@ export function nextKnockoutFixture(
   if (!next) return undefined;                 // trophée déjà remporté
 
   const rng = createRng(`eu_ko_${seed}_${next.stage}`);
-  const opponent = generateEuropeanOpponent(`${seed}_ko_${knockouts.length}`, rng);
+  // Les adversaires déjà affrontés en poule ne reviennent pas au tour suivant.
+  const alreadyMet = new Set(campaign.results.map(r => r.opponentName));
+  const available = (knockoutPool ?? []).filter(o => !alreadyMet.has(o.name));
+  const opponent = available.length > 0
+    ? available[rng.nextInt(0, available.length - 1)]!
+    : generateEuropeanOpponent(`${seed}_ko_${knockouts.length}`, rng);
   // Les adversaires de phase finale sont plus relevés à mesure qu'on avance.
   const bump = knockouts.length * 3;
   return {
