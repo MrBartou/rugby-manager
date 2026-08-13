@@ -40,6 +40,35 @@ const SCALES: readonly { readonly value: TextScale; readonly label: string }[] =
   { value: 'TRES_GRAND', label: 'Très grand' },
 ];
 
+/**
+ * L'interrupteur.
+ *
+ * L'`input` reste sous le rail dessiné : il porte le clavier, le libellé pour
+ * les lecteurs d'écran et l'état coché. Redessiner un contrôle ne doit jamais
+ * revenir à en construire un qui n'obéit qu'à la souris.
+ */
+function Interrupteur({
+  checked, onChange, label, disabled,
+}: {
+  readonly checked: boolean;
+  readonly onChange: (value: boolean) => void;
+  readonly label: string;
+  readonly disabled?: boolean;
+}) {
+  return (
+    <span className="switch">
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled ?? false}
+        aria-label={label}
+        onChange={e => onChange(e.target.checked)}
+      />
+      <span className="switch-rail" aria-hidden />
+    </span>
+  );
+}
+
 export function SettingsScreen({ settings, onChange, onBack }: Props) {
   const set = <K extends keyof Settings>(key: K, value: Settings[K]): void =>
     onChange({ ...settings, [key]: value });
@@ -53,8 +82,16 @@ export function SettingsScreen({ settings, onChange, onBack }: Props) {
         <button onClick={onBack} type="button" className="ghost">← Retour</button>
       </div>
 
+      <p className="settings-intro">
+        Ces réglages suivent le joueur, pas la partie : ils valent pour toutes
+        vos carrières et ne voyagent pas avec un fichier de sauvegarde.
+      </p>
+
       <div className="settings-group">
-        <div className="panel-tag">Match</div>
+        <div className="settings-group-head">
+          <div className="panel-tag">Match</div>
+          <span className="settings-group-note">Ce qui se passe pendant une rencontre</span>
+        </div>
 
         <div className="setting">
           <div className="setting-label">
@@ -79,7 +116,10 @@ export function SettingsScreen({ settings, onChange, onBack }: Props) {
       </div>
 
       <div className="settings-group">
-        <div className="panel-tag">Partie</div>
+        <div className="settings-group-head">
+          <div className="panel-tag">Partie</div>
+          <span className="settings-group-note">Sauvegarde et garde-fous</span>
+        </div>
 
         <label className="setting">
           <div className="setting-label">
@@ -89,10 +129,10 @@ export function SettingsScreen({ settings, onChange, onBack }: Props) {
               simplement de les mettre à jour toute seule.
             </span>
           </div>
-          <input
-            type="checkbox"
+          <Interrupteur
             checked={settings.autosave}
-            onChange={e => set('autosave', e.target.checked)}
+            onChange={v => set('autosave', v)}
+            label="Sauvegarde automatique"
           />
         </label>
 
@@ -104,16 +144,19 @@ export function SettingsScreen({ settings, onChange, onBack }: Props) {
               supprimer une sauvegarde.
             </span>
           </div>
-          <input
-            type="checkbox"
+          <Interrupteur
             checked={settings.confirmations}
-            onChange={e => set('confirmations', e.target.checked)}
+            onChange={v => set('confirmations', v)}
+            label="Demander confirmation"
           />
         </label>
       </div>
 
       <div className="settings-group">
-        <div className="panel-tag">Accessibilité</div>
+        <div className="settings-group-head">
+          <div className="panel-tag">Accessibilité</div>
+          <span className="settings-group-note">Confort de lecture et de mouvement</span>
+        </div>
 
         <label className="setting">
           <div className="setting-label">
@@ -124,11 +167,11 @@ export function SettingsScreen({ settings, onChange, onBack }: Props) {
                 : 'Coupe les transitions et les confettis. Le jeu reste identique, il bouge moins.'}
             </span>
           </div>
-          <input
-            type="checkbox"
+          <Interrupteur
             checked={settings.reducedMotion || systemeReduit}
             disabled={systemeReduit}
-            onChange={e => set('reducedMotion', e.target.checked)}
+            onChange={v => set('reducedMotion', v)}
+            label="Animations réduites"
           />
         </label>
 
@@ -193,16 +236,25 @@ export function SettingsScreen({ settings, onChange, onBack }: Props) {
         </div>
 
         {/* L'aperçu vaut mieux qu'une description : on voit immédiatement si la
-            palette choisie se lit. */}
+            palette choisie se lit, et c'est le seul moyen de vérifier soi-même
+            que les trois états se distinguent. */}
         <div className="palette-preview">
           <span className="pp-item good">Excellent</span>
           <span className="pp-item mid">Correct</span>
           <span className="pp-item bad">Insuffisant</span>
+          <p className="pp-caption">
+            Ces trois pastilles emploient les couleurs que le jeu utilise partout
+            où un indicateur juge quelque chose. Si vous les distinguez ici, vous
+            les distinguerez sur le terrain.
+          </p>
         </div>
       </div>
 
       <div className="settings-group">
-        <div className="panel-tag">Son</div>
+        <div className="settings-group-head">
+          <div className="panel-tag">Son</div>
+          <span className="settings-group-note">Prévu pour la V0.69</span>
+        </div>
         <div className="setting">
           <div className="setting-label">
             <span>Volume général</span>
@@ -211,14 +263,17 @@ export function SettingsScreen({ settings, onChange, onBack }: Props) {
               conservé d'ici là.
             </span>
           </div>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={settings.volume}
-            onChange={e => set('volume', Number(e.target.value))}
-            aria-label="Volume général"
-          />
+          <span className="setting-range">
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={settings.volume}
+              onChange={e => set('volume', Number(e.target.value))}
+              aria-label="Volume général"
+            />
+            <span className="setting-value">{settings.volume} %</span>
+          </span>
         </div>
       </div>
     </section>

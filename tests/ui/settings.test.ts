@@ -10,6 +10,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   DEFAULT_SETTINGS,
+  applySettings,
   loadSettings,
   saveSettings,
   type Settings,
@@ -84,5 +85,34 @@ describe('une préférence abîmée n\'empêche pas de jouer', () => {
   it('et un booléen qui n\'en est pas un aussi', () => {
     localStorage.setItem(CLE, JSON.stringify({ autosave: 'oui' }));
     expect(loadSettings().autosave).toBe(DEFAULT_SETTINGS.autosave);
+  });
+});
+
+describe('le thème et la palette passent par des attributs', () => {
+  it('applySettings ne pose jamais de couleur en ligne', () => {
+    // V0.62.1 : la feuille de style doit rester seule juge de l'apparence. Un
+    // style en ligne posé par le code court-circuiterait le thème, ce qui est
+    // exactement le défaut qu'on vient de corriger dans le CSS lui-même.
+    const racine = { dataset: {} as Record<string, string>, style: { props: {} as Record<string, string>, setProperty(k: string, v: string) { this.props[k] = v; } } };
+    (globalThis as unknown as { document: unknown }).document = { documentElement: racine };
+    (globalThis as unknown as { window: unknown }).window = { matchMedia: () => ({ matches: false }) };
+
+    applySettings({ ...DEFAULT_SETTINGS, colourMode: 'CLAIR', palette: 'DALTONIEN', textScale: 'GRAND' });
+
+    expect(racine.dataset.theme).toBe('clair');
+    expect(racine.dataset.palette).toBe('daltonien');
+    expect(racine.dataset.motion).toBe('complet');
+    // Seule exception assumée : l'échelle de texte, qui est un nombre et non
+    // une couleur, et que la feuille consomme via une variable.
+    expect(Object.keys(racine.style.props)).toEqual(['--text-scale']);
+  });
+
+  it('respecte la préférence système d\'emblée', () => {
+    const racine = { dataset: {} as Record<string, string>, style: { setProperty() { /* ignoré */ } } };
+    (globalThis as unknown as { document: unknown }).document = { documentElement: racine };
+    (globalThis as unknown as { window: unknown }).window = { matchMedia: () => ({ matches: true }) };
+
+    applySettings({ ...DEFAULT_SETTINGS, reducedMotion: false });
+    expect(racine.dataset.motion).toBe('reduit');
   });
 });
