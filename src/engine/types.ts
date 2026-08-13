@@ -197,6 +197,16 @@ export interface Player {
   readonly retirementSeason?: number;
   /** V0.6 — joueur libre (contrat expiré non renouvelé). Filtré du roster du club d'origine. */
   readonly freeAgent?: boolean;
+  /**
+   * V0.63 : joueur parti jouer hors de France.
+   *
+   * Il ne s'agit pas d'un doublon de `clubId` : c'est ce drapeau qui coupe
+   * l'accès au XV de France, comme le fait le vrai règlement pour les
+   * expatriés. Sans lui, vendre son international à l'étranger n'aurait aucune
+   * conséquence, et cette vente serait une transaction sans arbitrage,
+   * c'est-à-dire sans intérêt.
+   */
+  readonly abroad?: boolean;
 }
 
 // =============================================================================
