@@ -33,7 +33,6 @@ import {
   type AiTransfer,
 } from '../engine/club/ai-market.js';
 import {
-  applyBoardVerdict,
   clubStature,
   idleReputationDecay,
   jobOffersFor,
@@ -47,7 +46,6 @@ import {
   appendManagerSeason,
   markDeparture,
   type ManagerCareer,
-  type SeasonVerdict,
 } from '../engine/season/manager-record.js';
 import {
   defaultContract,
@@ -229,7 +227,7 @@ import {
   targetLevel,
   type AcademyState,
 } from '../engine/club/academy.js';
-import { appendSeason, EMPTY_HISTORY, type CareerHistory, type SeasonRecord } from '../engine/season/records.js';
+import { appendSeason, EMPTY_HISTORY, type CareerHistory } from '../engine/season/records.js';
 import {
   compactBook,
   EMPTY_BOOK,
@@ -239,12 +237,10 @@ import {
   type CareerBook,
   type SeasonEntry,
 } from '../engine/season/player-career.js';
-import { INITIAL_REPUTATION, updateReputation, type ManagerReputation } from '../engine/season/manager-reputation.js';
+import { INITIAL_REPUTATION, type ManagerReputation } from '../engine/season/manager-reputation.js';
 import {
-  checkObjectiveMet,
   computeObjective,
   INITIAL_BOARD_CONFIDENCE,
-  updateBoardConfidence,
   type BoardConfidence,
   type SeasonObjective,
 } from '../engine/season/board-objective.js';
@@ -271,6 +267,7 @@ import { DashboardScreen } from './screens/DashboardScreen.js';
 import { StandingsScreen } from './screens/StandingsScreen.js';
 import { ClubScreen } from './screens/ClubScreen.js';
 import { allLeaderboards } from '../engine/season/leaderboards.js';
+import { buildSeasonVerdict, topScorerOf } from '../engine/season/season-verdict.js';
 import { buildShortlist } from '../engine/club/shortlist.js';
 import { PreMatchScreen } from './screens/PreMatchScreen.js';
 import { SquadScreen } from './screens/SquadScreen.js';
@@ -1341,101 +1338,54 @@ export function App() {
       const runnerUp = finalMatch && state.champion
         ? (finalMatch.homeClubId === state.champion ? finalMatch.awayClubId : finalMatch.homeClubId)
         : undefined;
-      // Top scorer de la saison côté club joueur
-      const playerRoster = state.playerClubRoster;
-      let topScorerEntry: { playerId: import('../engine/types.js').PlayerId; tries: number } | undefined;
-      for (const [pid, stat] of state.seasonPlayerStats.entries()) {
-        if (!topScorerEntry || stat.tries > topScorerEntry.tries) {
-          topScorerEntry = { playerId: pid, tries: stat.tries };
-        }
-      }
-      const topScorerPlayer = topScorerEntry ? playerRoster.find(p => p.id === topScorerEntry!.playerId) : undefined;
-      const seasonRecord: SeasonRecord = {
-        seasonStart: state.currentSeason,
-        ...(state.champion !== undefined ? { champion: state.champion } : {}),
-        ...(runnerUp ? { runnerUp } : {}),
-        playerClubFinalRank: playerRank > 0 ? playerRank : 0,
-        playerClubReachedFinal: state.history.some(h => h.round === state.playoffRounds.FINAL && (h.homeClubId === state.playerClubId || h.awayClubId === state.playerClubId)),
-        playerClubChampion: state.champion === state.playerClubId,
-        ...(topScorerPlayer && topScorerEntry && topScorerEntry.tries > 0 ? {
-          topScorerOfSeason: {
-            playerId: topScorerPlayer.id,
-            playerName: `${topScorerPlayer.firstName} ${topScorerPlayer.lastName}`,
-            clubId: topScorerPlayer.clubId,
-            tries: topScorerEntry.tries,
-          },
-        } : {}),
-      };
-      careerHistoryRef.current = appendSeason(careerHistoryRef.current, seasonRecord);
-      // V0.9 Phase 3 — vérifier l'objectif du board
-      const objective = objectiveRef.current;
-      const objectiveCheck = objective
-        ? checkObjectiveMet({
-            objective,
-            playerClubFinalRank: seasonRecord.playerClubFinalRank,
-            playerClubChampion: seasonRecord.playerClubChampion,
-          })
-        : { met: false, summary: '' };
-      const objectiveMet = objectiveCheck.met;
-      // V0.42 — la réputation d'avant, pour mesurer ce que la saison a rapporté.
-      const reputationBefore = reputationRef.current.score;
-      // V0.9 Phase 2 — update réputation manager
-      reputationRef.current = updateReputation(reputationRef.current, {
-        playerClubId: state.playerClubId,
-        ...(state.champion !== undefined ? { champion: state.champion } : {}),
-        playerClubReachedFinal: seasonRecord.playerClubReachedFinal,
-        playerClubFinalRank: seasonRecord.playerClubFinalRank,
-        objectiveMet,
-        ...(objectiveRef.current ? { objectiveTargetRank: objectiveRef.current.targetRank } : {}),
-      });
-      // V0.9 Phase 3 — update confiance board + check licenciement
-      confidenceRef.current = updateBoardConfidence(
-        confidenceRef.current,
-        objectiveMet,
-        seasonRecord.playerClubChampion,
-      );
-      // V0.41 — un limogeage rend libre au lieu de terminer la carrière.
-      const careerBefore = careerRef.current;
-      const clubNameNow = allClubs.find(c => c.id === state.playerClubId)?.name ?? 'Le club';
-      const verdict = applyBoardVerdict(
-        careerRef.current,
-        confidenceRef.current.fired,
-        state.currentSeason,
-        clubNameNow,
-        confidenceRef.current.consecutiveFailures,
-        contractRef.current.patience,
-      );
-      careerRef.current = verdict.status;
-      if (verdict.notice) setFiredNotice(verdict.notice);
-
-      // V0.42 — la saison entre au parcours, et le président écrit son verdict.
+      // V0.61 — le verdict est calculé par le moteur.
       //
-      // On archive même sans objectif connu (sauvegarde antérieure à V0.9) :
-      // une ligne incomplète vaut mieux qu'un trou dans la carrière.
-      const wasInCharge = careerBefore.kind === 'EN_POSTE';
-      const fired = verdict.status.kind === 'LIBRE';
-      const seasonVerdict: SeasonVerdict = fired
-        ? 'LIMOGE'
-        : objectiveMet ? 'RECONDUIT' : 'AVERTI';
-      // Une saison passée sans club n'entre pas au parcours : on ne l'a pas
-      // dirigée, et l'y consigner créditerait le manager d'un résultat qui ne
-      // lui appartient pas.
-      if (wasInCharge) managerCareerRef.current = appendManagerSeason(managerCareerRef.current, {
+      // Ces règles vivaient ici, mêlées à la publication des actualités et à la
+      // mise à jour d'une trentaine de références React. Elles décident du sort
+      // du manager : c'est ce que la frontière moteur/interface réserve au
+      // moteur, et rien n'en était testable tant que ça vivait dans un composant.
+      const objective = objectiveRef.current;
+      const clubNameNow = allClubs.find(c => c.id === state.playerClubId)?.name ?? 'Le club';
+      const bilan = buildSeasonVerdict({
         season: state.currentSeason,
-        clubId: state.playerClubId,
+        playerClubId: state.playerClubId,
         clubName: clubNameNow,
-        objectiveKind: objective?.kind ?? 'TOP_10',
-        objectiveTargetRank: objective?.targetRank ?? 10,
-        objectiveLabel: objective?.label ?? 'Non défini',
-        finalRank: seasonRecord.playerClubFinalRank,
-        objectiveMet,
-        reachedFinal: seasonRecord.playerClubReachedFinal,
-        wonTitle: seasonRecord.playerClubChampion,
-        reputationAfter: reputationRef.current.score,
-        reputationDelta: reputationRef.current.score - reputationBefore,
-        boardConfidence: confidenceRef.current.score,
-        verdict: seasonVerdict,
+        ...(state.champion !== undefined ? { champion: state.champion } : {}),
+        playerClubFinalRank: playerRank,
+        playerClubReachedFinal: state.history.some(h =>
+          h.round === state.playoffRounds.FINAL
+          && (h.homeClubId === state.playerClubId || h.awayClubId === state.playerClubId)),
+        ...(runnerUp ? { runnerUp } : {}),
+        ...(() => {
+          const top = topScorerOf(state.seasonPlayerStats, (playerId) => {
+            const joueur = state.playerClubRoster.find(p => p.id === playerId);
+            return joueur
+              ? { name: `${joueur.firstName} ${joueur.lastName}`, clubId: joueur.clubId }
+              : undefined;
+          });
+          return top ? { topScorerOfSeason: top } : {};
+        })(),
+        objective: objective ?? undefined,
+        reputation: reputationRef.current,
+        confidence: confidenceRef.current,
+        career: careerRef.current,
+        contractPatience: contractRef.current.patience,
       });
+
+      const seasonRecord = bilan.seasonRecord;
+      const objectiveMet = bilan.objectiveMet;
+      const seasonVerdict = bilan.verdict;
+      const wasInCharge = bilan.managerSeason !== undefined;
+
+      careerHistoryRef.current = appendSeason(careerHistoryRef.current, seasonRecord);
+      reputationRef.current = bilan.reputation;
+      confidenceRef.current = bilan.confidence;
+      careerRef.current = bilan.career;
+      if (bilan.notice) setFiredNotice(bilan.notice);
+      if (bilan.managerSeason) {
+        managerCareerRef.current = appendManagerSeason(managerCareerRef.current, bilan.managerSeason);
+      }
+
       if (wasInCharge) sendMail([
         mailSeasonVerdict({
           season: state.currentSeason,
