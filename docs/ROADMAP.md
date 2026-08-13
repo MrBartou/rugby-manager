@@ -220,22 +220,27 @@ Requis pour la bêta de toute façon — et la délégation est le pilier 3 du G
 
 ---
 
-## V0.63 — Le monde s'élargit
+## V0.63 : Le monde s'élargit ✅ *livrée*
 
 **Objectif : le monde ne s'arrête plus aux frontières.** 30 clubs, une nation,
 zéro transfert international aujourd'hui. Fidèle au choix juridique (pas de licence) :
 tout reste procédural mais devient **persistant**.
 
-- [ ] **Clubs européens persistants** : les adversaires de Champions/Challenge Cup
-      gardent effectifs, forme et historique d'une saison à l'autre (aujourd'hui
-      régénérés, `strength` 40-85)
-- [ ] **Marché international fictif** : acheter/vendre vers un pool anglo-celte et
-      hémisphère sud procédural — recrues non-JIFF qui rendent le quota JIFF
-      réellement structurant
-- [ ] **Matchs internationaux simulés par le vrai moteur** (aujourd'hui : score estimé)
-      — un international a enfin de vraies performances en sélection, des capes
-      racontables, des blessures en bleu qui font mal
-- [ ] **Palmarès européen historisé** (vainqueurs par saison)
+- [x] **Clubs européens persistants** : trente-deux clubs qui existent en dehors
+      de nous, gardent leur effectif, dérivent de niveau et gagnent des titres
+      (`season/european-world.ts`). Ce qui est persisté : identité, niveau,
+      forme, palmarès et graine d'effectif ; les vingt-trois joueurs sont
+      reconstruits à l'identique depuis cette graine, vieillissent d'un an par
+      saison et se renouvellent poste par poste. Détail dans le CHANGELOG.
+- [x] **Marché international fictif** : pool anglo-celte et hémisphère sud
+      (`club/international-market.ts`), recrues non-JIFF, et une vente à
+      l'étranger qui coûte la sélection au joueur (`Player.abroad`).
+- [x] **Matchs internationaux simulés par le vrai moteur** : deux feuilles de
+      vingt-trois, quatre-vingts minutes jouées, capes réservées aux joueurs de
+      la feuille, fatigue au prorata des minutes et blessures en bleu.
+- [x] **Palmarès européen historisé** : deux vainqueurs par saison, y compris
+      les années où le club dirigé n'y jouait pas, consultables au palmarès de
+      carrière.
 
 ---
 
