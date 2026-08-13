@@ -16,6 +16,7 @@ import {
   canRegister,
   capReport,
   computePayroll,
+  countsAsOffence,
   headroomAfterSigning,
   jiffReport,
   matchSheetCompliant,
@@ -197,5 +198,32 @@ describe('enregistrement d\'une recrue', () => {
     const out = canRegister({ roster, division: 'TOP14', annualSalary: 100_000, transferBan: false });
     expect(out.allowed).toBe(true);
     expect(out.warning).toBeUndefined();
+  });
+});
+
+describe('la récidive ne s\'arme pas sur un avertissement', () => {
+  it('un avertissement sans suite ne compte pas comme antécédent', () => {
+    // Il armait la récidive au même titre qu'un retrait de points : un club
+    // prévenu une fois repartait récidiviste l'année suivante.
+    expect(countsAsOffence({
+      kind: 'AVERTISSEMENT',
+      reason: 'quota JIFF juste sous le seuil',
+      pointsDeducted: 0,
+      fine: 0,
+      transferBan: false,
+    })).toBe(false);
+  });
+
+  it('une amende, un retrait ou une interdiction, oui', () => {
+    const base = {
+      kind: 'AMENDE' as const,
+      reason: 'dépassement',
+      pointsDeducted: 0,
+      fine: 0,
+      transferBan: false,
+    };
+    expect(countsAsOffence({ ...base, fine: 250_000 })).toBe(true);
+    expect(countsAsOffence({ ...base, pointsDeducted: 3 })).toBe(true);
+    expect(countsAsOffence({ ...base, transferBan: true })).toBe(true);
   });
 });

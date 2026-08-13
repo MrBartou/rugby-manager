@@ -125,7 +125,15 @@ export function generateEuropeanOpponent(
  */
 export const EUROPEAN_ROUNDS: readonly number[] = [9, 11, 13, 15];
 
-/** Journées des phases finales européennes, après la fin du championnat régulier. */
+/**
+ * Journées des phases finales européennes.
+ *
+ * V0.60 : le commentaire les annonçait « après la fin du championnat régulier »
+ * alors qu'elles se greffent sur ses dernières journées. C'est la réalité du
+ * calendrier qui a raison, pas la phrase : huitièmes en avril, finale en mai,
+ * pendant que le championnat court encore. Le prix se paie sur le terrain, en
+ * fatigue accumulée au pire moment de la saison, et c'est tout l'intérêt.
+ */
 export const EUROPEAN_KNOCKOUT_ROUNDS = {
   ROUND_OF_16: 18,
   QUARTERFINAL: 20,

@@ -19,6 +19,14 @@ interface Props {
   readonly clubs: readonly Club[];
   /** V0.44 — l'étage où l'on joue : un classement de Pro D2 ne s'annonce pas « Top 14 ». */
   readonly division: Division;
+  /**
+   * V0.60 — retraits de points en vigueur, par club.
+   *
+   * La sanction était appliquée au classement sans que rien ne l'explique : un
+   * club apparaissait à moins six points, et le manager pouvait chercher
+   * longtemps d'où venait le trou.
+   */
+  readonly pointsPenalties?: ReadonlyMap<string, number>;
 }
 
 interface FormResult {
@@ -48,7 +56,7 @@ function computeForm(state: SeasonState, clubId: string): FormResult[] {
   });
 }
 
-export function StandingsScreen({ state, clubs, division }: Props) {
+export function StandingsScreen({ state, clubs, division, pointsPenalties }: Props) {
   const ranking = [...state.standings.values()].sort((a, b) => {
     if (b.leaguePoints !== a.leaguePoints) return b.leaguePoints - a.leaguePoints;
     const aDiff = a.pointsFor - a.pointsAgainst;
@@ -174,6 +182,14 @@ export function StandingsScreen({ state, clubs, division }: Props) {
                       <span className="club-short">{clubShort(clubs, s.clubId)}</span>
                       <span className="club-name">{clubName(clubs, s.clubId)}</span>
                     </span>
+                    {(pointsPenalties?.get(s.clubId as string) ?? 0) > 0 && (
+                      <span
+                        className="penalty-badge"
+                        title={`Retrait de ${pointsPenalties!.get(s.clubId as string)} points prononcé par la commission`}
+                      >
+                        -{pointsPenalties!.get(s.clubId as string)} pts
+                      </span>
+                    )}
                     {europe && (
                       <span
                         className={`euro-badge ${europe === 'CHAMPIONS_CUP' ? 'major' : 'challenge'}`}

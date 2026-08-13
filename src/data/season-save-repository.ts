@@ -36,6 +36,7 @@ import type { ActiveLoan } from '../engine/club/loans.js';
 import type { BoardExpectation } from '../engine/season/board-expectations.js';
 import type { HeadToHead } from '../engine/season/rivalries.js';
 import type { PlayerId } from '../engine/types.js';
+import type { HumanEvent } from '../engine/human/events.js';
 
 /**
  * 0.5.0 — V0.31 : ajout des réglages d'entraînement, du scouting, des délais
@@ -44,7 +45,35 @@ import type { PlayerId } from '../engine/types.js';
  * scouting effacés, et délais après refus remis à zéro — il suffisait de
  * recharger pour reproposer une offre qu'un joueur venait de décliner.
  */
-export const SEASON_SCHEMA_VERSION = '0.5.0';
+/**
+ * 0.6.0 — V0.60 : le format avait cessé d'être versionné.
+ *
+ * Tout ce qui a été ajouté depuis la V0.32 (staff, direction du club, promesses,
+ * capitaine, hiérarchie de l'effectif, rivaux, palmarès, prêts, attentes du
+ * board, confrontations, retouches du groupe France, registre de carrière) est
+ * entré dans la sauvegarde sous le tampon `0.5.0`. La migration ne pouvait donc
+ * plus rien distinguer, et une sauvegarde écrite par une version postérieure du
+ * jeu était chargée puis re-tamponnée sans le moindre contrôle.
+ *
+ * Ces champs sont tous facultatifs : une partie 0.5.0 se charge telle quelle,
+ * la session repartant de ses valeurs par défaut pour ce qu'elle ne trouve pas.
+ * Le numéro sert à savoir ce qu'on lit, pas à refuser de le lire.
+ */
+export const SEASON_SCHEMA_VERSION = '0.6.0';
+
+/** Les versions de format que ce build sait ouvrir. */
+const READABLE_SCHEMA_VERSIONS: readonly string[] = ['0.3.0', '0.4.0', '0.5.0', '0.6.0'];
+
+/**
+ * Vrai si la sauvegarde vient d'une version du jeu postérieure à celle-ci.
+ *
+ * La charger reviendrait à en perdre silencieusement tout ce qu'on ne sait pas
+ * lire, puis à la réécrire amputée sous notre propre tampon.
+ */
+export function isFutureSchema(version: string | undefined): boolean {
+  if (version === undefined) return false;
+  return !READABLE_SCHEMA_VERSIONS.includes(version);
+}
 
 export interface SeasonSaveMeta {
   readonly saveId: string;
@@ -66,6 +95,11 @@ export interface SeasonSave extends SeasonSaveMeta {
   readonly clubIds: readonly ClubId[];            // pour reconstruire la session
   /** V0.4 — joueurs modifiés (retraites, contrats à venir). Vide = utiliser le CSV. */
   readonly playerOverrides: readonly Player[];
+  /**
+   * V0.60 — retraités de longue date des données de base, réduits à leur
+   * identifiant. Reconstruits au chargement : voir `pruneRetiredOverrides`.
+   */
+  readonly retiredSeedPlayerIds?: readonly PlayerId[];
   /** V0.6 — finances par club (sérialisé comme tableau de paires). */
   readonly financesByClub: readonly { readonly clubId: ClubId; readonly finances: ClubFinances }[];
   /** V0.9 — historique de carrière (records + palmarès). */
@@ -141,7 +175,30 @@ export interface SeasonSave extends SeasonSaveMeta {
     readonly transferBan: boolean;
     /** V0.47 — clubs déjà sanctionnés la saison passée, récidive comprise. */
     readonly repeatOffenders?: readonly ClubId[];
+    /**
+     * V0.60 — retraits de points en vigueur cette saison, par club.
+     *
+     * Ils étaient calculés à l'intersaison puis oubliés au rechargement. Le
+     * classement, lui, portait bien la sanction : le club apparaissait à moins
+     * six points sans que rien ne dise pourquoi.
+     */
+    readonly pointsPenaltyByClub?: readonly { readonly clubId: ClubId; readonly points: number }[];
   };
+  /**
+   * V0.60 — décisions humaines en attente au moment de la sauvegarde.
+   *
+   * Un conflit de vestiaire ouvert disparaissait au rechargement, avec la
+   * décision qu'il appelait : la question se refermait sans réponse.
+   */
+  readonly pendingEvents?: readonly HumanEvent[];
+  /**
+   * V0.60 — bancs libres au moment de la sauvegarde.
+   *
+   * Sans eux, recharger effaçait la liste des clubs sans entraîneur : les
+   * offres en attente disparaissaient, et les postes se pourvoyaient tout seuls
+   * à la journée suivante.
+   */
+  readonly vacancies?: readonly ClubId[];
   /**
    * V0.48 — promesses en cours, avec le nombre de matchs déjà disputés au
    * moment où elles ont été faites. Sans cette référence, un rechargement
@@ -225,6 +282,17 @@ export interface SeasonSave extends SeasonSaveMeta {
     readonly playerId: PlayerId;
     readonly career: PlayerCareer;
   }[];
+  /**
+   * V0.60 : retouches du sélectionneur sur le groupe France.
+   *
+   * Elles vivaient en mémoire vive seulement. Un manager qui composait son
+   * groupe puis rechargeait retrouvait la liste du sélectionneur automatique,
+   * sans trace de ses choix.
+   */
+  readonly nationalPicks?: {
+    readonly added: readonly PlayerId[];
+    readonly removed: readonly PlayerId[];
+  };
   /** V0.45 — installations, chantier en cours et politique commerciale. */
   readonly direction?: {
     readonly facilities: ClubFacilities;
@@ -251,19 +319,103 @@ interface StorageShape {
   readonly saves: Record<string, SeasonSave>;
 }
 
+/** Clé de la copie de secours, écrite avant tout écrasement. */
+const BACKUP_KEY = `${STORAGE_KEY}_backup`;
+
+/**
+ * Parties illisibles rencontrées à la dernière lecture.
+ *
+ * Exposé pour que l'interface puisse le dire au joueur au lieu de faire comme
+ * si ces parties n'avaient jamais existé.
+ */
+export interface StorageHealth {
+  readonly corrupted: readonly string[];
+  /** Vrai si le bloc entier est illisible, pas seulement une entrée. */
+  readonly totalLoss: boolean;
+  /**
+   * Parties écrites par une version plus récente du jeu.
+   *
+   * Elles ne sont ni chargées ni touchées : les ouvrir amputerait tout ce que
+   * ce build ne sait pas lire, et la sauvegarde suivante figerait la perte.
+   */
+  readonly fromFutureVersion: readonly string[];
+}
+
+const HEALTHY: StorageHealth = { corrupted: [], totalLoss: false, fromFutureVersion: [] };
+
+let lastHealth: StorageHealth = HEALTHY;
+
+/**
+ * Entrées lues mais non chargées, gardées telles quelles.
+ *
+ * Une partie illisible ou écrite par une version postérieure du jeu ne doit pas
+ * disparaître à la prochaine écriture : `save()` reconstruit le bloc à partir
+ * de ce qu'il a su lire, et tout ce qui n'y figure pas serait effacé.
+ */
+let preservedEntries: Record<string, unknown> = {};
+
+export function storageHealth(): StorageHealth {
+  return lastHealth;
+}
+
+/**
+ * Lecture défensive du stockage : v0.60.
+ *
+ * L'ancienne version avalait **toute** erreur dans un `catch` qui renvoyait un
+ * objet vide. Une seule entrée mal formée faisait donc disparaître la totalité
+ * des parties, et la sauvegarde automatique suivante réécrivait le bloc entier
+ * par-dessus : la perte devenait définitive en une journée de jeu.
+ *
+ * On lit désormais **entrée par entrée**. Une partie illisible est mise de côté
+ * et signalée, les autres sont chargées normalement. Rien n'est effacé.
+ */
 function readStorage(): StorageShape {
+  const corrupted: string[] = [];
+  let raw: string | null = null;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { version: SEASON_SCHEMA_VERSION, saves: {} };
-    const parsed = JSON.parse(raw) as StorageShape;
-    const migratedSaves: Record<string, SeasonSave> = {};
-    for (const [id, s] of Object.entries(parsed.saves ?? {})) {
-      migratedSaves[id] = migrateSave(s);
-    }
-    return { version: SEASON_SCHEMA_VERSION, saves: migratedSaves };
+    raw = localStorage.getItem(STORAGE_KEY);
   } catch {
+    lastHealth = { ...HEALTHY, totalLoss: true };
     return { version: SEASON_SCHEMA_VERSION, saves: {} };
   }
+  if (!raw) {
+    lastHealth = HEALTHY;
+    return { version: SEASON_SCHEMA_VERSION, saves: {} };
+  }
+
+  let parsed: Partial<StorageShape> | undefined;
+  try {
+    parsed = JSON.parse(raw) as Partial<StorageShape>;
+  } catch {
+    // Le bloc entier est illisible. On le signale, et surtout on ne le
+    // remplace pas : la copie de secours reste la seule chance de le récupérer.
+    lastHealth = { ...HEALTHY, totalLoss: true };
+    return { version: SEASON_SCHEMA_VERSION, saves: {} };
+  }
+
+  const saves: Record<string, SeasonSave> = {};
+  const fromFutureVersion: string[] = [];
+  const preserved: Record<string, unknown> = {};
+  for (const [id, s] of Object.entries(parsed?.saves ?? {})) {
+    if (isFutureSchema((s as Partial<SeasonSave> | undefined)?.schemaVersion)) {
+      fromFutureVersion.push(id);
+      preserved[id] = s;
+      continue;
+    }
+    try {
+      const migrated = migrateSave(s);
+      // Une entrée sans identifiant ni club n'est pas une partie : la charger
+      // ferait planter l'écran de reprise plus loin, sans indice sur la cause.
+      if (!migrated.saveId || !migrated.playerClubId) throw new Error('entrée incomplète');
+      saves[id] = migrated;
+    } catch {
+      corrupted.push(id);
+      preserved[id] = s;
+    }
+  }
+  preservedEntries = preserved;
+  lastHealth = { corrupted, totalLoss: false, fromFutureVersion };
+  return { version: SEASON_SCHEMA_VERSION, saves };
 }
 
 /**
@@ -302,8 +454,133 @@ export function migrateSave(raw: unknown): SeasonSave {
   return { ...merged, schemaVersion: SEASON_SCHEMA_VERSION };
 }
 
+/**
+ * L'élagage des retraités : v0.60.
+ *
+ * `playerOverrides` porte la base joueurs entière, et les retraités y restaient
+ * à vie. Un joueur pèse environ 880 octets une fois sérialisé ; vingt saisons de
+ * retraites et de générations de jeunes suffisaient à faire dériver la
+ * sauvegarde vers le quota de `localStorage`, cinq mégaoctets pour toutes les
+ * parties confondues. La partie mourait alors d'un stockage plein, sans que le
+ * joueur ait rien fait de particulier.
+ *
+ * Deux sorts, selon d'où vient le joueur.
+ *
+ * - **Il figure dans les données de base** : on ne garde que son identifiant,
+ *   huit octets au lieu de huit cents. Au chargement, il est reconstruit depuis
+ *   ces données et remarqué comme retraité.
+ * - **Il a été généré en cours de partie** (jeune du centre de formation) : rien
+ *   ne permettrait de le reconstruire, mais rien n'y renvoie non plus. Il sort
+ *   de la sauvegarde. Ce qu'il a fait sur le terrain reste au registre de
+ *   carrière, qui garde ses propres lignes et son nom.
+ *
+ * Le délai de grâce évite de toucher aux retraites récentes, qui s'affichent
+ * encore dans le bilan d'intersaison.
+ */
+export const RETIREMENT_GRACE_SEASONS = 3;
+
+export interface PrunedOverrides {
+  readonly overrides: readonly Player[];
+  /** Retraités des données de base, réduits à leur identifiant. */
+  readonly retiredSeedPlayerIds: readonly PlayerId[];
+}
+
+export function pruneRetiredOverrides(
+  overrides: readonly Player[],
+  currentSeason: number,
+  isSeedPlayer: (playerId: PlayerId) => boolean,
+): PrunedOverrides {
+  const kept: Player[] = [];
+  const retiredSeedPlayerIds: PlayerId[] = [];
+  for (const p of overrides) {
+    const retiredLongAgo = p.retired === true
+      && p.retirementSeason !== undefined
+      && currentSeason - p.retirementSeason >= RETIREMENT_GRACE_SEASONS;
+    if (!retiredLongAgo) {
+      kept.push(p);
+      continue;
+    }
+    if (isSeedPlayer(p.id)) retiredSeedPlayerIds.push(p.id);
+  }
+  return { overrides: kept, retiredSeedPlayerIds };
+}
+
+/**
+ * Erreur d'écriture, avec une cause exploitable par l'interface : v0.60.
+ *
+ * `QuotaExceededError` était avalé et rendu au joueur sous la forme d'un
+ * « Échec de la sauvegarde » sans cause ni remède, alors que le dépôt des
+ * matchs, lui, le gérait déjà.
+ */
+export class SaveWriteError extends Error {
+  constructor(
+    readonly cause_: 'QUOTA' | 'INDISPONIBLE',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'SaveWriteError';
+  }
+}
+
+function isQuotaError(e: unknown): boolean {
+  if (!(e instanceof Error)) return false;
+  return e.name === 'QuotaExceededError'
+    || e.name === 'NS_ERROR_DOM_QUOTA_REACHED';
+}
+
+/**
+ * Écriture protégée par une copie de secours.
+ *
+ * On conserve l'état précédent avant d'écraser. Si l'écriture échoue à
+ * mi-chemin ou si le contenu se révèle illisible ensuite, il reste quelque
+ * chose à récupérer.
+ */
 function writeStorage(s: StorageShape): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+  const payload = JSON.stringify({
+    ...s,
+    // Ce qu'on n'a pas su lire repart tel quel : on ne réécrit jamais le bloc
+    // en n'y remettant que ce qu'on a compris.
+    saves: { ...preservedEntries, ...s.saves },
+  });
+  try {
+    const previous = localStorage.getItem(STORAGE_KEY);
+    if (previous) localStorage.setItem(BACKUP_KEY, previous);
+  } catch {
+    // Pas de copie de secours possible : on tente quand même l'écriture, mais
+    // on ne masque pas l'échec s'il vient ensuite.
+  }
+
+  try {
+    localStorage.setItem(STORAGE_KEY, payload);
+  } catch (e) {
+    if (isQuotaError(e)) {
+      throw new SaveWriteError(
+        'QUOTA',
+        'Stockage plein. Supprimez une partie ancienne pour libérer de la place.',
+      );
+    }
+    throw new SaveWriteError('INDISPONIBLE', 'Le stockage du navigateur est inaccessible.');
+  }
+}
+
+/**
+ * Restaure la copie de secours prise avant la dernière écriture.
+ *
+ * Dernier recours quand le bloc principal est illisible. Renvoie le nombre de
+ * parties récupérées, zéro s'il n'y a rien à récupérer.
+ */
+export function restoreBackup(): number {
+  try {
+    const backup = localStorage.getItem(BACKUP_KEY);
+    if (!backup) return 0;
+    const parsed = JSON.parse(backup) as Partial<StorageShape>;
+    const count = Object.keys(parsed?.saves ?? {}).length;
+    if (count === 0) return 0;
+    localStorage.setItem(STORAGE_KEY, backup);
+    return count;
+  } catch {
+    return 0;
+  }
 }
 
 class LocalStorageSeasonRepository implements SeasonSaveRepository {
@@ -381,7 +658,12 @@ export function buildSeasonSaveFromState(
       readonly sanctionedLastSeason: boolean;
       readonly transferBan: boolean;
       readonly repeatOffenders?: readonly ClubId[];
+      readonly pointsPenaltyByClub?: readonly { readonly clubId: ClubId; readonly points: number }[];
     };
+    /** V0.60 — bancs libres. */
+    readonly vacancies?: readonly ClubId[];
+    /** V0.60 — décisions humaines en attente. */
+    readonly pendingEvents?: readonly HumanEvent[];
     readonly direction?: {
       readonly facilities: ClubFacilities;
       readonly plan: ClubPlan;
@@ -407,6 +689,13 @@ export function buildSeasonSaveFromState(
       readonly playerId: PlayerId;
       readonly career: PlayerCareer;
     }[];
+    /** V0.60 — retraités de longue date, réduits à leur identifiant. */
+    readonly retiredSeedPlayerIds?: readonly PlayerId[];
+    /** V0.60 — retouches du sélectionneur sur le groupe France. */
+    readonly nationalPicks?: {
+      readonly added: readonly PlayerId[];
+      readonly removed: readonly PlayerId[];
+    };
   } = {},
 ): SeasonSave {
   const ranked = [...state.standings.values()].sort((a, b) => {
@@ -432,6 +721,9 @@ export function buildSeasonSaveFromState(
     standings: [...state.standings.values()],
     clubIds,
     playerOverrides,
+    ...(extras.retiredSeedPlayerIds ? { retiredSeedPlayerIds: extras.retiredSeedPlayerIds } : {}),
+    ...(extras.vacancies !== undefined ? { vacancies: extras.vacancies } : {}),
+    ...(extras.pendingEvents !== undefined ? { pendingEvents: extras.pendingEvents } : {}),
     financesByClub: [...state.financesByClub.entries()].map(([clubId, finances]) => ({ clubId, finances })),
     careerHistory,
     managerReputation,
@@ -469,6 +761,7 @@ export function buildSeasonSaveFromState(
     ...(extras.squadStatuses !== undefined ? { squadStatuses: extras.squadStatuses } : {}),
     ...(extras.rivals !== undefined ? { rivals: extras.rivals } : {}),
     ...(extras.careerBook !== undefined ? { careerBook: extras.careerBook } : {}),
+    ...(extras.nationalPicks !== undefined ? { nationalPicks: extras.nationalPicks } : {}),
     ...(extras.honours !== undefined ? { honours: extras.honours } : {}),
     ...(extras.loans !== undefined ? { loans: extras.loans } : {}),
     ...(extras.expectations !== undefined ? { expectations: extras.expectations } : {}),

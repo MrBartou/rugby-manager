@@ -30,7 +30,8 @@ export const INITIAL_REPUTATION: ManagerReputation = {
 
 export interface SeasonOutcomeForReputation {
   readonly playerClubId: ClubId;
-  readonly champion: ClubId;
+  /** Vainqueur du titre, absent si la saison s'est close sans en décerner. */
+  readonly champion?: ClubId;
   readonly playerClubReachedFinal: boolean;
   readonly playerClubFinalRank: number;     // 1-14
   readonly objectiveMet: boolean;

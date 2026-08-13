@@ -16,6 +16,7 @@ import {
   isLoanable,
   loanCost,
   loanMinutes,
+  loanWageReliefPerRound,
   loanOffersFor,
   loanReport,
   loanTradeoff,
@@ -172,5 +173,39 @@ describe('ce que le prêt rapporte et ce qu\'il coûte', () => {
 
   it('et salue une saison pleine', () => {
     expect(loanReport(loan, loanMinutes(loan, 26))).toContain('saison pleine');
+  });
+});
+
+describe('la part de salaire prise par le club d\'accueil', () => {
+  const pret = (playerId: string, wageShare: number): ActiveLoan => ({
+    playerId: playerId as PlayerId,
+    playerName: 'Jeune',
+    clubId: 'ailleurs' as ClubId,
+    clubName: 'Ailleurs',
+    season: 2025,
+    playingTime: 0.6,
+    wageShare,
+  });
+
+  const salaires = new Map<string, number>([['p1', 130_000], ['p2', 260_000]]);
+  const salaireDe = (id: PlayerId): number | undefined => salaires.get(id as string);
+
+  it('allège la feuille de paie journée après journée', () => {
+    // V0.60 : `wageShare` ne servait qu'à l'affichage, le prêteur payait tout.
+    const relief = loanWageReliefPerRound([pret('p1', 0.5)], salaireDe, 26);
+    expect(relief).toBe(Math.round(130_000 * 0.5 / 26));
+  });
+
+  it('cumule les prêts en cours', () => {
+    const relief = loanWageReliefPerRound([pret('p1', 0.5), pret('p2', 0.25)], salaireDe, 26);
+    expect(relief).toBe(Math.round((130_000 * 0.5 + 260_000 * 0.25) / 26));
+  });
+
+  it('ignore un joueur qui n\'est plus à l\'effectif', () => {
+    expect(loanWageReliefPerRound([pret('parti', 0.5)], salaireDe, 26)).toBe(0);
+  });
+
+  it('et ne divise jamais par zéro journée', () => {
+    expect(loanWageReliefPerRound([pret('p1', 0.5)], salaireDe, 0)).toBe(0);
   });
 });

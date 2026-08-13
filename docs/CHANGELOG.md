@@ -2,6 +2,67 @@
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/). Versions sémantiques.
 
+## [V0.60] : Fondations, le monde tient vingt saisons
+
+Cinquante-neuf versions ont ajouté des règles. Celle-ci vérifie qu'elles tiennent
+sur la durée. Le point de départ est l'audit de la roadmap, complété par ce que
+le jeu a révélé quand on a cessé de le regarder journée par journée : un
+championnat qui se fige, une sauvegarde qui s'efface, des règles qu'on peut
+contourner sans le vouloir.
+
+### Corrigé : le championnat va jusqu'au bout
+
+- **Un retrait de points effaçait le classement.** L'intersaison ne transmet que les clubs sanctionnés, sous forme d'ajustements ; la session prenait cette liste pour la table entière. Tous les matchs de la saison suivante étaient alors ignorés en silence, et la J27 plantait sur un « top 6 incomplet ». Déclenchable dès qu'un club écope d'un retrait.
+- **Recharger en phases finales détruisait la phase finale.** Les tableaux ne sont pas sauvegardés et n'étaient reconstruits qu'à la journée qui les concerne : une partie chargée en demies trouvait des barrages vides, ne composait aucune demie et se terminait sans champion. Ils se régénèrent désormais en cascade, à l'identique, depuis le classement et l'historique.
+- **Une finale nulle ne désignait personne.** Le règlement des phases finales tranche par le classement de la saison régulière ; le moteur avait trois tranchages différents, dont un qui laissait le titre vacant.
+- **Une saison sans titre décerné ne laissait aucune trace** : ni archive, ni verdict du président, ni réputation mise à jour. Tout le bilan de fin d'année vivait sous un `if (champion)`.
+- **La récidive DNCG s'armait sur un simple avertissement**, ce qui accélérait le retrait de points ci-dessus. Seule une sanction réelle la déclenche.
+
+### Corrigé : les règles ne se contournent plus
+
+- **Simuler la journée de trêve alignait vos internationaux partis en sélection.** La composition automatique n'avait aucun moyen de connaître les absents : exploit direct, et gratuit.
+- **La compo de secours rappelait blessés, suspendus et retraités** dès qu'un poste manquait de titulaire, parce que ses replis puisaient dans l'effectif brut. Elle posait au passage **deux brassards de capitaine**, à l'ouvreur et au demi de mêlée, ce qui n'existe pas sur un terrain.
+- **Le joker médical ne proposait jamais personne** : il cherchait des joueurs libres dans les effectifs des clubs, c'est à dire là où ils ne peuvent par définition pas se trouver. Fonctionnalité morte depuis sa livraison.
+- **L'interdiction de recruter ne bloquait que les agents libres.** Une offre payante ou un joker passait à côté : un club sanctionné pouvait recruter à condition de payer. Le contrôle est descendu dans le moteur, à toutes les portes d'entrée.
+- **Le prêt était décoratif** : la part de salaire négociée ne servait qu'à l'affichage, le club prêteur payait cent pour cent. Elle allège désormais réellement la feuille de paie, et un prêt ne se conclut plus marché fermé.
+- **La proposition du XV de France était quasi inatteignable**, prisonnière de deux `if` imbriqués qui exigeaient sabbatique, limogeage et offre reçue le même jour.
+
+### Corrigé : la sauvegarde ne se perd plus
+
+- **Une sauvegarde corrompue effaçait toutes les parties, définitivement.** Une seule entrée mal formée renvoyait un stockage vide, et l'auto-save suivante réécrivait le tout par-dessus : la perte devenait irréversible en une journée de jeu. La lecture se fait entrée par entrée, ce qu'on ne sait pas lire est conservé tel quel, et une copie de secours est prise avant chaque écrasement.
+- **Le stockage plein n'était pas géré à l'écriture** : « Échec de la sauvegarde », sans cause ni remède.
+- **Le tampon de format était figé à `0.5.0` depuis la V0.31**, alors que le contenu avait évolué jusqu'en V0.58. Une sauvegarde écrite par une version postérieure était chargée puis re-tamponnée sans contrôle ; elle est désormais reconnue, laissée intacte et signalée.
+- **La sauvegarde grossissait sans borne.** Mesuré : 880 octets par joueur, 705 Ko dès la première saison, et les retraités conservés à vie. Les retraites anciennes sont réduites à un identifiant quand les données de base savent les reconstruire, et les carrières achevées sont repliées en une ligne par club, totaux et records préservés à l'unité près.
+- **Aucun ErrorBoundary** : la moindre exception de rendu était une page blanche définitive, sans message et sans possibilité de sauvegarder.
+- **État perdu au rechargement** : décisions de vestiaire en attente, retouches du groupe France, retraits de points, bancs vacants.
+
+### Corrigé : deux divisions, deux calendriers
+
+- **La division non jouée se vidait** : vieillissement et retraites s'appliquaient partout, mais la promotion des jeunes et le mercato ne tournaient que dans la division du manager. En quelques saisons, l'autre étage n'avait plus d'effectifs.
+- **Les salaires de Pro D2 n'étaient facturés que 26 journées sur 30**, soit 15 % de masse salariale offerte à toute la division.
+- **La fenêtre de mercato hivernal était figée à J13-J16**, le milieu du Top 14 et pas celui d'une Pro D2 qui joue trente journées.
+- **Deux billetteries coexistaient** : le club dirigé encaissait selon son stade et sa politique tarifaire, les clubs IA selon un billet à trente euros en dur. Les recettes du championnat n'étaient pas comparables entre elles.
+
+### Corrigé : une seule vérité
+
+- **`StaffMember`, `SeasonState` et `ClubStanding` étaient définis deux fois** : une fois pour de vrai, une fois dans un squelette de réducteur d'événements de V0.1 que rien n'a jamais construit. Le squelette est retiré.
+- **L'ancienne sélection nationale** (trois JIFF par club, quarante-deux joueurs pour une équipe de quinze) vivait encore à côté du vrai XV de France livré en V0.58.
+- **Trois champs jamais écrits ni lus** retirés : `Contract.releaseClause`, `Contract.performanceBonus`, `PreMatchTacticalPlan.targetingStrategy`.
+- **Le temps de jeu qui alimente le moral était factice** : trois valeurs codées en dur selon la place dans une composition automatique, au lieu des minutes réellement disputées.
+- **L'en-tête annonçait « Alpha V0.10 »** cinquante versions plus tard. La version affichée vient maintenant du `package.json`.
+- **`pixi.js` et `zustand` étaient déclarés sans être jamais importés.**
+- **Le barrage d'accession retirait trois points au visiteur** pour éviter le nul, ce qui pouvait afficher un score négatif et faire descendre un club sur un 0-0.
+
+### Notes de modélisation
+
+- **Un club aligne toujours quinze joueurs.** Trouvé en jeu, dès la première trêve : écarter d'un coup blessés, suspendus et internationaux d'un effectif de dix-sept descendait sous quinze, et la journée levait une exception non rattrapée. L'indisponibilité se relâche donc par degrés (d'abord les valides, puis les sélectionnés, en dernier ressort les blessés) et l'on préfère un valide hors de son poste à un blessé dans le sien. Le banc, lui, reste réservé aux joueurs réellement disponibles : un club décimé se présente à quinze plutôt que d'asseoir un blessé.
+- **Ce qu'on ne sait pas lire, on ne l'efface pas.** Une entrée abîmée ou trop récente est conservée octet pour octet et remise en place à l'écriture suivante. Le stockage n'est jamais réécrit en n'y remettant que ce qu'on a compris.
+- **Le plafond de phases a été mesuré, pas supposé** : 75 phases en médiane, 80 au maximum sur 500 matchs, contre une limite de 250. Elle reste un garde-fou contre une boucle infinie, jamais une contrainte de jeu.
+
+### Reporté
+
+- **L'extraction de l'intersaison vers le moteur** reste à faire. L'audit visait ~400 lignes de règles métier dans `App.tsx` ; l'inspection montre que les règles elles-mêmes (retraites, développement, promotion des jeunes, mercato, montées et descentes, sanctions, chantiers) sont **déjà** dans le moteur et appelées depuis l'interface. Ce qui reste est de l'orchestration et des effets de bord sur une trentaine de références React. L'extraire proprement demande de concevoir une abstraction de rollover à part entière : c'est un chantier de version, pas une ligne de nettoyage. Reporté en V0.61, sans rien perdre de ce que l'audit avait relevé.
+
 ## [V0.59] — La mémoire longue
 
 Le jeu accumule depuis longtemps tout ce qu'il faut pour raconter une carrière :

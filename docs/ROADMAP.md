@@ -42,121 +42,133 @@
 
 ---
 
-## V0.60 — Fondations : le monde tient 20 saisons
+## V0.60 — Fondations : le monde tient 20 saisons ✅ *livrée*
 
 **Objectif : une carrière de 20 saisons sans que le monde se dégrade.** Trois bugs
 identifiés à l'audit + la dette d'architecture qui les a produits.
 
+> Livrée. Un seul point reste ouvert, l'extraction de l'intersaison : les règles
+> qu'elle appelait sont déjà dans le moteur, ce qui subsiste dans `App.tsx` est
+> de l'orchestration sur une trentaine de références React. L'extraire demande
+> une abstraction de rollover à part entière, donc une version à elle. Reporté
+> en V0.61, détail dans le CHANGELOG.
+
 - [ ] **Extraire l'intersaison de `App.tsx` vers le moteur** (`season/rollover.ts` testé).
-      ~400 lignes de règles métier (rollover, promo de jeunes, mercato IA,
-      montées/descentes, sanctions, chantiers) vivent dans un composant React de
-      4455 lignes, en violation de la frontière moteur/UI (`09-architecture-logicielle.md`).
-- [ ] **La division non jouée ne se vide plus** : `generateYouthIntake()` et
+      Reporté en V0.61 : les règles visées (rollover, promo de jeunes, mercato
+      IA, montées/descentes, sanctions, chantiers) sont déjà dans le moteur et
+      appelées depuis l'interface ; ce qui reste dans le composant est
+      l'orchestration et ses effets de bord.
+- [x] **La division non jouée ne se vide plus** : `generateYouthIntake()` et
       `runAiMarket()` tournent sur les deux divisions (bug : `App.tsx:1371` et `:1548`
       itèrent sur la seule division du manager, alors que vieillissement et retraites
       s'appliquent à tout le monde). Retirer le garde-fou `return 50` de `strengthOf()`
       une fois la cause corrigée.
-- [ ] **Le temps de jeu réel alimente le moral** : remplacer le ratio factice de
+- [x] **Le temps de jeu réel alimente le moral** : remplacer le ratio factice de
       `playRatioByPlayerForPlayerClub()` (`App.tsx:3418`, 0.85/0.45/0.1 codés en dur)
       par les vraies minutes de `seasonState.seasonPlayerStats`. Impacte : mood,
       verdicts de hiérarchie, pronostics de conversation, agenda, candidats au prêt.
-- [ ] **Finances Pro D2 justes** : `REGULAR_ROUNDS = 26` en dur dans `finances.ts`
+- [x] **Finances Pro D2 justes** : `REGULAR_ROUNDS = 26` en dur dans `finances.ts`
       alors que la Pro D2 joue 30 journées (4 journées de salaires jamais facturées).
-- [ ] **Nettoyage des doublons de vérité** :
+- [x] **Nettoyage des doublons de vérité** :
   - `StaffMember` défini deux fois (`engine/types.ts` vs `club/staff.ts`) — unifier ;
   - `season/internationals.ts` (V0.8) vs `season/national-team.ts` (V0.58) — purger le premier ;
   - champs morts : `Contract.releaseClause` / `performanceBonus` (réutilisés en V0.64
     ou supprimés), `PreMatchTacticalPlan.targetingStrategy` ;
   - en-tête de `divisions.ts` désynchronisé (décrit encore la Pro D2 à 14 clubs) ;
   - l'écran titre et le header affichent « Alpha V0.10 » — brancher sur la vraie version.
-- [ ] **Unifier les deux modèles de billetterie** : le club du joueur utilise
+- [x] **Unifier les deux modèles de billetterie** : le club du joueur utilise
       `matchdayRevenue()` (V0.45) mais les clubs IA restent sur `computeMatchRevenue()`
       (V0.6, billet à 30 € en dur). Deux économies parallèles qui divergent.
 
 ### Audit n°2 — classement et phases finales
 
-- [ ] 🔴 **Retrait de points : le classement restauré doit être complet.** Au rollover,
+- [x] 🔴 **Retrait de points : le classement restauré doit être complet.** Au rollover,
       `App.tsx:1765` ne transmet que les clubs sanctionnés, et `season-session.ts:638`
       remplace alors le classement entier par cette liste partielle → tous les matchs
       de la saison suivante sont ignorés (`applyMatchToStandings` sort si un club
       manque), puis **crash « top 6 incomplet »** à la J27 (`calendar.ts:291`).
       Déclenchable dès qu'un club écope d'un `RETRAIT_POINTS`.
-- [ ] **Recharger en phases finales détruit la phase finale** : `playoffMatches` /
+- [x] **Recharger en phases finales détruit la phase finale** : `playoffMatches` /
       `semifinalMatches` / `finalMatch` sont des closures jamais persistées et non
       reconstruites (`season-session.ts:1541`) → au chargement d'une sauvegarde en
       demies, statut « éliminé », aucun champion. Tout est reconstructible depuis
       `history` (sauvegardé) — régénérer en cascade.
-- [ ] **Fin de saison sans champion = saison sans bilan** : tout le verdict (objectif,
+- [x] **Fin de saison sans champion = saison sans bilan** : tout le verdict (objectif,
       réputation, limogeage, archives) est dans `if (state.champion)` (`App.tsx:1225`).
       Et la finale auto-simulée n'a pas de tie-break (`skipRound`,
       `season-session.ts:1863`) — aucune prolongation nulle part dans le moteur.
-- [ ] **Récidive DNCG trop sensible** : `repeatOffender` armé par n'importe quel
+- [x] **Récidive DNCG trop sensible** : `repeatOffender` armé par n'importe quel
       verdict, y compris un simple avertissement JIFF (`App.tsx:1546`) — c'est
       l'accélérateur du bug de retrait de points ci-dessus.
 
 ### Audit n°2 — règles contournables
 
-- [ ] **L'auto-simulation ignore trêves internationales et prêts** :
+- [x] **L'auto-simulation ignore trêves internationales et prêts** :
       `MatchSeedOptions` n'a pas de champ `unavailable` (`seed.ts:522`) — simuler la
       journée de trêve aligne vos internationaux partis en sélection. Exploit direct.
-- [ ] **Le joker médical ne propose jamais personne** : `season-session.ts:2172`
+- [x] **Le joker médical ne propose jamais personne** : `season-session.ts:2172`
       filtre `p.freeAgent` sur une liste (`listRoster`) qui exclut déjà les agents
       libres (`seed-browser.ts:80`) — liste toujours vide, fonctionnalité morte.
-- [ ] **L'interdiction de recruter ne bloque que les agents libres** : ni les offres
+- [x] **L'interdiction de recruter ne bloque que les agents libres** : ni les offres
       payantes (`onSubmitBid`), ni le joker médical, ni les prêts ne la testent.
-- [ ] **Les prêts sont décoratifs financièrement** : `loanCost`/`wageShare` ne servent
+- [x] **Les prêts sont décoratifs financièrement** : `loanCost`/`wageShare` ne servent
       qu'à l'affichage (`loans.ts:152`), le club paie toujours 100 % du salaire ;
       `loansRef` est vidé (`App.tsx:1395`) avant d'être lu (`App.tsx:1833`) donc
       `onLoan` n'est jamais posé au CareerBook ; et `sendOnLoan` ignore les fenêtres
       de mercato (prêter pendant les barrages est possible).
-- [ ] **La compo de secours aligne des blessés/suspendus/retraités** : les replis de
+- [x] **La compo de secours aligne des blessés/suspendus/retraités** : les replis de
       `pickStartingFifteen` puisent dans la liste brute au lieu de la liste filtrée
       (`seed.ts:344`) ; et l'auto-sim pose **deux brassards** en ignorant votre
       capitaine (`seed.ts:376`).
-- [ ] **La proposition du XV de France est quasi inatteignable** : le bloc
+- [x] **La proposition du XV de France est quasi inatteignable** : le bloc
       `federationApproaches` est emprisonné dans deux `if` imbriqués (sabbatique +
       limogeage + offre reçue le même jour) (`App.tsx:3398`).
 
 ### Audit n°2 — sauvegarde et robustesse
 
-- [ ] 🔴 **Une sauvegarde corrompue efface toutes les parties, définitivement** :
+- [x] 🔴 **Une sauvegarde corrompue efface toutes les parties, définitivement** :
       `readStorage()` avale tout dans un `catch { return { saves: {} } }` puis la
       prochaine écriture réécrit le tout (`season-save-repository.ts:266`). Lecture
       défensive par entrée, erreurs typées affichées, copie de secours avant écrasement.
-- [ ] **`QuotaExceededError` non géré à l'écriture** (contrairement à
+- [x] **`QuotaExceededError` non géré à l'écriture** (contrairement à
       `match-save-repository.ts`) — « Échec de la sauvegarde » sans cause ni remède.
-- [ ] **`schemaVersion` figé à `0.5.0`** alors que le format a évolué jusqu'en V0.58 :
+- [x] **`schemaVersion` figé à `0.5.0`** alors que le format a évolué jusqu'en V0.58 :
       la migration ne peut plus rien discriminer, et une sauvegarde d'une version
       future est chargée puis re-tamponnée sans contrôle.
-- [ ] **La sauvegarde grossit sans borne** : `playerOverrides` embarque toute la base
+- [x] **La sauvegarde grossit sans borne** : `playerOverrides` embarque toute la base
       joueurs, retraités conservés à vie compris (`rollover.ts:112`), et `careerBook`
       n'est jamais élagué — le tout sous une seule clé localStorage (~5 Mo de quota).
       Mesurer sur 20 saisons, élaguer/compresser. (`news` et `mailbox` sont, eux,
       correctement plafonnés.)
-- [ ] **Aucun ErrorBoundary React** (`main.tsx`) : la moindre exception de rendu est
+- [x] **Aucun ErrorBoundary React** (`main.tsx`) : la moindre exception de rendu est
       une page blanche définitive, sans message ni possibilité de sauvegarder.
-- [ ] **État perdu au rechargement** : retouches du groupe France (`nationalPicksRef`,
+- [x] **État perdu au rechargement** : retouches du groupe France (`nationalPicksRef`,
       absent de la sauvegarde), événements humains en attente de décision, indicateur
       de retrait de points, bancs vacants.
 
 ### Audit n°2 — cohérences mineures
 
-- [ ] Phases finales européennes programmées J18/20/22/24 alors que le commentaire
+- [x] Phases finales européennes programmées J18/20/22/24 alors que le commentaire
       les annonce « après le championnat » (`european-cup.ts:129`) — trancher.
-- [ ] Fenêtres de mercato en journées absolues (J1-J3, J13-J16) : fausses en Pro D2
+- [x] Fenêtres de mercato en journées absolues (J1-J3, J13-J16) : fausses en Pro D2
       à 30 journées (`transfer-window.ts:36`).
-- [ ] Barrage d'accession : score clampé après comparaison (« 0-0, maintien »
+- [x] Barrage d'accession : score clampé après comparaison (« 0-0, maintien »
       possible, `divisions.ts:274`) — et le barrage du club dirigé est résolu par
       tirage, jamais joué (→ V0.80).
-- [ ] Promesses sans `catch` : `loadSeason` au clic (`App.tsx:4126`) et la liste des
+- [x] Promesses sans `catch` : `loadSeason` au clic (`App.tsx:4126`) et la liste des
       sauvegardes du titre (`TitleScreen.tsx:27`).
-- [ ] Vérifier que `MAX_PHASES = 250` (`session.ts:157`) couvre toujours 80 minutes.
-- [ ] **Dépendances mortes** : `pixi.js` et `zustand` déclarés dans `package.json`,
+- [x] Vérifier que `MAX_PHASES = 250` (`session.ts:157`) couvre toujours 80 minutes.
+- [x] **Dépendances mortes** : `pixi.js` et `zustand` déclarés dans `package.json`,
       jamais importés — retirer (ou décider d'adopter Pixi pour le rendu match).
 
 ---
 
 ## V0.61 — La donnée parle
+
+- [ ] **Reporté de V0.60 : extraire l'intersaison de `App.tsx` vers le moteur**
+      (`season/rollover.ts` testé). Les règles sont déjà dans le moteur ; ce qui
+      reste est l'orchestration et ses effets de bord sur une trentaine de
+      références React. Demande une abstraction de rollover à part entière.
 
 **Objectif : montrer la profondeur déjà calculée.** `IndividualMatchStats` capture
 13 métriques riches (mètres, franchissements, défenseurs battus, grattages, plaquages

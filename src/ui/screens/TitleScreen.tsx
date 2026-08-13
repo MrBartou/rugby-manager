@@ -7,7 +7,12 @@
 
 import { useEffect, useState } from 'react';
 import { resetOnboarding } from '../components/Onboarding.js';
-import { seasonSaveRepository, type SeasonSaveMeta } from '../../data/season-save-repository.js';
+import {
+  restoreBackup,
+  seasonSaveRepository,
+  storageHealth,
+  type SeasonSaveMeta,
+} from '../../data/season-save-repository.js';
 
 interface Props {
   readonly onNewCareer: () => void;
@@ -24,11 +29,34 @@ export function TitleScreen({ onNewCareer, onContinue, onFreeMatch }: Props) {
     setReplayed(true);
   };
 
+  /**
+   * V0.60 : une partie illisible se dit, elle ne disparaît pas en silence.
+   *
+   * L'ancienne lecture renvoyait un stockage vide au moindre défaut, et la
+   * sauvegarde automatique suivante écrasait tout. Le joueur voyait simplement
+   * ses parties s'évaporer, sans cause ni recours.
+   */
+  const [health, setHealth] = useState(storageHealth());
+  const [restored, setRestored] = useState<number | null>(null);
+
   useEffect(() => {
-    seasonSaveRepository.list().then(setSaves);
+    seasonSaveRepository.list()
+      .then(list => { setSaves(list); setHealth(storageHealth()); })
+      .catch(() => setHealth(storageHealth()));
   }, []);
 
+  const tryRestore = (): void => {
+    const count = restoreBackup();
+    setRestored(count);
+    if (count > 0) {
+      seasonSaveRepository.list()
+        .then(list => { setSaves(list); setHealth(storageHealth()); })
+        .catch(() => setHealth(storageHealth()));
+    }
+  };
+
   const lastSave = saves[0];
+  const abimees = health.corrupted.length;
 
   return (
     <div className="title-screen">
@@ -84,7 +112,7 @@ export function TitleScreen({ onNewCareer, onContinue, onFreeMatch }: Props) {
 
       <div className="title-content">
         <div className="title-meta-top">
-          <span className="title-version">V0.10 · ALPHA</span>
+          <span className="title-version">v{__APP_VERSION__} · ALPHA</span>
         </div>
 
         <div className="title-hero">
@@ -94,6 +122,51 @@ export function TitleScreen({ onNewCareer, onContinue, onFreeMatch }: Props) {
           </h1>
           <p className="title-tagline">Manager de rugby · Top 14</p>
         </div>
+
+        {/* V0.60 : une partie illisible se dit, et on propose la copie de
+            secours prise avant la dernière écriture. */}
+        {(abimees > 0 || health.totalLoss) && (
+          <div className="title-alert">
+            <strong>
+              {health.totalLoss
+                ? 'Vos parties sauvegardées sont illisibles.'
+                : `${abimees} partie${abimees > 1 ? 's' : ''} sauvegardée${abimees > 1 ? 's sont illisibles' : ' est illisible'}.`}
+            </strong>
+            <span>
+              {health.totalLoss
+                ? 'Rien n\'a été effacé. Une copie de secours existe peut-être.'
+                : 'Les autres restent intactes et jouables.'}
+            </span>
+            {restored === null && (
+              <button type="button" className="title-foot-link" onClick={tryRestore}>
+                Tenter la restauration
+              </button>
+            )}
+            {restored !== null && (
+              <span>
+                {restored > 0
+                  ? `${restored} partie${restored > 1 ? 's' : ''} récupérée${restored > 1 ? 's' : ''}.`
+                  : 'Aucune copie de secours exploitable.'}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* V0.60 : une partie écrite par une version plus récente du jeu se
+            signale au lieu de disparaître de la liste sans un mot. */}
+        {health.fromFutureVersion.length > 0 && (
+          <div className="title-alert">
+            <strong>
+              {health.fromFutureVersion.length > 1
+                ? `${health.fromFutureVersion.length} parties viennent d'une version plus récente.`
+                : 'Une partie vient d\'une version plus récente du jeu.'}
+            </strong>
+            <span>
+              Elle n'est pas ouverte ici : ce qu'elle contient de nouveau serait
+              perdu. Elle reste intacte et attend sa version.
+            </span>
+          </div>
+        )}
 
         <div className="title-actions">
           {lastSave && (

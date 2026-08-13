@@ -7,7 +7,6 @@ import {
   applyMovement,
   closeSeason,
   computeAnnualPayroll,
-  computeMatchRevenue,
   computeRoundPayroll,
   emptyFinances,
   initFinancesForAllClubs,
@@ -74,18 +73,23 @@ describe('finances — calculs', () => {
     expect(computeRoundPayroll(players)).toBe(2_600_000 / REGULAR_ROUNDS);
   });
 
-  it('match revenue dépend du tier et du form', () => {
-    const small = makeClub({ tier: 'PETIT_BUDGET', stadiumCapacity: 10_000 });
-    const big = makeClub({ tier: 'GROS_BUDGET', stadiumCapacity: 30_000 });
-    expect(computeMatchRevenue(big, 0.7)).toBeGreaterThan(computeMatchRevenue(small, 0.7));
+  it('la Pro D2 étale le même salaire sur ses trente journées', () => {
+    // V0.60 : le 26 en dur ne facturait que 26 des 30 journées de Pro D2, soit
+    // 15 % de masse salariale offerte à toute la division.
+    const players = [makePlayer(3_000_000)];
+    expect(computeRoundPayroll(players, 30)).toBe(100_000);
+    expect(computeRoundPayroll(players, 30) * 30).toBe(3_000_000);
   });
 
-  it('match revenue augmente avec les victoires', () => {
-    const club = makeClub();
-    const losing = computeMatchRevenue(club, 0.2);
-    const winning = computeMatchRevenue(club, 0.8);
-    expect(winning).toBeGreaterThan(losing);
+  it('et un nombre de journées absurde retombe sur la valeur par défaut', () => {
+    const players = [makePlayer(2_600_000)];
+    expect(computeRoundPayroll(players, 0)).toBe(computeRoundPayroll(players));
   });
+
+  // V0.60 : la billetterie a quitté ce fichier. Elle vivait ici pour les clubs
+  // IA et dans `club-management.ts` pour le club dirigé, avec des taux de
+  // remplissage et un prix du billet différents. Elle est désormais testée là
+  // où elle est calculée, une fois, pour tout le monde.
 });
 
 describe('finances — mutations', () => {
