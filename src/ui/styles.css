@@ -10310,3 +10310,41 @@ html { font-size: calc(16px * var(--text-scale)); }
 .pp-item.good { background: var(--green-soft); color: var(--green); }
 .pp-item.mid { background: var(--yellow-soft); color: var(--yellow); }
 .pp-item.bad { background: var(--red-soft); color: var(--red); }
+
+/* V0.62 — la délégation au staff : ce qu'on confie, et à qui. */
+.deleg-intro {
+  margin: 0.3rem 0 0.7rem;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.deleg-list { margin: 0; padding: 0; list-style: none; }
+
+.deleg-list li {
+  border-top: 1px solid var(--border);
+}
+
+.deleg-list li:first-child { border-top: 0; }
+.deleg-list li.on { background: var(--accent-soft); }
+
+.deleg-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.6rem 0.4rem;
+  cursor: pointer;
+}
+
+.deleg-body { display: flex; flex-direction: column; gap: 0.12rem; }
+.deleg-label { font-size: 0.88rem; font-weight: 600; }
+.deleg-desc { color: var(--text-dim); font-size: 0.76rem; line-height: 1.4; }
+
+.deleg-owner {
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.deleg-owner.ok { color: var(--accent); }
+.deleg-owner.faible { color: var(--yellow); }

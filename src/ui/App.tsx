@@ -274,6 +274,16 @@ import { ClubScreen } from './screens/ClubScreen.js';
 import { allLeaderboards } from '../engine/season/leaderboards.js';
 import { buildSeasonVerdict, topScorerOf } from '../engine/season/season-verdict.js';
 import { buildShortlist } from '../engine/club/shortlist.js';
+import {
+  DELEGATION_LABEL,
+  NO_DELEGATION,
+  focusForPlayer,
+  isDelegated,
+  summarise as summariseDelegation,
+  toggleDelegation,
+  type DelegationArea,
+  type DelegationState,
+} from '../engine/club/delegation.js';
 import { PreMatchScreen } from './screens/PreMatchScreen.js';
 import { SquadScreen } from './screens/SquadScreen.js';
 import { PlayerScreen } from './screens/PlayerScreen.js';
@@ -575,6 +585,9 @@ export function App() {
    * moment où on les a mis en liste. Le second sert à signaler un départ.
    */
   const shortlistRef = useRef<ReadonlyMap<PlayerId, string>>(new Map());
+  /** V0.62 — ce que le manager a confié à son staff. Rien, au départ. */
+  const delegationRef = useRef<DelegationState>(NO_DELEGATION);
+  const [delegationEpoch, setDelegationEpoch] = useState(0);
   const [shortlistEpoch, setShortlistEpoch] = useState(0);
   /**
    * V0.53 — les entraîneurs des autres clubs.
@@ -1163,6 +1176,11 @@ export function App() {
     shortlistRef.current = new Map(
       (save.shortlist ?? []).map(e => [e.playerId, e.clubId as string]),
     );
+    delegationRef.current = {
+      delegated: (save.delegation ?? []).filter(
+        (a): a is DelegationArea => a in DELEGATION_LABEL,
+      ),
+    };
     sanctionedLastSeasonRef.current = save.regulation?.sanctionedLastSeason ?? false;
     transferBanRef.current = save.regulation?.transferBan ?? false;
     repeatOffendersRef.current = new Set(
@@ -1226,6 +1244,24 @@ export function App() {
     setSeasonSaveStatus('idle');
     setRolloverSummary(null);
     setScreen({ kind: 'dashboard' });
+  };
+
+  /**
+   * V0.62 — l'adjoint fixe les focus d'entraînement.
+   *
+   * Appliqué au moment où l'on coche, puis à chaque intersaison : un joueur qui
+   * vieillit ou qui se fragilise ne travaille plus la même chose, et une
+   * délégation qui se figerait le jour de son activation ne serait pas une
+   * délégation.
+   */
+  const appliquerEntrainementDelegue = (): void => {
+    const session = seasonRef.current;
+    if (!session) return;
+    const state = session.getState();
+    for (const joueur of state.playerClubRoster) {
+      if (joueur.retired || joueur.freeAgent) continue;
+      session.setTrainingFocus(joueur.id, focusForPlayer(joueur, state.currentSeason));
+    }
   };
 
   const saveSeasonNow = async (kind: 'manual' | 'auto' = 'manual'): Promise<void> => {
@@ -1301,6 +1337,7 @@ export function App() {
           shortlist: [...shortlistRef.current].map(([playerId, clubId]) => ({
             playerId, clubId: clubId as ClubId,
           })),
+          delegation: delegationRef.current.delegated,
           expectations: expectationsRef.current,
           headToHead: [...headToHeadRef.current].map(([clubId, record]) => ({
             clubId: clubId as ClubId, record,
@@ -2167,6 +2204,11 @@ export function App() {
       newSeason: rollover.newSeason,
     });
     winterMarketRef.current = null;
+
+    // V0.62 — l'adjoint refait les focus pour la saison qui s'ouvre : les
+    // joueurs ont vieilli, certains se sont fragilisés, et une délégation qui
+    // se figerait le jour de son activation ne serait pas une délégation.
+    if (isDelegated(delegationRef.current, 'ENTRAINEMENT')) appliquerEntrainementDelegue();
 
     // V0.39 — le centre converge vers le niveau visé, et sa facture tombe.
     const myClub = allClubs.find(c => c.id === state.playerClubId);
@@ -4513,6 +4555,24 @@ export function App() {
 
       {screen.kind === 'training' && seasonState && renderInGame(
         <TrainingScreen
+          delegation={{
+            summaries: (() => {
+              void delegationEpoch;
+              return summariseDelegation(
+                delegationRef.current,
+                seasonRef.current?.getStaff() ?? [],
+              );
+            })(),
+            onToggle: (area) => {
+              delegationRef.current = toggleDelegation(delegationRef.current, area);
+              // V0.62 : confier l'entraînement s'applique tout de suite, sinon
+              // la case cochée ne changerait rien avant la semaine suivante et
+              // le manager croirait le réglage mort.
+              if (isDelegated(delegationRef.current, 'ENTRAINEMENT')) appliquerEntrainementDelegue();
+              setDelegationEpoch(e => e + 1);
+              refreshSeason();
+            },
+          }}
           roster={seasonState.playerClubRoster}
           trainingByPlayer={seasonState.trainingByPlayer}
           seasonStats={seasonState.seasonPlayerStats}
