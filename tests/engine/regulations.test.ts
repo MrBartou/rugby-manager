@@ -20,6 +20,7 @@ import {
   headroomAfterSigning,
   jiffReport,
   matchSheetCompliant,
+  reviewLeague,
   reviewSeason,
   salaryCapFor,
   sanctionSummary,
@@ -225,5 +226,111 @@ describe('la récidive ne s\'arme pas sur un avertissement', () => {
     expect(countsAsOffence({ ...base, fine: 250_000 })).toBe(true);
     expect(countsAsOffence({ ...base, pointsDeducted: 3 })).toBe(true);
     expect(countsAsOffence({ ...base, transferBan: true })).toBe(true);
+  });
+});
+
+/**
+ * La revue de la commission, pour tout le championnat : V0.62.
+ *
+ * Ces règles vivaient dans `App.tsx`, mêlées à la publication des actualités et
+ * à l'écriture d'une demi-douzaine de références React. Elles décident des
+ * points retirés, des interdictions de recruter et des amendes de toute une
+ * division : rien n'en était testable tant que ça vivait dans un composant.
+ */
+describe('la revue annuelle de tout le championnat', () => {
+  const club = (id: string): Club => ({
+    id: id as ClubId,
+    name: `Club ${id}`,
+    shortName: id.toUpperCase(),
+    city: 'Ville',
+    tier: 'BUDGET_MOYEN',
+    tacticalIdentity: 'MIXTE',
+    stadiumCapacity: 15_000,
+    annualBudget: 12_000_000,
+    salaryCapUsage: 0,
+    jiffCount: 15,
+    reputation: 60,
+  });
+
+  /** Un effectif conforme : sous le plafond, quota JIFF tenu. */
+  const conforme = (): readonly Player[] => withJiff(withSalary(SQUAD, 200_000), SQUAD.length);
+
+  /** Un effectif très au-dessus du plafond : la sanction doit mordre. */
+  const horsClous = (): readonly Player[] => withJiff(withSalary(SQUAD, 900_000), SQUAD.length);
+
+  it('ne retient que les clubs sanctionnés', () => {
+    const revue = reviewLeague({
+      clubs: [club('a'), club('b')],
+      division: 'TOP14',
+      rosterOf: (id) => (id === ('a' as ClubId) ? horsClous() : conforme()),
+      repeatOffenders: new Set(),
+    });
+
+    expect(revue.reviews.map(r => r.clubId)).toEqual(['a']);
+  });
+
+  it('agrège points, amendes et interdictions', () => {
+    const revue = reviewLeague({
+      clubs: [club('a')],
+      division: 'TOP14',
+      rosterOf: horsClous,
+      repeatOffenders: new Set(),
+    });
+
+    const bilan = revue.reviews[0]!;
+    expect(bilan.pointsDeducted).toBe(
+      bilan.verdicts.reduce((n, v) => n + v.pointsDeducted, 0),
+    );
+    expect(bilan.fine).toBe(bilan.verdicts.reduce((n, v) => n + v.fine, 0));
+    expect(revue.penaltiesByClub.get('a' as ClubId)).toBe(bilan.pointsDeducted || undefined);
+  });
+
+  it('la récidive aggrave, et ne s\'arme que sur une vraie sanction', () => {
+    // V0.60 : un simple avertissement armait la récidive, ce qui accélérait
+    // les retraits de points de tout le championnat.
+    const sansAntecedent = reviewLeague({
+      clubs: [club('a')],
+      division: 'TOP14',
+      rosterOf: horsClous,
+      repeatOffenders: new Set(),
+    });
+    const avecAntecedent = reviewLeague({
+      clubs: [club('a')],
+      division: 'TOP14',
+      rosterOf: horsClous,
+      repeatOffenders: new Set(['a' as ClubId]),
+    });
+
+    expect(avecAntecedent.reviews[0]!.pointsDeducted)
+      .toBeGreaterThanOrEqual(sansAntecedent.reviews[0]!.pointsDeducted);
+    expect([...sansAntecedent.repeatOffenders]).toEqual(['a']);
+  });
+
+  it('ne juge pas un club sans effectif', () => {
+    // Une liste vide n'est pas un club conforme : c'est un club qu'on ne sait
+    // pas juger, et le sanctionner n'aurait aucun sens.
+    const revue = reviewLeague({
+      clubs: [club('vide')],
+      division: 'TOP14',
+      rosterOf: () => [],
+      repeatOffenders: new Set(),
+    });
+    expect(revue.reviews).toEqual([]);
+    expect(revue.repeatOffenders.size).toBe(0);
+  });
+
+  it('applique le plafond de la division jouée', () => {
+    // Le même effectif est conforme en Top 14 et hors des clous en Pro D2,
+    // dont le plafond vaut moins de la moitié.
+    const effectif = (): readonly Player[] => withJiff(withSalary(SQUAD, 350_000), SQUAD.length);
+    const top14 = reviewLeague({
+      clubs: [club('a')], division: 'TOP14', rosterOf: effectif, repeatOffenders: new Set(),
+    });
+    const prod2 = reviewLeague({
+      clubs: [club('a')], division: 'PRO_D2', rosterOf: effectif, repeatOffenders: new Set(),
+    });
+
+    expect(top14.reviews.length).toBeLessThan(prod2.reviews.length + 1);
+    expect(prod2.reviews.length).toBe(1);
   });
 });
