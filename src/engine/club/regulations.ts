@@ -29,7 +29,7 @@
  * plutôt qu'un mur.
  */
 
-import type { Club, Player } from '../types.js';
+import type { Club, ClubId, Player } from '../types.js';
 import { computeJiffStats, JIFF_MIN_COUNT_FEUILLE_23, JIFF_MIN_RATIO } from './jiff.js';
 
 // =============================================================================
@@ -326,4 +326,95 @@ export function canRegister(input: {
 /** Le club, mis à jour avec sa consommation réelle du plafond. */
 export function withCapUsage(club: Club, roster: readonly Player[]): Club {
   return { ...club, salaryCapUsage: computePayroll(roster) };
+}
+
+// =============================================================================
+// Le contrôle annuel, pour tout le championnat
+// =============================================================================
+
+/**
+ * La revue de la commission, club par club : V0.62.
+ *
+ * Ces règles vivaient dans `App.tsx`, en pleine intersaison, mêlées à la
+ * publication des actualités et à l'écriture d'une demi-douzaine de références
+ * React. Elles décident pourtant des points retirés, des interdictions de
+ * recruter et des amendes de toute une division : c'est du règlement, et le
+ * règlement appartient au moteur.
+ *
+ * Deux points d'ordre sont conservés, et ils comptent :
+ *
+ * - le contrôle porte sur l'effectif **d'avant-mercato**, donc sur la saison
+ *   réellement jouée. Le faire après le marché ne verrait plus aucune
+ *   infraction, puisque les clubs y dégraissent ;
+ * - il précède le mercato, pour qu'une interdiction de recruter s'applique à la
+ *   fenêtre qui s'ouvre et non à celle de l'année suivante.
+ */
+export interface ClubReview {
+  readonly clubId: ClubId;
+  readonly verdicts: readonly Sanction[];
+  readonly pointsDeducted: number;
+  readonly fine: number;
+  readonly transferBan: boolean;
+  /** Vrai si ce verdict fait de ce club un récidiviste l'an prochain. */
+  readonly countsAsOffence: boolean;
+}
+
+export interface LeagueReview {
+  /** Un par club sanctionné. Les clubs irréprochables n'y figurent pas. */
+  readonly reviews: readonly ClubReview[];
+  readonly penaltiesByClub: ReadonlyMap<ClubId, number>;
+  readonly bannedClubs: ReadonlySet<ClubId>;
+  /** Antécédents à retenir pour la saison suivante. */
+  readonly repeatOffenders: ReadonlySet<ClubId>;
+}
+
+export function reviewLeague(input: {
+  readonly clubs: readonly Club[];
+  readonly division: 'TOP14' | 'PRO_D2';
+  /** Effectif de fin de saison, avant mercato. */
+  readonly rosterOf: (clubId: ClubId) => readonly Player[];
+  /** Clubs déjà sanctionnés la saison passée : la récidive aggrave. */
+  readonly repeatOffenders: ReadonlySet<ClubId>;
+}): LeagueReview {
+  const reviews: ClubReview[] = [];
+  const penaltiesByClub = new Map<ClubId, number>();
+  const bannedClubs = new Set<ClubId>();
+  const repeatOffenders = new Set<ClubId>();
+
+  for (const club of input.clubs) {
+    const roster = input.rosterOf(club.id);
+    // Un club sans effectif n'est pas un club conforme, c'est un club qu'on ne
+    // sait pas juger : le sanctionner sur une liste vide n'aurait aucun sens.
+    if (roster.length === 0) continue;
+
+    const verdicts = reviewSeason({
+      cap: capReport(roster, input.division),
+      jiff: jiffReport(roster),
+      repeatOffender: input.repeatOffenders.has(club.id),
+    });
+    if (verdicts.length === 0) continue;
+
+    const pointsDeducted = verdicts.reduce((n, v) => n + v.pointsDeducted, 0);
+    const fine = verdicts.reduce((n, v) => n + v.fine, 0);
+    const transferBan = verdicts.some(v => v.transferBan);
+    // V0.60 : seul un verdict qui sanctionne vraiment fait un antécédent. Un
+    // simple avertissement armait la récidive, ce qui accélérait les retraits
+    // de points de tout le championnat.
+    const offence = verdicts.some(countsAsOffence);
+
+    if (pointsDeducted > 0) penaltiesByClub.set(club.id, pointsDeducted);
+    if (transferBan) bannedClubs.add(club.id);
+    if (offence) repeatOffenders.add(club.id);
+
+    reviews.push({
+      clubId: club.id,
+      verdicts,
+      pointsDeducted,
+      fine,
+      transferBan,
+      countsAsOffence: offence,
+    });
+  }
+
+  return { reviews, penaltiesByClub, bannedClubs, repeatOffenders };
 }
