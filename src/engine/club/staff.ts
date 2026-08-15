@@ -231,3 +231,21 @@ export function staffBiasColor(bias: StaffBias): string {
     case 'NEUTRE':   return '#8b949e';
   }
 }
+
+
+/**
+ * La qualité d'analyse vidéo d'un encadrement : V0.65.
+ *
+ * C'est le scout principal qui décortique l'adversaire, et non l'entraîneur
+ * en chef : le poste existait depuis la V0.44 sans peser sur autre chose que
+ * le recrutement. Il commande désormais la capacité du club à lire les
+ * habitudes de touche d'en face.
+ *
+ * Rendue sur 0 à 1, parce que c'est l'échelle que le moteur de match attend, et
+ * nulle quand personne n'occupe le poste : un club sans analyste ne lit rien.
+ */
+export function analysisQualityOf(staff: readonly StaffMember[]): number {
+  const scout = staff.find(m => m.role === 'SCOUT_PRINCIPAL');
+  if (!scout) return 0;
+  return Math.max(0, Math.min(1, scout.quality / 100));
+}

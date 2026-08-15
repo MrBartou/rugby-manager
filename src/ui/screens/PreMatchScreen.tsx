@@ -38,6 +38,15 @@ import {
   SET_PIECE_LABEL,
 } from '../../engine/match/tactics.js';
 import { OpponentDossier } from '../components/OpponentDossier.js';
+import {
+  MAX_CALLS,
+  MIN_CALLS,
+  READ_MIN_SAMPLE,
+  validatePlaybook,
+  type CallUsage,
+  type LineoutCall,
+  type Playbook,
+} from '../../engine/match/playbook.js';
 import { LineupPitch, type LineupSlot } from '../components/LineupPitch.js';
 import { CROWD_LABEL, crowdHint, type CrowdLevel } from '../../engine/match/crowd.js';
 import { captainAuthority, suggestCaptain } from '../../engine/match/captain.js';
@@ -53,6 +62,13 @@ import {
 import { weekForecast } from '../../engine/club/training-week.js';
 import type { OpponentReport } from '../../engine/club/opponent-report.js';
 export type { WeekPlan };
+
+type PlaybookEditorProps = {
+  readonly playbook: Playbook;
+  readonly usage: CallUsage;
+  readonly forwards: readonly Player[];
+  readonly onChange: (playbook: Playbook) => void;
+};
 
 interface Props {
   readonly homeClubName: string;
@@ -70,6 +86,18 @@ interface Props {
    * manager ne survivait pas à la rencontre. Il est désormais porté par le club.
    */
   readonly currentCaptainId?: string;
+  /**
+   * V0.65 : le carnet de touche, et ce qu'il a déjà servi cette saison.
+   *
+   * Il se dessine ici parce que c'est ici qu'on prépare la rencontre, et parce
+   * que la part d'usage de chaque combinaison n'a de sens qu'à côté du bouton
+   * qui permet d'en changer.
+   */
+  readonly playbook?: {
+    readonly value: Playbook;
+    readonly usage: CallUsage;
+    readonly onChange: (playbook: Playbook) => void;
+  };
   /** V0.51 — graphe de relations du club, pour la cohésion du XV aligné. */
   readonly relations?: import('../../engine/human/relationships.js').RelationsState;
   /**
@@ -192,12 +220,19 @@ export function PreMatchScreen({
   opponentScouting,
   medicalQuality,
   rivalry,
+  playbook,
 }: Props) {
   const [starters, setStarters] = useState<readonly { playerId: string; position: Position }[]>(initialLineup.starters);
   const [subs, setSubs] = useState<readonly string[]>(initialLineup.substitutes);
   const [load, setLoad] = useState<TrainingLoad>('MEDIUM');
   const [focus, setFocus] = useState<TacticalFocus>('MIXED');
-  const [lineoutPhilo, setLineoutPhilo] = useState<'MAUL_LOURD' | 'SAUT_RAPIDE' | 'SAUT_LONG'>('SAUT_RAPIDE');
+  /*
+   * V0.65 — la philosophie de touche n'est plus réglable ici : le carnet de
+   * combinaisons la remplace, et laisser les deux aurait donné deux réglages
+   * pour la même chose, dont un que le moteur n'aurait plus jamais lu. Elle
+   * reste transmise en repli, pour une sauvegarde sans carnet.
+   */
+  const lineoutPhilo = 'SAUT_RAPIDE' as const;
   // V0.32 — plan de match.
   const [occupation, setOccupation] = useState<PreMatchTacticalPlan['occupation']>('MEDIANE');
   const [defLine, setDefLine] = useState<PreMatchTacticalPlan['defensiveLine']>('RIDEAU');
@@ -473,26 +508,20 @@ export function PreMatchScreen({
             </div>
           </div>
 
-          <div className="prep-row">
-            <div className="prep-label">Philosophie de touche</div>
-            <div className="seg-btn">
-              {(['MAUL_LOURD', 'SAUT_RAPIDE', 'SAUT_LONG'] as const).map(p => (
-                <button
-                  key={p}
-                  type="button"
-                  className={p === lineoutPhilo ? 'active' : ''}
-                  onClick={() => setLineoutPhilo(p)}
-                >
-                  {p === 'MAUL_LOURD' ? 'Maul lourd' : p === 'SAUT_RAPIDE' ? 'Saut rapide' : 'Saut long'}
-                </button>
-              ))}
-            </div>
-            <div className="prep-hint">
-              {lineoutPhilo === 'MAUL_LOURD' && 'Travail du maul pénétrant — risque de contre, mais avancée constante quand ça passe.'}
-              {lineoutPhilo === 'SAUT_RAPIDE' && 'Lancers courts et redistribution rapide — peu de mauls mais peu de pertes.'}
-              {lineoutPhilo === 'SAUT_LONG' && 'Lancers longs sur 7m — risqué, mais ouvre des espaces.'}
-            </div>
-          </div>
+          {/* V0.65 — le carnet remplace la philosophie de touche, qui ne
+              proposait qu'un mot pour toute la saison. Elle reste le repli des
+              clubs gérés par la machine, où personne ne dessine rien. */}
+          {playbook && (
+            <PlaybookEditor
+              playbook={playbook.value}
+              usage={playbook.usage}
+              forwards={starters
+                .map(s => byId.get(s.playerId))
+                .filter((p): p is Player => p !== undefined)
+                .slice(0, 8)}
+              onChange={playbook.onChange}
+            />
+          )}
         </div>
 
         {/* ---- Plan de match (V0.32) ---------------------------------------- */}
@@ -700,5 +729,183 @@ export function PreMatchScreen({
         </button>
       </div>
     </section>
+  );
+}
+
+
+/**
+ * L'éditeur de carnet : V0.65.
+ *
+ * Trois décisions par combinaison, et une quatrième facultative, le sauteur.
+ * L'écran affiche en permanence la **part d'usage** de chaque ligne, parce que
+ * c'est la seule information qui rende le mécanisme de lecture jouable : sans
+ * elle, le manager se ferait contrer sans jamais comprendre qu'il se répète.
+ */
+function PlaybookEditor({ playbook, usage, forwards, onChange }: PlaybookEditorProps) {
+  const total = Object.values(usage).reduce((sum, n) => sum + n, 0);
+  const verdict = validatePlaybook(playbook);
+
+  const patch = (id: string, change: Partial<LineoutCall>): void => {
+    onChange({
+      ...playbook,
+      calls: playbook.calls.map(c => (c.id === id ? { ...c, ...change } : c)),
+    });
+  };
+
+  /** Désigner un sauteur, ou revenir au « mieux placé » en retirant le champ. */
+  const setJumper = (call: LineoutCall, playerId: string): void => {
+    const { jumperId: _ancien, ...sansSauteur } = call;
+    const suivant: LineoutCall = playerId === ''
+      ? sansSauteur
+      : { ...sansSauteur, jumperId: playerId as PlayerId };
+    onChange({
+      ...playbook,
+      calls: playbook.calls.map(c => (c.id === call.id ? suivant : c)),
+    });
+  };
+
+  const ajouter = (): void => {
+    if (playbook.calls.length >= MAX_CALLS) return;
+    const id = `c${Date.now().toString(36)}`;
+    onChange({
+      ...playbook,
+      calls: [...playbook.calls, {
+        id, name: `Combinaison ${playbook.calls.length + 1}`,
+        alignment: 'CINQ', jumper: 'MILIEU', option: 'OUVREUR',
+      }],
+    });
+  };
+
+  const retirer = (id: string): void => {
+    if (playbook.calls.length <= MIN_CALLS) return;
+    const { defaultCallId, ...reste } = playbook;
+    const calls = playbook.calls.filter(c => c.id !== id);
+    // Retirer la combinaison par défaut laisse le carnet sans défaut plutôt que
+    // d'en désigner une au hasard : le moteur retombera sur la première, et le
+    // manager verra qu'aucune n'est cochée.
+    onChange(defaultCallId === id ? { ...reste, calls } : { ...playbook, calls });
+  };
+
+  return (
+    <div className="prep-row playbook">
+      <div className="prep-label">Carnet de touche</div>
+      <div className="prep-hint">
+        Chaque combinaison a son domaine. Celle que vous jouez plus d'une fois sur
+        trois finit par être lue, et contrée.
+      </div>
+
+      <ul className="playbook-list">
+        {playbook.calls.map(call => {
+          const share = total > 0 ? (usage[call.id] ?? 0) / total : 0;
+          const lue = total >= READ_MIN_SAMPLE && share > 0.34;
+          return (
+            <li key={call.id} className={`playbook-call ${lue ? 'over-used' : ''}`}>
+              <div className="pc-head">
+                <input
+                  className="pc-name"
+                  value={call.name}
+                  aria-label="Nom de la combinaison"
+                  onChange={e => patch(call.id, { name: e.target.value })}
+                />
+                <span className={`pc-share ${lue ? 'over' : ''}`}>
+                  {total === 0 ? 'jamais jouée' : `${Math.round(share * 100)} % des touches`}
+                </span>
+                <button
+                  type="button"
+                  className={`pc-default ${playbook.defaultCallId === call.id ? 'active' : ''}`}
+                  onClick={() => onChange({ ...playbook, defaultCallId: call.id })}
+                  title="Combinaison appelée par défaut au milieu du terrain"
+                >
+                  par défaut
+                </button>
+                <button
+                  type="button"
+                  className="pc-remove"
+                  disabled={playbook.calls.length <= MIN_CALLS}
+                  onClick={() => retirer(call.id)}
+                  aria-label={`Retirer ${call.name}`}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="pc-choices">
+                <Choix
+                  label="Alignement"
+                  options={[['SEPT', 'Sept'], ['CINQ', 'Cinq'], ['REDUITE', 'Réduite']]}
+                  value={call.alignment}
+                  onPick={v => patch(call.id, { alignment: v as LineoutCall['alignment'] })}
+                />
+                <Choix
+                  label="Sauteur"
+                  options={[['DEVANT', 'Devant'], ['MILIEU', 'Milieu'], ['FOND', 'Fond']]}
+                  value={call.jumper}
+                  onPick={v => patch(call.id, { jumper: v as LineoutCall['jumper'] })}
+                />
+                <Choix
+                  label="Option"
+                  options={[['MAUL', 'Maul'], ['OUVREUR', 'Ouvreur'], ['PEEL', 'Peel']]}
+                  value={call.option}
+                  onPick={v => patch(call.id, { option: v as LineoutCall['option'] })}
+                />
+              </div>
+
+              <label className="pc-jumper">
+                <span>Sauteur désigné</span>
+                <select
+                  value={(call.jumperId as string | undefined) ?? ''}
+                  onChange={e => setJumper(call, e.target.value)}
+                >
+                  <option value="">le mieux placé</option>
+                  {forwards.map(p => (
+                    <option key={p.id as string} value={p.id as string}>{p.lastName}</option>
+                  ))}
+                </select>
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+
+      <div className="playbook-actions">
+        <button
+          type="button"
+          className="secondary"
+          disabled={playbook.calls.length >= MAX_CALLS}
+          onClick={ajouter}
+        >
+          Ajouter une combinaison
+        </button>
+        {!verdict.ok && <span className="playbook-warning">{verdict.reason}</span>}
+      </div>
+    </div>
+  );
+}
+
+function Choix({
+  label, options, value, onPick,
+}: {
+  readonly label: string;
+  readonly options: readonly (readonly [string, string])[];
+  readonly value: string;
+  readonly onPick: (value: string) => void;
+}) {
+  return (
+    <div className="pc-choice">
+      <span className="pc-choice-label">{label}</span>
+      <div className="seg-btn">
+        {options.map(([key, texte]) => (
+          <button
+            key={key}
+            type="button"
+            className={key === value ? 'active' : ''}
+            aria-pressed={key === value}
+            onClick={() => onPick(key)}
+          >
+            {texte}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

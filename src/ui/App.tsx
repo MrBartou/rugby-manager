@@ -130,6 +130,9 @@ import {
 } from '../engine/club/loans.js';
 import { decayStandings } from '../engine/club/agents.js';
 import { canCover } from '../engine/match/bench.js';
+import { DEFAULT_PLAYBOOK, type CallUsage, type Playbook } from '../engine/match/playbook.js';
+import { analysisQualityOf } from '../engine/club/staff.js';
+import type { HomeWeeklyModifiers } from '../engine/match/types.js';
 import { applyPreContracts } from '../engine/club/contract-talks.js';
 import {
   reactionSummary,
@@ -638,6 +641,17 @@ export function App() {
    */
   const loansRef = useRef<readonly ActiveLoan[]>([]);
   const [loanEpoch, setLoanEpoch] = useState(0);
+  /**
+   * V0.65 — le carnet de touche du club, et ce qu'il a joué cette saison.
+   *
+   * Le carnet se dessine à l'entraînement et traverse les matchs : c'est
+   * exactement ce qui permet de se faire lire. Le compteur, lui, se remet à
+   * zéro chaque saison, parce qu'une habitude d'il y a trois ans n'apprend rien
+   * à personne.
+   */
+  const playbookRef = useRef<Playbook>(DEFAULT_PLAYBOOK);
+  const lineoutUsageRef = useRef<CallUsage>({});
+  const [playbookEpoch, setPlaybookEpoch] = useState(0);
   /**
    * V0.55 — joueurs ménagés cette semaine.
    *
@@ -3579,7 +3593,18 @@ export function App() {
     // V0.58 — l'effet du public passe désormais par la feuille de match, pas
     // par un bonus tactique replié ici. L'interface décrit l'affluence ; c'est
     // le moteur qui en tire l'avantage du terrain.
-    const modifiers = baseModifiers;
+    /*
+     * V0.65 — le carnet de touche et la qualité d'analyse rejoignent la feuille.
+     *
+     * L'analyse vient du scout principal : c'est le même homme qui décortique
+     * les adversaires, et cela donne enfin au poste un usage offensif, réclamé
+     * par la roadmap depuis que le scouting existe.
+     */
+    const modifiers: HomeWeeklyModifiers = {
+      ...baseModifiers,
+      playbook: playbookRef.current,
+      analysis: analysisQualityOf(seasonRef.current?.getStaff() ?? []),
+    };
 
     // V0.44 — la semaine laisse des traces au-delà du week-end. Jusqu'ici la
     // charge ne coûtait que quelques points de fatigue au coup d'envoi : « forte »
@@ -3642,8 +3667,8 @@ export function App() {
       ...input,
       playerSide: isHomeForPlayer ? 'HOME' : 'AWAY',
       ...(isHomeForPlayer
-        ? { homeWeeklyModifiers: modifiers }
-        : { awayWeeklyModifiers: modifiers }),
+        ? { homeWeeklyModifiers: modifiers, homeCallUsage: lineoutUsageRef.current }
+        : { awayWeeklyModifiers: modifiers, awayCallUsage: lineoutUsageRef.current }),
       // V0.51 — le graphe de relations n'est suivi que pour notre club : la
       // cohésion d'un adversaire vaut donc zéro, soit neutre. Le moral, lui,
       // est porté par les joueurs et pèse des deux côtés.
@@ -3703,6 +3728,16 @@ export function App() {
     const playerIsHome = matchInput.home.squad.clubId === playerClubId;
     const starters = playerIsHome ? matchInput.home.squad.starters : matchInput.away.squad.starters;
     const starterIds = starters.map(s => s.playerId);
+
+    // V0.65 — ce qu'on vient d'appeler en touche s'ajoute au cumul de la
+    // saison. C'est ce cumul, et lui seul, qui finit par se faire lire : le
+    // moteur ne garde rien d'un match à l'autre.
+    const appelees = playerIsHome ? result.homeLineoutCalls : result.awayLineoutCalls;
+    if (appelees) {
+      const cumul: Record<string, number> = { ...lineoutUsageRef.current };
+      for (const [id, n] of Object.entries(appelees)) cumul[id] = (cumul[id] ?? 0) + n;
+      lineoutUsageRef.current = cumul;
+    }
 
     // V0.13 — un match de coupe d'Europe ne fait pas avancer la journée de
     // championnat : il s'ajoute à la semaine et n'use que les joueurs alignés.
@@ -5378,6 +5413,16 @@ export function App() {
           roster={listRoster(screen.ctx.playerClubId)}
           medicalQuality={Math.min(100,
             (seasonState?.coaching.physique ?? 50) + medicalBonus(facilitiesRef.current))}
+          playbook={{
+            // `playbookEpoch` force la relecture : le carnet vit dans une ref,
+            // et une ref ne redessine rien toute seule.
+            value: playbookEpoch >= 0 ? playbookRef.current : playbookRef.current,
+            usage: lineoutUsageRef.current,
+            onChange: (next) => {
+              playbookRef.current = next;
+              setPlaybookEpoch(e => e + 1);
+            },
+          }}
           {...(() => {
             const opponentId = (screen.ctx.playerIsHome
               ? screen.ctx.awayClubId : screen.ctx.homeClubId) as ClubId;

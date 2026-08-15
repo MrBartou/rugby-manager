@@ -11119,3 +11119,119 @@ label.setting:hover { background: rgb(var(--overlay-hi) / 2%); }
   font-size: 11.5px;
   line-height: 1.5;
 }
+
+/* --- V0.65 : l'éditeur de carnet de touche ---
+   La part d'usage est affichée sur chaque ligne, et pas dans un écran de
+   statistiques : c'est elle qui rend le mécanisme de lecture jouable. */
+.playbook-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.playbook-call {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 10px 11px;
+}
+
+.playbook-call.over-used {
+  border-color: var(--yellow);
+}
+
+.pc-head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pc-name {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  flex: 1 1 140px;
+  font-size: 12.5px;
+  font-weight: 600;
+  min-width: 0;
+  padding: 5px 8px;
+}
+
+.pc-share {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+.pc-share.over { color: var(--yellow); }
+
+.pc-default,
+.pc-remove {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 10.5px;
+  padding: 4px 8px;
+}
+
+.pc-default.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.pc-remove:disabled { cursor: not-allowed; opacity: 0.4; }
+
+.pc-choices {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.pc-choice { display: flex; flex-direction: column; gap: 4px; }
+
+.pc-choice-label {
+  color: var(--text-dim);
+  font-size: 9.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.pc-jumper {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 11.5px;
+  gap: 8px;
+}
+
+.pc-jumper select {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 11.5px;
+  padding: 4px 6px;
+}
+
+.playbook-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.playbook-warning {
+  color: var(--yellow);
+  font-size: 11.5px;
+}
