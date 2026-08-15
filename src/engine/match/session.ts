@@ -23,6 +23,12 @@ import type { Player, PlayerId, Position } from '../types.js';
 import { simulateScrum, computeScrumDominanceShift, type ScrumInput } from './scrum.js';
 import { simulateLineout, type LineoutInput } from './lineout.js';
 import {
+  NO_INSTRUCTIONS,
+  kickingEffect,
+  markingEffect,
+  type IndividualInstructions,
+} from './instructions.js';
+import {
   callForSituation,
   readLevel,
   recordCall,
@@ -347,6 +353,12 @@ export interface MatchSession {
   substitute(offPlayerId: PlayerId, onPlayerId: PlayerId): SubstitutionOutcome;
   /** V0.33 — change le plan de match en cours de rencontre (mi-temps, urgence). */
   setTacticalPlan(plan: PreMatchTacticalPlan): void;
+  /**
+   * V0.65 — consignes individuelles, données avant le match ou depuis le bord
+   * de touche. Le marquage se décide souvent après avoir vu qui fait mal.
+   */
+  setInstructions(instructions: IndividualInstructions): void;
+  getInstructions(): IndividualInstructions;
   /** V0.33 — plan actuellement appliqué au côté du manager. */
   getTacticalPlan(): PreMatchTacticalPlan;
   /** Avance jusqu'à la prochaine décision ou la fin du match. No-op si awaiting-decision ou finished. */
@@ -631,6 +643,31 @@ export function createMatchSession(
   const awayBonus = awayWeekly?.tacticalBonus ?? 0;
   const homeInitialFatigue = Math.max(0, Math.min(40, homeWeekly?.initialFatigueDelta ?? 0));
   const awayInitialFatigue = Math.max(0, Math.min(40, awayWeekly?.initialFatigueDelta ?? 0));
+  /**
+   * Ce que le marquage retire de part et d'autre, recalculé à chaque phase.
+   *
+   * À chaque phase parce que les deux hommes peuvent sortir : une consigne
+   * donnée à la vingtième minute ne doit pas continuer d'agir quand celui qui
+   * devait l'appliquer est sur le banc.
+   */
+  function instructionEffects(): { readonly targetPenalty: number; readonly markerPenalty: number } {
+    const marking = playerInstructions.marking;
+    if (!marking) return { targetPenalty: 0, markerPenalty: 0 };
+    const marker = input.playersById.get(marking.markerId);
+    const target = input.playersById.get(marking.targetId);
+    const onField = (id: PlayerId): boolean =>
+      [...home.squad.slots, ...away.squad.slots].some(slot => slot.player.id === id);
+    if (!marker || !target || !onField(marking.markerId) || !onField(marking.targetId)) {
+      return { targetPenalty: 0, markerPenalty: 0 };
+    }
+    return markingEffect({
+      marker,
+      target,
+      markerDefence: marker.technical.plaquage,
+      targetAttack: (target.physical.vitesse + target.technical.visionDeJeu) / 2,
+    });
+  }
+
   function buildSide(
     decisions: typeof input.home,
     bonus: number,
@@ -678,6 +715,15 @@ export function createMatchSession(
   // V0.9 — côté contrôlé par le joueur (pour live moments + décisions)
   const playerSide: 'HOME' | 'AWAY' = input.playerSide ?? 'HOME';
   const playerRuntime = playerSide === 'HOME' ? home : away;
+  /**
+   * V0.65 — les consignes individuelles du côté manager.
+   *
+   * Elles se donnent avant le coup d'envoi comme depuis le bord de touche : le
+   * marquage d'un homme se décide souvent à la vingtième minute, quand on a vu
+   * qui fait mal.
+   */
+  let playerInstructions: IndividualInstructions = NO_INSTRUCTIONS;
+
   /** V0.33 — plan courant du côté manager, modifiable en cours de match. */
   let currentPlayerPlan: PreMatchTacticalPlan =
     (playerSide === 'HOME' ? input.home : input.away).tacticalPlan ?? NEUTRAL_PLAN;
@@ -1108,6 +1154,21 @@ export function createMatchSession(
         return simulateRuck(inp, rng);
       }
       case 'OPEN_PLAY': {
+        /*
+         * V0.65 — les consignes individuelles, du seul côté du manager.
+         *
+         * Le marquage retire à l'attaque adverse ce que le marqueur lui prend,
+         * et retire à la nôtre ce qu'il ne fait plus. Les deux termes existent
+         * toujours ensemble : une consigne gratuite serait une consigne qu'on
+         * laisse cochée pour toujours.
+         */
+        const marquage = instructionEffects();
+        const attackIsPlayer = sim.attacker === playerSide;
+        const kick = kickingEffect(
+          playerInstructions.kicking,
+          (playerSide === 'HOME' ? input.away : input.home).tacticalPlan,
+        );
+
         const inp: OpenPlayInput = {
           attackBacks: onFieldBacks(att.squad),
           defenseBacks: onFieldBacks(def.squad),
@@ -1119,11 +1180,14 @@ export function createMatchSession(
           fatigueDefense: squadFatigue(def.squad),
           phaseInPossession: sim.phaseInPossession,
           attackTacticalBonus: att.tacticalBonus - att.tactics.openPlayMalus
-            + elan(sim.attacker).tacticalBonus + esprit(att).confidence,
+            + elan(sim.attacker).tacticalBonus + esprit(att).confidence
+            - (attackIsPlayer ? marquage.markerPenalty * 0.1 : marquage.targetPenalty * 0.1),
           defenseTacticalBonus: def.tacticalBonus - def.tactics.openPlayMalus
             + elan(sim.attacker === 'HOME' ? 'AWAY' : 'HOME').tacticalBonus
-            + esprit(def).confidence,
-          kickTendency: att.tactics.kickTendency * meteo.kickTendency,
+            + esprit(def).confidence
+            - (attackIsPlayer ? 0 : marquage.markerPenalty * 0.1),
+          kickTendency: att.tactics.kickTendency * meteo.kickTendency
+            * (attackIsPlayer ? kick.kickTendencyMul : 1),
           attackErrorRisk: att.tactics.ownErrorRisk
             * elan(sim.attacker).errorFactor * esprit(att).errorFactor
             * meteo.handlingFactor,
@@ -1595,6 +1659,14 @@ export function createMatchSession(
       // Sortir son capitaine se paie, même quand c'est un choix délibéré.
       noteCaptainDeparture(playerRuntime);
       return outcome;
+    },
+
+    setInstructions(instructions: IndividualInstructions) {
+      playerInstructions = instructions;
+    },
+
+    getInstructions(): IndividualInstructions {
+      return playerInstructions;
     },
 
     setTacticalPlan(plan: PreMatchTacticalPlan) {
