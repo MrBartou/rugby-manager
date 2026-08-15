@@ -11120,68 +11120,61 @@ label.setting:hover { background: rgb(var(--overlay-hi) / 2%); }
   line-height: 1.5;
 }
 
-/* --- V0.65 : l'éditeur de carnet de touche ---
-   La part d'usage est affichée sur chaque ligne, et pas dans un écran de
-   statistiques : c'est elle qui rend le mécanisme de lecture jouable. */
-.playbook-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  list-style: none;
-  margin: 10px 0 0;
-  padding: 0;
-}
+/* --- V0.65 : le carnet de touche ---
+   Un tableau, une ligne par combinaison, dans un panneau pleine largeur. La
+   première version empilait neuf boutons segmentés par combinaison dans la
+   colonne étroite de la préparation : elle repoussait la composition hors de
+   l'écran, exactement comme l'entraînement avant la V0.62.1. L'habillage du
+   tableau est celui de l'entraînement, réutilisé tel quel plutôt que recopié. */
+.playbook-intro { margin: 0 0 var(--sp-3); max-width: 78ch; }
 
-.playbook-call {
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  padding: 10px 11px;
-}
+.playbook-scroll { max-height: none; }
 
-.playbook-call.over-used {
-  border-color: var(--yellow);
-}
+.playbook-table td { vertical-align: middle; }
 
-.pc-head {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
+.playbook-table th.col-name,
+.playbook-table td.col-name { text-align: left; min-width: 170px; }
+
+.playbook-table th.col-choice,
+.playbook-table td.col-choice { text-align: left; width: 150px; }
+
+.playbook-table th.col-share,
+.playbook-table td.col-share { text-align: right; width: 74px; }
+
+.playbook-table th.col-flag,
+.playbook-table td.col-flag { text-align: center; width: 54px; }
+
+.playbook-table td.col-share.over { color: var(--yellow); }
+
+/* La ligne trop jouée se signale par un liseré, pas par un fond criard : c'est
+   un avertissement, pas une erreur. */
+.playbook-table tr.over-used td.col-name { box-shadow: inset 2px 0 0 var(--yellow); }
+
+.playbook-table .focus-select { max-width: 100%; }
 
 .pc-name {
   background: var(--bg-2);
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--radius-1);
   color: var(--text);
-  flex: 1 1 140px;
   font-size: 12.5px;
   font-weight: 600;
-  min-width: 0;
   padding: 5px 8px;
+  width: 100%;
 }
 
-.pc-share {
-  color: var(--text-dim);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-}
-
-.pc-share.over { color: var(--yellow); }
+.pc-name:hover { border-color: var(--accent); }
 
 .pc-default,
 .pc-remove {
   background: none;
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--radius-1);
   color: var(--text-dim);
   cursor: pointer;
-  font-size: 10.5px;
-  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1;
+  padding: 5px 8px;
 }
 
 .pc-default.active {
@@ -11189,46 +11182,14 @@ label.setting:hover { background: rgb(var(--overlay-hi) / 2%); }
   color: var(--accent);
 }
 
-.pc-remove:disabled { cursor: not-allowed; opacity: 0.4; }
-
-.pc-choices {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-}
-
-.pc-choice { display: flex; flex-direction: column; gap: 4px; }
-
-.pc-choice-label {
-  color: var(--text-dim);
-  font-size: 9.5px;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-}
-
-.pc-jumper {
-  align-items: center;
-  color: var(--text-muted);
-  display: flex;
-  font-size: 11.5px;
-  gap: 8px;
-}
-
-.pc-jumper select {
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  color: var(--text);
-  font-size: 11.5px;
-  padding: 4px 6px;
-}
+.pc-remove:disabled { cursor: not-allowed; opacity: 0.35; }
 
 .playbook-actions {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 10px;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
 }
 
 .playbook-warning {
@@ -11286,26 +11247,13 @@ label.setting:hover { background: rgb(var(--overlay-hi) / 2%); }
 
 .sp-store:hover { color: var(--text); }
 
-/* V0.65 : le marquage, depuis le bord de touche. Deux listes et un verbe :
-   « X colle Y » se lit comme on le dirait à voix haute. */
+/* V0.65 : le marquage, depuis le bord de touche. Deux listes empilées, pleine
+   largeur : le panneau fait moins de trois cents pixels, et une ligne
+   « X colle Y » y débordait. */
 .lt-marking {
-  align-items: center;
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-direction: column;
+  gap: 5px;
 }
 
-.lt-marking select {
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  color: var(--text);
-  font-size: 11px;
-  max-width: 130px;
-  padding: 4px 6px;
-}
-
-.lt-marking-sep {
-  color: var(--text-dim);
-  font-size: 10.5px;
-}
+.lt-marking .focus-select { max-width: 100%; font-size: 11.5px; }

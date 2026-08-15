@@ -505,9 +505,14 @@ export function MatchScreen({
                         key={k}
                         type="button"
                         className={k === (liveInstructions.kicking ?? 'AUCUNE') ? 'active' : ''}
+                        title={k === 'AUCUNE'
+                          ? 'On joue ce qui se présente'
+                          : k === 'DERRIERE_AILIER'
+                            ? 'Taper derrière leur ailier : paie s\'il monte, rend le ballon s\'il recule'
+                            : 'Chandelles sous leur arrière'}
                         onClick={() => changeInstructions({ kicking: k })}
                       >
-                        {k === 'AUCUNE' ? 'Libre' : k === 'DERRIERE_AILIER' ? 'Derrière l\'ailier' : 'Chandelle'}
+                        {k === 'AUCUNE' ? 'Libre' : k === 'DERRIERE_AILIER' ? 'Derrière' : 'Chandelle'}
                       </button>
                     ))}
                   </div>
@@ -515,26 +520,30 @@ export function MatchScreen({
 
                 <div className="lt-row">
                   <span className="lt-label">Marquage</span>
+                  {/* Deux listes pleine largeur, l'une sous l'autre : le bord
+                      de touche fait moins de trois cents pixels, et une ligne
+                      « X colle Y » y débordait. */}
                   <div className="lt-marking">
                     <select
+                      className="focus-select"
                       aria-label="Le joueur chargé du marquage"
                       value={(liveInstructions.marking?.markerId as string | undefined) ?? ''}
                       onChange={e => setMarker(e.target.value)}
                     >
-                      <option value="">personne</option>
+                      <option value="">personne ne marque</option>
                       {liveSquad.onField.map(s => (
                         <option key={s.player.id as string} value={s.player.id as string}>
                           {s.player.lastName}
                         </option>
                       ))}
                     </select>
-                    <span className="lt-marking-sep">colle</span>
                     <select
+                      className="focus-select"
                       aria-label="L'adversaire à marquer"
                       value={(liveInstructions.marking?.targetId as string | undefined) ?? ''}
                       onChange={e => setMarkTarget(e.target.value)}
                     >
-                      <option value="">personne</option>
+                      <option value="">aucun adversaire</option>
                       {opponentsOnField.map(p => (
                         <option key={p.id as string} value={p.id as string}>{p.lastName}</option>
                       ))}

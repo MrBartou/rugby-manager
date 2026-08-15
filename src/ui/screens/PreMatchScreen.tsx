@@ -520,21 +520,28 @@ export function PreMatchScreen({
             </div>
           </div>
 
-          {/* V0.65 — le carnet remplace la philosophie de touche, qui ne
-              proposait qu'un mot pour toute la saison. Elle reste le repli des
-              clubs gérés par la machine, où personne ne dessine rien. */}
-          {playbook && (
-            <PlaybookEditor
-              playbook={playbook.value}
-              usage={playbook.usage}
-              forwards={starters
-                .map(s => byId.get(s.playerId))
-                .filter((p): p is Player => p !== undefined)
-                .slice(0, 8)}
-              onChange={playbook.onChange}
-            />
-          )}
         </div>
+
+        {/* V0.65 — le carnet remplace la philosophie de touche, qui ne proposait
+            qu'un mot pour toute la saison. Elle reste le repli des clubs gérés
+            par la machine, où personne ne dessine rien.
+
+            Il occupe toute la largeur : posé dans la colonne de la préparation,
+            il tombait à 360 pixels, ses trois groupes de boutons se dépliaient
+            l'un sous l'autre et trois combinaisons faisaient un mur qui
+            repoussait la composition hors de l'écran. C'est exactement la faute
+            que la V0.62.1 a corrigée sur l'écran d'entraînement. */}
+        {playbook && (
+          <PlaybookEditor
+            playbook={playbook.value}
+            usage={playbook.usage}
+            forwards={starters
+              .map(s => byId.get(s.playerId))
+              .filter((p): p is Player => p !== undefined)
+              .slice(0, 8)}
+            onChange={playbook.onChange}
+          />
+        )}
 
         {/* ---- Plan de match (V0.32) ---------------------------------------- */}
         <div className="dashboard-panel">
@@ -799,10 +806,18 @@ export function PreMatchScreen({
 /**
  * L'éditeur de carnet : V0.65.
  *
- * Trois décisions par combinaison, et une quatrième facultative, le sauteur.
- * L'écran affiche en permanence la **part d'usage** de chaque ligne, parce que
- * c'est la seule information qui rende le mécanisme de lecture jouable : sans
- * elle, le manager se ferait contrer sans jamais comprendre qu'il se répète.
+ * Un tableau, une ligne par combinaison, comme l'écran d'entraînement depuis la
+ * V0.62.1. La première version empilait trois groupes de boutons segmentés par
+ * combinaison dans la colonne étroite de la préparation : quinze contrôles
+ * dépliés en permanence, et la composition repoussée hors de l'écran.
+ *
+ * Les listes déroulantes remplacent les boutons segmentés pour la même raison
+ * qu'à l'entraînement : trois choix sur trois axes tiennent dans une ligne de
+ * tableau, pas dans neuf boutons.
+ *
+ * La **part d'usage** reste affichée sur chaque ligne : c'est la seule
+ * information qui rende le mécanisme de lecture jouable. Sans elle, le manager
+ * se ferait contrer sans jamais comprendre qu'il se répète.
  */
 function PlaybookEditor({ playbook, usage, forwards, onChange }: PlaybookEditorProps) {
   const total = Object.values(usage).reduce((sum, n) => sum + n, 0);
@@ -829,7 +844,7 @@ function PlaybookEditor({ playbook, usage, forwards, onChange }: PlaybookEditorP
 
   const ajouter = (): void => {
     if (playbook.calls.length >= MAX_CALLS) return;
-    const id = `c${Date.now().toString(36)}`;
+    const id = `c${playbook.calls.length}_${playbook.calls.map(c => c.id).join('').length}`;
     onChange({
       ...playbook,
       calls: [...playbook.calls, {
@@ -850,85 +865,126 @@ function PlaybookEditor({ playbook, usage, forwards, onChange }: PlaybookEditorP
   };
 
   return (
-    <div className="prep-row playbook">
-      <div className="prep-label">Carnet de touche</div>
-      <div className="prep-hint">
-        Chaque combinaison a son domaine. Celle que vous jouez plus d'une fois sur
-        trois finit par être lue, et contrée.
+    <div className="dashboard-panel panel-wide">
+      <div className="panel-tag">Carnet de touche</div>
+      <p className="prep-hint playbook-intro">
+        Chaque combinaison a son domaine : la réduite pour sortir de ses vingt-deux,
+        le maul près de leur ligne, le peel contre une défense qui monte. Celle que
+        vous jouez plus d'une fois sur trois finit lue, et contrée.
+      </p>
+
+      <div className="training-scroll playbook-scroll">
+        {/* `training-table` porte l'habillage de tableau déjà éprouvé (en-tête
+            collant, lignes, survol). On n'ajoute ici que les largeurs propres au
+            carnet : recopier cinquante lignes de style aurait fait deux
+            habillages à maintenir pour un seul objet. */}
+        <table className="training-table playbook-table">
+          <thead>
+            <tr>
+              <th className="col-name">Combinaison</th>
+              <th className="col-choice">Alignement</th>
+              <th className="col-choice">Sauteur</th>
+              <th className="col-choice">Option</th>
+              <th className="col-choice">Sauteur désigné</th>
+              <th className="col-share">Usage</th>
+              <th className="col-flag">Défaut</th>
+              <th className="col-flag" aria-label="Retirer" />
+            </tr>
+          </thead>
+          <tbody>
+            {playbook.calls.map(call => {
+              const share = total > 0 ? (usage[call.id] ?? 0) / total : 0;
+              const lue = total >= READ_MIN_SAMPLE && share > 0.34;
+              return (
+                <tr key={call.id} className={lue ? 'over-used' : ''}>
+                  <td className="col-name">
+                    <input
+                      className="pc-name"
+                      value={call.name}
+                      aria-label="Nom de la combinaison"
+                      onChange={e => patch(call.id, { name: e.target.value })}
+                    />
+                  </td>
+                  <td className="col-choice">
+                    <select
+                      className="focus-select"
+                      aria-label={`Alignement de ${call.name}`}
+                      value={call.alignment}
+                      onChange={e => patch(call.id, { alignment: e.target.value as LineoutCall['alignment'] })}
+                    >
+                      <option value="SEPT">Sept</option>
+                      <option value="CINQ">Cinq</option>
+                      <option value="REDUITE">Réduite</option>
+                    </select>
+                  </td>
+                  <td className="col-choice">
+                    <select
+                      className="focus-select"
+                      aria-label={`Créneau de saut de ${call.name}`}
+                      value={call.jumper}
+                      onChange={e => patch(call.id, { jumper: e.target.value as LineoutCall['jumper'] })}
+                    >
+                      <option value="DEVANT">Devant</option>
+                      <option value="MILIEU">Milieu</option>
+                      <option value="FOND">Fond</option>
+                    </select>
+                  </td>
+                  <td className="col-choice">
+                    <select
+                      className="focus-select"
+                      aria-label={`Option de ${call.name}`}
+                      value={call.option}
+                      onChange={e => patch(call.id, { option: e.target.value as LineoutCall['option'] })}
+                    >
+                      <option value="MAUL">Maul</option>
+                      <option value="OUVREUR">Ouvreur</option>
+                      <option value="PEEL">Peel</option>
+                    </select>
+                  </td>
+                  <td className="col-choice">
+                    <select
+                      className="focus-select"
+                      aria-label={`Sauteur désigné pour ${call.name}`}
+                      value={(call.jumperId as string | undefined) ?? ''}
+                      onChange={e => setJumper(call, e.target.value)}
+                    >
+                      <option value="">le mieux placé</option>
+                      {forwards.map(p => (
+                        <option key={p.id as string} value={p.id as string}>{p.lastName}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className={`col-share mono ${lue ? 'over' : ''}`}>
+                    {total === 0 ? '—' : `${Math.round(share * 100)} %`}
+                  </td>
+                  <td className="col-flag">
+                    <button
+                      type="button"
+                      className={`pc-default ${playbook.defaultCallId === call.id ? 'active' : ''}`}
+                      aria-pressed={playbook.defaultCallId === call.id}
+                      title="Combinaison appelée par défaut au milieu du terrain"
+                      onClick={() => onChange({ ...playbook, defaultCallId: call.id })}
+                    >
+                      ●
+                    </button>
+                  </td>
+                  <td className="col-flag">
+                    <button
+                      type="button"
+                      className="pc-remove"
+                      disabled={playbook.calls.length <= MIN_CALLS}
+                      aria-label={`Retirer ${call.name}`}
+                      onClick={() => retirer(call.id)}
+                    >
+                      ×
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
-
-      <ul className="playbook-list">
-        {playbook.calls.map(call => {
-          const share = total > 0 ? (usage[call.id] ?? 0) / total : 0;
-          const lue = total >= READ_MIN_SAMPLE && share > 0.34;
-          return (
-            <li key={call.id} className={`playbook-call ${lue ? 'over-used' : ''}`}>
-              <div className="pc-head">
-                <input
-                  className="pc-name"
-                  value={call.name}
-                  aria-label="Nom de la combinaison"
-                  onChange={e => patch(call.id, { name: e.target.value })}
-                />
-                <span className={`pc-share ${lue ? 'over' : ''}`}>
-                  {total === 0 ? 'jamais jouée' : `${Math.round(share * 100)} % des touches`}
-                </span>
-                <button
-                  type="button"
-                  className={`pc-default ${playbook.defaultCallId === call.id ? 'active' : ''}`}
-                  onClick={() => onChange({ ...playbook, defaultCallId: call.id })}
-                  title="Combinaison appelée par défaut au milieu du terrain"
-                >
-                  par défaut
-                </button>
-                <button
-                  type="button"
-                  className="pc-remove"
-                  disabled={playbook.calls.length <= MIN_CALLS}
-                  onClick={() => retirer(call.id)}
-                  aria-label={`Retirer ${call.name}`}
-                >
-                  ×
-                </button>
-              </div>
-
-              <div className="pc-choices">
-                <Choix
-                  label="Alignement"
-                  options={[['SEPT', 'Sept'], ['CINQ', 'Cinq'], ['REDUITE', 'Réduite']]}
-                  value={call.alignment}
-                  onPick={v => patch(call.id, { alignment: v as LineoutCall['alignment'] })}
-                />
-                <Choix
-                  label="Sauteur"
-                  options={[['DEVANT', 'Devant'], ['MILIEU', 'Milieu'], ['FOND', 'Fond']]}
-                  value={call.jumper}
-                  onPick={v => patch(call.id, { jumper: v as LineoutCall['jumper'] })}
-                />
-                <Choix
-                  label="Option"
-                  options={[['MAUL', 'Maul'], ['OUVREUR', 'Ouvreur'], ['PEEL', 'Peel']]}
-                  value={call.option}
-                  onPick={v => patch(call.id, { option: v as LineoutCall['option'] })}
-                />
-              </div>
-
-              <label className="pc-jumper">
-                <span>Sauteur désigné</span>
-                <select
-                  value={(call.jumperId as string | undefined) ?? ''}
-                  onChange={e => setJumper(call, e.target.value)}
-                >
-                  <option value="">le mieux placé</option>
-                  {forwards.map(p => (
-                    <option key={p.id as string} value={p.id as string}>{p.lastName}</option>
-                  ))}
-                </select>
-              </label>
-            </li>
-          );
-        })}
-      </ul>
 
       <div className="playbook-actions">
         <button
@@ -940,34 +996,6 @@ function PlaybookEditor({ playbook, usage, forwards, onChange }: PlaybookEditorP
           Ajouter une combinaison
         </button>
         {!verdict.ok && <span className="playbook-warning">{verdict.reason}</span>}
-      </div>
-    </div>
-  );
-}
-
-function Choix({
-  label, options, value, onPick,
-}: {
-  readonly label: string;
-  readonly options: readonly (readonly [string, string])[];
-  readonly value: string;
-  readonly onPick: (value: string) => void;
-}) {
-  return (
-    <div className="pc-choice">
-      <span className="pc-choice-label">{label}</span>
-      <div className="seg-btn">
-        {options.map(([key, texte]) => (
-          <button
-            key={key}
-            type="button"
-            className={key === value ? 'active' : ''}
-            aria-pressed={key === value}
-            onClick={() => onPick(key)}
-          >
-            {texte}
-          </button>
-        ))}
       </div>
     </div>
   );
