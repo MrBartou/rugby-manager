@@ -60,11 +60,13 @@ import {
 } from '../club/contract-clauses.js';
 import {
   agentOf,
+  agentProposals,
   agentStance as agentStanceFor,
   applyAgentEvent,
   buildAgentPool,
   standingOf,
   type Agent,
+  type AgentProposal,
   type AgentStanceKind,
   type AgentStandings,
 } from '../club/agents.js';
@@ -598,6 +600,13 @@ export interface SeasonSession {
   getPreContractTargets(): readonly PreContractTarget[];
   signPreContract(player: Player, annualSalary: number, years: number): TalkOutcome;
   getPreContracts(): readonly PreContract[];
+  /**
+   * V0.64 — les joueurs qu'un agent bien disposé vient vous proposer.
+   *
+   * Calculées à la volée pour la journée en cours : rien à sauvegarder, et une
+   * sollicitation qui expire d'elle-même vaut mieux qu'une liste qui gonfle.
+   */
+  getAgentProposals(): readonly AgentProposal[];
   /** V0.64 — relations avec les agents, à sauvegarder telles quelles. */
   getAgentStandings(): AgentStandings;
   /** V0.64 — échéances de transfert restant dues. */
@@ -2891,6 +2900,18 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
 
     getPreContracts(): readonly PreContract[] {
       return preContracts;
+    },
+
+    getAgentProposals(): readonly AgentProposal[] {
+      const libres = (opts.freeAgentPool?.() ?? []).filter(p => p.freeAgent && !p.retired);
+      if (libres.length === 0) return [];
+      return agentProposals({
+        pool: agentPool,
+        standings: agentStandings,
+        candidates: libres,
+        round: currentRound,
+        seed: opts.seed,
+      });
     },
 
     getAgentStandings(): AgentStandings {

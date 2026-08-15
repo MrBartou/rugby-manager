@@ -5305,6 +5305,9 @@ export function App() {
                 return outcome.message;
               },
             }}
+            agentCalls={(seasonRef.current?.getAgentProposals() ?? []).map(c => ({
+              agentId: c.agentId, playerId: c.playerId, pitch: c.pitch,
+            }))}
             previewBid={onPreviewBid}
             onSubmitBid={onSubmitBid}
             international={{

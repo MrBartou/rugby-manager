@@ -11102,3 +11102,20 @@ label.setting:hover { background: rgb(var(--overlay-hi) / 2%); }
   margin: 0 0 10px;
   max-width: 62ch;
 }
+
+/* V0.64 : les sollicitations d'agents, en tête des agents libres. */
+.agent-calls {
+  border-left: 2px solid var(--accent);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0 0 0 10px;
+}
+
+.agent-calls li {
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}

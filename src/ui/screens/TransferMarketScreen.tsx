@@ -104,6 +104,14 @@ interface Props {
     }[];
     readonly onSign: (player: Player, annualSalary: number, years: number) => string;
   };
+  /**
+   * V0.64 — ce qu'un agent conquis vient vous proposer de lui-même.
+   */
+  readonly agentCalls?: readonly {
+    readonly agentId: string;
+    readonly playerId: PlayerId;
+    readonly pitch: string;
+  }[];
   readonly onBack?: () => void;
   /** V0.61 — ouvrir la fiche d'un joueur suivi. */
   readonly onOpenPlayer?: (player: Player) => void;
@@ -172,7 +180,7 @@ export function TransferMarketScreen({
   onSignFreeAgent, onResolveIncomingOffer,
   leaguePlayers, clubNameById, onOpenPlayer,
   previewBid, onSubmitBid, aiMarket, transferWindow, jokerOptions, onSignJoker, regulation, loans,
-  preContracts,
+  preContracts, agentCalls,
   international,
 }: Props) {
   const [tab, setTab] = useState<
@@ -1000,6 +1008,16 @@ export function TransferMarketScreen({
       {tab === 'LIBRES' && (
       <div className="dashboard-panel">
         <div className="panel-tag">Agents libres ({freeAgents.length})</div>
+        {/* V0.64 — les sollicitations, notées non faites depuis la V0.43. Elles
+            n'ont de valeur que par celui qui les porte : un agent ne vous
+            appelle que si vous avez bien travaillé avec lui. */}
+        {agentCalls !== undefined && agentCalls.length > 0 && (
+          <ul className="agent-calls">
+            {agentCalls.map(call => (
+              <li key={`${call.agentId}_${call.playerId as string}`}>{call.pitch}</li>
+            ))}
+          </ul>
+        )}
         {freeAgents.length === 0 && <p className="empty">Aucun joueur libre disponible.</p>}
         {freeAgents.length > 0 && (
           <table className="finances-history">
