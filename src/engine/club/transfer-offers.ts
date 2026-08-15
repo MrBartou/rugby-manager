@@ -338,7 +338,7 @@ export interface PlayerDecisionInput {
   readonly buyerRoster: readonly Player[];
   readonly totalClubs: number;
   /**
-   * V0.64 — coefficient imposé par l'agent du joueur, 1 quand il ne s'en mêle
+   * V0.64 : coefficient imposé par l'agent du joueur, 1 quand il ne s'en mêle
    * pas. Au-dessus de 1, il renchérit sur ce que son joueur attend ; en dessous,
    * il aplanit. Il agit sur l'**attente**, pas sur l'offre : un agent ne change
    * pas ce que le club propose, il change ce qui suffit à convaincre.

@@ -729,7 +729,7 @@ export function App() {
   const [statusEpoch, setStatusEpoch] = useState(0);
   /** Compteur d'époque : les refs ne déclenchent aucun rendu à elles seules. */
   const [requestEpoch, setRequestEpoch] = useState(0);
-  /** V0.64 — force la relecture des discussions de contrat après chaque échange. */
+  /** V0.64 : force la relecture des discussions de contrat après chaque échange. */
   const [talkEpoch, setTalkEpoch] = useState(0);
 
   /** V0.45 — suites de la commission : elles courent sur la saison suivante. */
@@ -1206,7 +1206,7 @@ export function App() {
         ...(save.statsMatchCount !== undefined ? { statsMatchCount: save.statsMatchCount } : {}),
         ...(save.caps ? { caps: new Map(save.caps.map(e => [e.playerId, e.record])) } : {}),
         ...(save.pendingEvents ? { pendingEvents: save.pendingEvents } : {}),
-        // V0.64 — un mercato qui ne se souvient de rien : c'est ce qu'on aurait
+        // V0.64 : un mercato qui ne se souvient de rien : c'est ce qu'on aurait
         // eu sans ces deux lignes. L'agent brouillé redevenait aimable et les
         // annuités dues s'effaçaient au premier rechargement.
         ...(save.agentStandings ? { agentStandings: save.agentStandings } : {}),
@@ -1384,7 +1384,7 @@ export function App() {
           nationalPicks: nationalPicksRef.current,
           europeanWorld: europeanWorldRef.current,
           careerStartSeason: careerStartSeasonRef.current,
-          // V0.64 — les agents se souviennent, et les créances survivent au
+          // V0.64 : les agents se souviennent, et les créances survivent au
           // rechargement. Lus sur la session plutôt que tenus dans un ref : la
           // session en est le seul propriétaire, et un ref de plus aurait été
           // une deuxième source de vérité pour la même donnée.
@@ -1604,7 +1604,7 @@ export function App() {
     // leur entraînement et la qualité du staff, au lieu d'une simple courbe d'âge.
     // V0.55 — les prêts s'achèvent avec la saison : chacun rentre, et on dit
     // franchement ce que son année a donné.
-    // V0.64 — l'option d'achat se tranche ici, au moment où l'on constate ce
+    // V0.64 : l'option d'achat se tranche ici, au moment où l'on constate ce
     // que le prêt a donné. Le club d'accueil lève ou non, et le joueur part
     // pour de bon : sans cette vente, l'option n'aurait été qu'une ligne de
     // texte dans une offre de prêt.
@@ -1657,7 +1657,7 @@ export function App() {
       const loan = loansRef.current.find(l => l.playerId === p.id)!;
       return { ...p, clubId: loan.clubId };
     });
-    // V0.64 — les pré-contrats s'exécutent ici, avant tout le reste du
+    // V0.64 : les pré-contrats s'exécutent ici, avant tout le reste du
     // rollover. Avant l'expiration des contrats, précisément : un joueur qui a
     // signé ailleurs ne doit pas passer par la case agent libre, sans quoi le
     // marché IA le redistribuerait et la signature de janvier n'aurait servi à
@@ -1838,7 +1838,7 @@ export function App() {
       ),
     });
 
-    // V0.64 — les options d'achat levées se paient sur l'exercice qui s'ouvre,
+    // V0.64 : les options d'achat levées se paient sur l'exercice qui s'ouvre,
     // comme les amendes ci-dessous : la trésorerie de la saison écoulée est
     // close, et l'encaisser dedans reviendrait à l'écrire dans un bilan déjà
     // publié.
@@ -2057,7 +2057,7 @@ export function App() {
 
     // 3. Recrée une SeasonSession neuve pour la nouvelle saison
     //
-    // V0.64 — on relève d'abord ce que la session sortante emporterait avec
+    // V0.64 : on relève d'abord ce que la session sortante emporterait avec
     // elle : les relations d'agents et les échéances de transfert encore dues.
     // Les lire après l'avoir remplacée aurait rendu les deux à zéro, ce qui est
     // exactement la façon dont ce projet a déjà perdu trois états.
@@ -2121,7 +2121,7 @@ export function App() {
             leaguePoints: -points,
           })),
         financesByClub: closedFinances,
-        // V0.64 — les agents passent la saison avec nous, avec une rancune qui
+        // V0.64 : les agents passent la saison avec nous, avec une rancune qui
         // s'estompe d'un dixième. Les créances passent telles quelles : c'est la
         // nouvelle session qui soldera celles arrivées à terme, pour tous les
         // clubs à la fois.
@@ -3397,7 +3397,7 @@ export function App() {
         'warn',
       );
     } else if (outcome.kind === 'LOST') {
-      // V0.64 — le concurrent l'emporte, et le joueur part **vraiment** chez
+      // V0.64 : le concurrent l'emporte, et le joueur part **vraiment** chez
       // lui. Le laisser à son club aurait fait de la surenchère une défaite
       // sans conséquence, qu'on aurait retentée la journée suivante.
       const list = listAllPlayersWithOverrides();
@@ -4141,7 +4141,7 @@ export function App() {
   };
 
   /**
-   * V0.64 — le rappel anticipé.
+   * V0.64 : le rappel anticipé.
    *
    * Il n'est pas libre : le moteur ne l'autorise qu'en crise de blessures au
    * poste. Le compte des valides se fait ici parce que c'est l'interface qui
@@ -5025,7 +5025,7 @@ export function App() {
             onTalk: (topic) => talkToPlayer(screen.player, topic),
           }}
           {...(() => {
-            // V0.64 — la revalorisation et la résiliation, là où le contrat se
+            // V0.64 : la revalorisation et la résiliation, là où le contrat se
             // lit déjà. `talkEpoch` force la relecture après chaque discussion :
             // le moteur possède l'effectif, la fiche n'en a qu'une copie.
             const talk = talkEpoch >= 0
@@ -5260,7 +5260,7 @@ export function App() {
                   clubName: l.clubName,
                   playingTime: l.playingTime,
                   costLine: `il vous reste ${Math.round(reste / 1000)} k€/an à payer`,
-                  // V0.64 — ce que le club d'accueil s'est réservé, et qu'il
+                  // V0.64 : ce que le club d'accueil s'est réservé, et qu'il
                   // faut avoir sous les yeux avant de rappeler le joueur : un
                   // rappel fait tomber l'option.
                   ...(l.optionToBuy
@@ -5278,7 +5278,7 @@ export function App() {
                 clubs: allClubs,
                 ownClubId: seasonState.playerClubId as ClubId,
                 rng: createRng(`pret_${seasonSeedRef.current}_${seasonState.currentSeason}_${player.id as string}`),
-                // V0.64 — sans valeur transmise, aucun club d'accueil ne peut
+                // V0.64 : sans valeur transmise, aucun club d'accueil ne peut
                 // chiffrer une option d'achat, et la mécanique resterait morte.
                 optionValue: estimateMarketValue(player, seasonState.currentSeason),
               }),
@@ -5286,7 +5286,7 @@ export function App() {
               onSend: sendOnLoan,
             }}
             preContracts={{
-              // V0.64 — la fenêtre s'ouvre à mi-championnat, et l'écran doit le
+              // V0.64 : la fenêtre s'ouvre à mi-championnat, et l'écran doit le
               // dire plutôt que d'afficher une liste vide sans raison.
               windowOpen: seasonState.currentRound
                 >= Math.ceil(seasonState.calendar.totalRounds / 2),

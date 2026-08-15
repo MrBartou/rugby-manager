@@ -72,7 +72,7 @@ export interface LoanOffer {
   readonly wageShare: number;
   /** Ce que le club promet, en clair. */
   readonly pitch: string;
-  /** V0.64 — ce que le club d'accueil met sur la table pour le garder. */
+  /** V0.64 : ce que le club d'accueil met sur la table pour le garder. */
   readonly optionToBuy?: LoanOption;
 }
 
@@ -105,7 +105,7 @@ export function loanOffersFor(input: {
   readonly clubs: readonly Club[];
   readonly ownClubId: ClubId;
   readonly rng: Rng;
-  /** V0.64 — valeur marchande du joueur, base de l'option d'achat éventuelle. */
+  /** V0.64 : valeur marchande du joueur, base de l'option d'achat éventuelle. */
   readonly optionValue?: number;
 }): readonly LoanOffer[] {
   const candidates = input.clubs
@@ -167,9 +167,9 @@ export interface ActiveLoan {
   readonly season: number;
   readonly playingTime: number;
   readonly wageShare: number;
-  /** V0.64 — option d'achat consentie au club d'accueil. */
+  /** V0.64 : option d'achat consentie au club d'accueil. */
   readonly optionToBuy?: LoanOption;
-  /** V0.64 — journée du rappel anticipé, quand il a eu lieu. */
+  /** V0.64 : journée du rappel anticipé, quand il a eu lieu. */
   readonly recalledAtRound?: number;
 }
 
@@ -230,7 +230,7 @@ export function loanReport(loan: ActiveLoan, minutes: number): string {
 }
 
 // =============================================================================
-// Le rappel anticipé — V0.64
+// Le rappel anticipé : V0.64
 // =============================================================================
 
 /** Nombre de valides à un poste en dessous duquel le club est en crise. */
@@ -283,7 +283,7 @@ export function recallLoan(loan: ActiveLoan, round: number): ActiveLoan {
 }
 
 // =============================================================================
-// L'option d'achat au retour — V0.64
+// L'option d'achat au retour : V0.64
 // =============================================================================
 
 export type LoanOptionOutcome =

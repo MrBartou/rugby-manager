@@ -118,7 +118,7 @@ interface Props {
     readonly onTalk: (topic: TalkTopic) => void;
   };
   /**
-   * V0.64 — les discussions de contrat.
+   * V0.64 : les discussions de contrat.
    *
    * Elles vivent ici, sous le contrat qu'elles modifient. Les mettre dans
    * l'écran des transferts aurait séparé la demande du joueur de la seule
@@ -539,7 +539,7 @@ export function PlayerScreen({ player, currentSeason, recentResults, playRatio, 
                 <span style={{ color: 'var(--accent, var(--green))' }}>Dernière année — décision attendue</span>
               </li>
             )}
-            {/* V0.64 — les clauses signées. Un contrat qui les porte sans les
+            {/* V0.64 : les clauses signées. Un contrat qui les porte sans les
                 montrer laisserait le manager découvrir sa clause libératoire le
                 jour où un club l'active. */}
             {player.contract.releaseClause !== undefined && (
@@ -647,7 +647,7 @@ export function PlayerScreen({ player, currentSeason, recentResults, playRatio, 
 }
 
 /**
- * V0.64 — la table de discussion du contrat.
+ * V0.64 : la table de discussion du contrat.
  *
  * Deux boutons et un chiffre : ce qu'il réclame, et ce qu'il coûterait de le
  * laisser partir. On affiche la contre-proposition à 90 % parce que c'est là que

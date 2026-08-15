@@ -1,5 +1,5 @@
 /**
- * La forme d'un transfert — V0.64.
+ * La forme d'un transfert : V0.64.
  *
  * Ce qui est vérifié ici : un montage ne doit jamais être gratuit. Étaler
  * l'indemnité coûte au vendeur, donc il en demande davantage ; une part de

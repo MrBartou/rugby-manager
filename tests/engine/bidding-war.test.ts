@@ -1,5 +1,5 @@
 /**
- * La surenchère — V0.64.
+ * La surenchère : V0.64.
  *
  * Le manager négociait seul au monde depuis la V0.6. Ce que les tests
  * protègent : un concurrent ne se déplace que pour un joueur qui en vaut la

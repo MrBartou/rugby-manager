@@ -80,17 +80,17 @@ interface Props {
       readonly clubName: string;
       readonly playingTime: number;
       readonly costLine: string;
-      /** V0.64 — option d'achat consentie au club d'accueil, s'il y en a une. */
+      /** V0.64 : option d'achat consentie au club d'accueil, s'il y en a une. */
       readonly optionLine?: string;
     }[];
-    /** V0.64 — rappel anticipé : le moteur dira s'il est permis. */
+    /** V0.64 : rappel anticipé : le moteur dira s'il est permis. */
     readonly onRecall?: (playerId: PlayerId) => { readonly ok: boolean; readonly message: string };
     readonly offersFor: (player: Player) => readonly LoanOffer[];
     readonly tradeoff: (offer: LoanOffer, player: Player) => string;
     readonly onSend: (player: Player, offer: LoanOffer) => void;
   };
   /**
-   * V0.64 — les joueurs en fin de contrat ailleurs, qu'on peut engager pour la
+   * V0.64 : les joueurs en fin de contrat ailleurs, qu'on peut engager pour la
    * saison suivante sans verser un centime à leur club.
    */
   readonly preContracts?: {
@@ -105,7 +105,7 @@ interface Props {
     readonly onSign: (player: Player, annualSalary: number, years: number) => string;
   };
   /**
-   * V0.64 — ce qu'un agent conquis vient vous proposer de lui-même.
+   * V0.64 : ce qu'un agent conquis vient vous proposer de lui-même.
    */
   readonly agentCalls?: readonly {
     readonly agentId: string;
@@ -187,7 +187,7 @@ export function TransferMarketScreen({
     'RECHERCHE' | 'SUIVIS' | 'MERCATO' | 'ETRANGER' | 'LIBRES' | 'JOKER' | 'OFFRES' | 'PRETS'
     | 'PRECONTRATS'
   >('RECHERCHE');
-  /** V0.64 — retour de la dernière tentative de pré-contrat. */
+  /** V0.64 : retour de la dernière tentative de pré-contrat. */
   const [preContractNote, setPreContractNote] = useState<string | null>(null);
   /** V0.63 : cible étrangère dont on prépare l'offre. */
   const [intlTarget, setIntlTarget] = useState<InternationalTarget | null>(null);
@@ -213,7 +213,7 @@ export function TransferMarketScreen({
   const [bidYears, setBidYears] = useState(3);
   const [bidResult, setBidResult] = useState<BidOutcome | null>(null);
   /*
-   * V0.64 — le montage et les clauses.
+   * V0.64 : le montage et les clauses.
    *
    * Repliés par défaut : le mercato doit rester une offre sèche pour qui ne veut
    * pas monter un dossier. Les déplier est un choix, et c'est ce choix qui donne
@@ -731,7 +731,7 @@ export function TransferMarketScreen({
                       {l.optionLine !== undefined && ` · ${l.optionLine}`}
                     </div>
                   </div>
-                  {/* V0.64 — le rappel n'est pas un droit : le bouton existe
+                  {/* V0.64 : le rappel n'est pas un droit : le bouton existe
                       toujours, et le moteur explique pourquoi il refuse. */}
                   {loans.onRecall && (
                     <button
@@ -1008,7 +1008,7 @@ export function TransferMarketScreen({
       {tab === 'LIBRES' && (
       <div className="dashboard-panel">
         <div className="panel-tag">Agents libres ({freeAgents.length})</div>
-        {/* V0.64 — les sollicitations, notées non faites depuis la V0.43. Elles
+        {/* V0.64 : les sollicitations, notées non faites depuis la V0.43. Elles
             n'ont de valeur que par celui qui les porte : un agent ne vous
             appelle que si vous avez bien travaillé avec lui. */}
         {agentCalls !== undefined && agentCalls.length > 0 && (
@@ -1093,7 +1093,7 @@ export function TransferMarketScreen({
           askingPrice !== undefined ? askingPrice * 1.15 : 0,
         );
 
-        // V0.64 — seule la première annuité sort tout de suite : c'est elle que
+        // V0.64 : seule la première annuité sort tout de suite : c'est elle que
         // la trésorerie doit couvrir, et non l'indemnité entière.
         const upfront = Math.round(fee / instalments);
         const feeOverBudget = upfront > preview.balance;
@@ -1144,7 +1144,7 @@ export function TransferMarketScreen({
                     <span className="bf-label">Marge salariale</span>
                     <span className={`bf-value ${salaryOverBudget ? 'over' : ''}`}>{formatEuros(preview.payrollHeadroom)}/an</span>
                   </div>
-                  {/* V0.64 — ce qu'on doit savoir avant de miser : qui d'autre
+                  {/* V0.64 : ce qu'on doit savoir avant de miser : qui d'autre
                       suit le joueur, et à qui l'on parle. Affiché ici et pas
                       après le refus : perdre une cible qu'on savait convoitée
                       est une décision, l'apprendre après coup est un tirage. */}
@@ -1216,7 +1216,7 @@ export function TransferMarketScreen({
                   </label>
                 </div>
 
-                {/* V0.64 — le dossier, replié tant qu'on n'en veut pas. */}
+                {/* V0.64 : le dossier, replié tant qu'on n'en veut pas. */}
                 <button
                   type="button"
                   className="bid-terms-toggle"

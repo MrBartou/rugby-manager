@@ -1,5 +1,5 @@
 /**
- * Les discussions de contrat — V0.64.
+ * Les discussions de contrat : V0.64.
  *
  * Trois situations qui n'existaient pas : la revalorisation en cours de
  * contrat, le pré-contrat à six mois de l'échéance, et la résiliation à

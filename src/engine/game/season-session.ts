@@ -328,7 +328,7 @@ export interface SeasonState {
   readonly resolvedContractDecisions: readonly ContractDecisionResolution[];
   /** V0.6 — offres entrantes IA en attente de décision (sur les joueurs du club joueur). */
   readonly pendingIncomingOffers: readonly IncomingOffer[];
-  /** V0.64 — échéances de transfert encore dues, tous clubs confondus. */
+  /** V0.64 : échéances de transfert encore dues, tous clubs confondus. */
   readonly transferLedger: readonly TransferInstalment[];
   /** V0.13 — campagne européenne du club joueur (undefined si non qualifié). */
   readonly europeanCampaign: EuropeanCampaign | undefined;
@@ -435,7 +435,7 @@ export interface BidTerms {
   readonly years: number;
 
   /**
-   * V0.64 — le montage et les clauses.
+   * V0.64 : le montage et les clauses.
    *
    * Facultatifs, et c'est voulu : l'écran de transfert doit pouvoir rester une
    * offre sèche pour qui n'a pas envie de monter un dossier. Ce qui change,
@@ -480,7 +480,7 @@ export interface BidPreview {
   readonly blocked?: string;
 
   /**
-   * V0.64 — ce qu'on doit savoir avant de miser : qui d'autre suit ce joueur, et
+   * V0.64 : ce qu'on doit savoir avant de miser : qui d'autre suit ce joueur, et
    * à qui l'on va devoir parler.
    *
    * Le nombre de clubs intéressés est affiché **avant** l'offre, jamais après :
@@ -499,7 +499,7 @@ export type BidOutcome =
   | { readonly kind: 'SIGNED'; readonly player: Player; readonly fee: number; readonly resolution: TransferResolution }
   | { readonly kind: 'REFUSED'; readonly resolution: TransferResolution; readonly cooldownRounds: number }
   /**
-   * V0.64 — tout était accepté, et un concurrent l'a emporté sur le fil. Le
+   * V0.64 : tout était accepté, et un concurrent l'a emporté sur le fil. Le
    * joueur mis à jour part **chez le rival** : une surenchère qui laisserait la
    * cible à son club serait une défaite sans conséquence, donc une fausse
    * défaite.
@@ -534,7 +534,7 @@ export interface BidRecord {
 const BID_COOLDOWN_CLUB = 2;
 const BID_COOLDOWN_PLAYER = 4;
 
-/** V0.64 — ce qu'un joueur de l'effectif a sur le cœur, côté contrat. */
+/** V0.64 : ce qu'un joueur de l'effectif a sur le cœur, côté contrat. */
 export interface ContractTalk {
   readonly playerId: PlayerId;
   readonly agentName: string;
@@ -544,7 +544,7 @@ export interface ContractTalk {
   readonly terminationCost: number;
 }
 
-/** V0.64 — une cible de pré-contrat, telle que l'écran des transferts la lit. */
+/** V0.64 : une cible de pré-contrat, telle que l'écran des transferts la lit. */
 export interface PreContractTarget {
   readonly player: Player;
   readonly clubName: string;
@@ -584,7 +584,7 @@ export interface SeasonSession {
   /** V0.6 — résout une offre entrante (accepter/refuser). Met à jour finances + clubId joueur. */
   resolveIncomingOffer(offerId: string, accept: boolean): IncomingOfferResolution | undefined;
   /**
-   * V0.64 — l'état des discussions de contrat d'un joueur de l'effectif.
+   * V0.64 : l'état des discussions de contrat d'un joueur de l'effectif.
    *
    * Une seule méthode pour les deux sujets : la revalorisation qu'il réclame et
    * ce qu'il en coûterait de le libérer. Les deux se lisent au même endroit
@@ -594,22 +594,22 @@ export interface SeasonSession {
   renegotiate(playerId: PlayerId, annualSalary: number, extraYears: number): TalkOutcome;
   terminateContract(playerId: PlayerId, offered: number): TalkOutcome;
   /**
-   * V0.64 — les joueurs qu'on peut engager pour la saison prochaine sans rien
+   * V0.64 : les joueurs qu'on peut engager pour la saison prochaine sans rien
    * verser à leur club, parce qu'ils finissent leur contrat.
    */
   getPreContractTargets(): readonly PreContractTarget[];
   signPreContract(player: Player, annualSalary: number, years: number): TalkOutcome;
   getPreContracts(): readonly PreContract[];
   /**
-   * V0.64 — les joueurs qu'un agent bien disposé vient vous proposer.
+   * V0.64 : les joueurs qu'un agent bien disposé vient vous proposer.
    *
    * Calculées à la volée pour la journée en cours : rien à sauvegarder, et une
    * sollicitation qui expire d'elle-même vaut mieux qu'une liste qui gonfle.
    */
   getAgentProposals(): readonly AgentProposal[];
-  /** V0.64 — relations avec les agents, à sauvegarder telles quelles. */
+  /** V0.64 : relations avec les agents, à sauvegarder telles quelles. */
   getAgentStandings(): AgentStandings;
-  /** V0.64 — échéances de transfert restant dues. */
+  /** V0.64 : échéances de transfert restant dues. */
   getTransferLedger(): readonly TransferInstalment[];
   /** V0.6 — signe un free agent. Retourne le joueur mis à jour si accepté. */
   signFreeAgent(player: Player, offer: { years: number; annualSalary: number }): Player | undefined;
@@ -884,10 +884,10 @@ export interface SeasonSessionOptions {
     readonly pendingEvents?: readonly HumanEvent[];
     /** V0.58 — capes internationales accumulées au fil des saisons. */
     readonly caps?: ReadonlyMap<PlayerId, import('../season/national-team.js').CapRecord>;
-    /** V0.64 — relations avec les agents, et échéances de transfert en cours. */
+    /** V0.64 : relations avec les agents, et échéances de transfert en cours. */
     readonly agentStandings?: AgentStandings;
     readonly transferLedger?: readonly TransferInstalment[];
-    /** V0.64 — pré-contrats signés, à honorer au prochain rollover. */
+    /** V0.64 : pré-contrats signés, à honorer au prochain rollover. */
     readonly preContracts?: readonly PreContract[];
   };
 }
@@ -968,7 +968,7 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
   let pendingIncomingOffers: IncomingOffer[] = [];
 
   /*
-   * V0.64 — les agents et les créances.
+   * V0.64 : les agents et les créances.
    *
    * Le vivier se reconstruit depuis la graine de la partie : il n'a pas à être
    * sauvegardé, et le lien joueur-agent se recalcule de la même façon. Ce qui se
@@ -979,7 +979,7 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
   let agentStandings: AgentStandings = { ...(opts.restoreFrom?.agentStandings ?? {}) };
   let transferLedger: readonly TransferInstalment[] = [...(opts.restoreFrom?.transferLedger ?? [])];
   /**
-   * V0.64 — les pré-contrats signés cette saison, dans les deux sens.
+   * V0.64 : les pré-contrats signés cette saison, dans les deux sens.
    *
    * Ils ne produisent leur effet qu'au rollover : d'ici là le joueur finit sa
    * saison là où il est, exactement comme dans la réalité. C'est ce décalage qui
@@ -1489,7 +1489,7 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
   if (opts.allClubs) for (const c of opts.allClubs) clubsById.set(c.id, c);
 
   /*
-   * V0.64 — les échéances arrivées à terme se soldent à l'ouverture de la
+   * V0.64 : les échéances arrivées à terme se soldent à l'ouverture de la
    * saison, avant toute autre opération.
    *
    * Ici et pas au rollover : la session est le seul endroit qui tienne les
@@ -1684,7 +1684,7 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
       ? Math.round((player.contract.annualSalary * 4) / 10_000) * 10_000
       : Math.round(((valueRange.min + valueRange.max) / 2) / 10_000) * 10_000;
 
-    // V0.64 — l'agent parle avant qu'on ait chiffré quoi que ce soit, et la
+    // V0.64 : l'agent parle avant qu'on ait chiffré quoi que ce soit, et la
     // commission s'affiche sur le salaire attendu tant que le manager n'a rien
     // proposé : elle bougera avec son offre.
     const agent = agentOf(agentPool, player.id);
@@ -2057,7 +2057,7 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
   }
 
   /**
-   * V0.64 — un concurrent signe l'un de nos joueurs en fin de contrat.
+   * V0.64 : un concurrent signe l'un de nos joueurs en fin de contrat.
    *
    * C'est le revers du pré-contrat, et c'est lui qui donne à l'expiration son
    * danger : jusqu'ici, laisser filer une dernière année ne coûtait rien, le
@@ -3113,7 +3113,7 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
         };
       }
 
-      // V0.64 — l'agent avant l'argent. Un agent brouillé ferme la porte sans
+      // V0.64 : l'agent avant l'argent. Un agent brouillé ferme la porte sans
       // que le club vendeur ait à se prononcer : c'est ce qui donne un coût réel
       // aux négociations mal menées des saisons précédentes.
       const agent = agentOf(agentPool, player.id);
@@ -3209,7 +3209,7 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
       const signed = resolution.player!;
 
       /*
-       * V0.64 — la surenchère se joue ici, après les deux accords.
+       * V0.64 : la surenchère se joue ici, après les deux accords.
        *
        * Le club vendeur a dit oui, le joueur a dit oui : c'est le moment où la
        * nouvelle circule, et où un concurrent qui suivait le dossier peut

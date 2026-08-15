@@ -214,7 +214,7 @@ describe('la part de salaire prise par le club d\'accueil', () => {
 });
 
 // =============================================================================
-// V0.64 — l'option d'achat et le rappel anticipé
+// V0.64 : l'option d'achat et le rappel anticipé
 // =============================================================================
 
 describe('l\'option d\'achat', () => {

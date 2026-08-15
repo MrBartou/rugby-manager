@@ -1,5 +1,5 @@
 /**
- * Les agents — V0.64.
+ * Les agents : V0.64.
  *
  * L'« agent » n'était jusqu'ici qu'un expéditeur de mail. Ce qui est vérifié
  * ici : il représente plusieurs joueurs et s'en souvient, sa commission coûte

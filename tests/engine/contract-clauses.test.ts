@@ -1,5 +1,5 @@
 /**
- * Les clauses du contrat — V0.64.
+ * Les clauses du contrat : V0.64.
  *
  * Le contrat n'avait que deux chiffres, un salaire et une durée : négocier
  * revenait à pousser un curseur. Ce qui est vérifié ici, c'est que les clauses
