@@ -75,11 +75,16 @@ interface Props {
   readonly loans?: {
     readonly candidates: readonly Player[];
     readonly active: readonly {
+      readonly playerId: PlayerId;
       readonly playerName: string;
       readonly clubName: string;
       readonly playingTime: number;
       readonly costLine: string;
+      /** V0.64 — option d'achat consentie au club d'accueil, s'il y en a une. */
+      readonly optionLine?: string;
     }[];
+    /** V0.64 — rappel anticipé : le moteur dira s'il est permis. */
+    readonly onRecall?: (playerId: PlayerId) => { readonly ok: boolean; readonly message: string };
     readonly offersFor: (player: Player) => readonly LoanOffer[];
     readonly tradeoff: (offer: LoanOffer, player: Player) => string;
     readonly onSend: (player: Player, offer: LoanOffer) => void;
@@ -187,6 +192,7 @@ export function TransferMarketScreen({
    * pas monter un dossier. Les déplier est un choix, et c'est ce choix qui donne
    * au manager pauvre les moyens de signer au-dessus de sa trésorerie.
    */
+  const [recallNote, setRecallNote] = useState<string | null>(null);
   const [showTerms, setShowTerms] = useState(false);
   const [instalments, setInstalments] = useState(1);
   const [sellOn, setSellOn] = useState(0);
@@ -683,6 +689,7 @@ export function TransferMarketScreen({
       {tab === 'PRETS' && loans && (
         <div className="dashboard-panel">
           <div className="panel-tag">Joueurs prêtés ({loans.active.length})</div>
+          {recallNote !== null && <p className="bid-hint">{recallNote}</p>}
           {loans.active.length === 0 ? (
             <p className="market-empty">Aucun joueur prêté cette saison.</p>
           ) : (
@@ -693,8 +700,20 @@ export function TransferMarketScreen({
                     <strong>{l.playerName}</strong> à <strong>{l.clubName}</strong>
                     <div className="offer-detail">
                       {Math.round(l.playingTime * 100)} % du temps de jeu promis · {l.costLine}
+                      {l.optionLine !== undefined && ` · ${l.optionLine}`}
                     </div>
                   </div>
+                  {/* V0.64 — le rappel n'est pas un droit : le bouton existe
+                      toujours, et le moteur explique pourquoi il refuse. */}
+                  {loans.onRecall && (
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => setRecallNote(loans.onRecall!(l.playerId).message)}
+                    >
+                      Rappeler
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>

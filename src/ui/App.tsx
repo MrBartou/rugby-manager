@@ -123,10 +123,13 @@ import {
   loanOffersFor,
   loanReport,
   loanTradeoff,
+  canRecall,
+  resolveLoanOption,
   type ActiveLoan,
   type LoanOffer,
 } from '../engine/club/loans.js';
 import { decayStandings } from '../engine/club/agents.js';
+import { canCover } from '../engine/match/bench.js';
 import {
   reactionSummary,
   roomReaction,
@@ -1596,18 +1599,31 @@ export function App() {
     // leur entraînement et la qualité du staff, au lieu d'une simple courbe d'âge.
     // V0.55 — les prêts s'achèvent avec la saison : chacun rentre, et on dit
     // franchement ce que son année a donné.
+    // V0.64 — l'option d'achat se tranche ici, au moment où l'on constate ce
+    // que le prêt a donné. Le club d'accueil lève ou non, et le joueur part
+    // pour de bon : sans cette vente, l'option n'aurait été qu'une ligne de
+    // texte dans une offre de prêt.
+    const optionsLevees: { readonly playerId: PlayerId; readonly fee: number }[] = [];
     for (const loan of loansRef.current) {
       const minutes = loanMinutes(loan, state.currentRound);
+      const option = resolveLoanOption({
+        loan, minutesPlayed: minutes, roundsPlayed: state.currentRound,
+      });
       publish([{
         season: state.currentSeason,
         round: 0,
         kind: 'TRANSFERT' as const,
-        headline: `${loan.playerName} revient de prêt`,
-        detail: loanReport(loan, minutes),
+        headline: option.kind === 'LEVEE'
+          ? `${loan.playerName} reste à ${loan.clubName}`
+          : `${loan.playerName} revient de prêt`,
+        detail: option.kind === 'AUCUNE' ? loanReport(loan, minutes) : option.reason,
         clubId: state.playerClubId,
         playerId: loan.playerId,
         involvesPlayer: true,
       }]);
+      if (option.kind === 'LEVEE') {
+        optionsLevees.push({ playerId: loan.playerId, fee: option.fee });
+      }
     }
 
     const developmentInputs = session.getDevelopmentInputs();
@@ -1627,8 +1643,17 @@ export function App() {
       }
       : developmentInputs;
 
+    // Les joueurs achetés au terme de leur prêt changent de club avant le
+    // rollover : ils ne doivent ni vieillir dans notre effectif, ni figurer
+    // dans nos promotions de jeunes.
+    const apresOptions = optionsLevees.length === 0 ? allPlayers : allPlayers.map(p => {
+      const levee = optionsLevees.find(o => o.playerId === p.id);
+      if (!levee) return p;
+      const loan = loansRef.current.find(l => l.playerId === p.id)!;
+      return { ...p, clubId: loan.clubId };
+    });
     const rollover = rolloverSeason({
-      players: allPlayers,
+      players: apresOptions,
       currentSeason: state.currentSeason,
       seed: seasonSeedRef.current,
       development: withLoanMinutes,
@@ -1781,6 +1806,24 @@ export function App() {
             : repeatOffendersRef.current.has(id as string))),
       ),
     });
+
+    // V0.64 — les options d'achat levées se paient sur l'exercice qui s'ouvre,
+    // comme les amendes ci-dessous : la trésorerie de la saison écoulée est
+    // close, et l'encaisser dedans reviendrait à l'écrire dans un bilan déjà
+    // publié.
+    if (optionsLevees.length > 0) {
+      const encaisse = optionsLevees.reduce((sum, o) => sum + o.fee, 0);
+      const f = closedFinances.get(state.playerClubId);
+      if (f) {
+        closedFinances.set(state.playerClubId, applyFinancesMovement(f, {
+          kind: 'TRANSFER_IN',
+          amount: encaisse,
+          note: optionsLevees.length === 1
+            ? 'Option d\'achat levée'
+            : `${optionsLevees.length} options d'achat levées`,
+        }));
+      }
+    }
 
     for (const bilan of revue.reviews) {
       const club = clubs.find(c => c.id === bilan.clubId);
@@ -4044,6 +4087,7 @@ export function App() {
         season: state.currentSeason,
         playingTime: offer.playingTime,
         wageShare: offer.wageShare,
+        ...(offer.optionToBuy ? { optionToBuy: offer.optionToBuy } : {}),
       },
     ];
     setLoanEpoch(e => e + 1);
@@ -4063,6 +4107,56 @@ export function App() {
       involvesPlayer: true,
     }]);
     refreshSeason();
+  };
+
+  /**
+   * V0.64 — le rappel anticipé.
+   *
+   * Il n'est pas libre : le moteur ne l'autorise qu'en crise de blessures au
+   * poste. Le compte des valides se fait ici parce que c'est l'interface qui
+   * tient l'effectif complet, blessés compris ; le moteur, lui, tranche.
+   */
+  const recallFromLoan = (playerId: PlayerId): { readonly ok: boolean; readonly message: string } => {
+    const session = seasonRef.current;
+    if (!session) return { ok: false, message: 'Aucune saison en cours.' };
+    const state = session.getState();
+    const loan = loansRef.current.find(l => l.playerId === playerId);
+    if (!loan) return { ok: false, message: 'Ce joueur n\'est pas prêté.' };
+
+    const roster = listRoster(state.playerClubId);
+    const prêté = roster.find(p => p.id === playerId);
+    const healthyCoverAtPosition = prêté
+      ? roster.filter(p => p.id !== playerId
+        && !p.retired && !p.freeAgent && !p.dynamic.injury
+        && canCover(p, prêté.position)).length
+      : 99;
+
+    const verdict = canRecall({
+      loan,
+      healthyCoverAtPosition,
+      round: state.currentRound,
+      totalRounds: state.calendar.totalRounds,
+    });
+    if (!verdict.allowed) {
+      notify(verdict.reason, 'warn');
+      return { ok: false, message: verdict.reason };
+    }
+
+    loansRef.current = loansRef.current.filter(l => l.playerId !== playerId);
+    setLoanEpoch(e => e + 1);
+    notify(`${loan.playerName} est rappelé de ${loan.clubName}.`, 'info');
+    publish([{
+      season: state.currentSeason,
+      round: state.currentRound,
+      kind: 'TRANSFERT' as const,
+      headline: `${loan.playerName} rappelé de prêt`,
+      detail: verdict.reason,
+      clubId: state.playerClubId,
+      playerId,
+      involvesPlayer: true,
+    }]);
+    refreshSeason();
+    return { ok: true, message: verdict.reason };
   };
 
   const refillVacantBenches = (
@@ -5090,17 +5184,32 @@ export function App() {
                 const p = listRoster(seasonState.playerClubId).find(x => x.id === l.playerId);
                 const reste = p ? loanCost(l, p.contract.annualSalary) : 0;
                 return {
+                  playerId: l.playerId,
                   playerName: l.playerName,
                   clubName: l.clubName,
                   playingTime: l.playingTime,
                   costLine: `il vous reste ${Math.round(reste / 1000)} k€/an à payer`,
+                  // V0.64 — ce que le club d'accueil s'est réservé, et qu'il
+                  // faut avoir sous les yeux avant de rappeler le joueur : un
+                  // rappel fait tomber l'option.
+                  ...(l.optionToBuy
+                    ? {
+                      optionLine: l.optionToBuy.mandatory
+                        ? `achat obligatoire à ${(l.optionToBuy.fee / 1_000_000).toFixed(2)} M€ en fin de prêt`
+                        : `option d'achat à ${(l.optionToBuy.fee / 1_000_000).toFixed(2)} M€`,
+                    }
+                    : {}),
                 };
               }),
+              onRecall: recallFromLoan,
               offersFor: (player) => loanOffersFor({
                 player,
                 clubs: allClubs,
                 ownClubId: seasonState.playerClubId as ClubId,
                 rng: createRng(`pret_${seasonSeedRef.current}_${seasonState.currentSeason}_${player.id as string}`),
+                // V0.64 — sans valeur transmise, aucun club d'accueil ne peut
+                // chiffrer une option d'achat, et la mécanique resterait morte.
+                optionValue: estimateMarketValue(player, seasonState.currentSeason),
               }),
               tradeoff: loanTradeoff,
               onSend: sendOnLoan,
