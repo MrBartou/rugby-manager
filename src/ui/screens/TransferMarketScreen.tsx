@@ -24,6 +24,8 @@ import {
   type PositionLine,
 } from '../components/DataBits.js';
 import { evaluateIdentityFit } from '../../engine/club/identity-fit.js';
+import type { InternationalTarget } from '../../engine/club/international-market.js';
+import { COUNTRY_LABEL } from '../../engine/season/foreign-players.js';
 import type { Club, ClubId, Player, PlayerId } from '../../engine/types.js';
 import type { CapReport, JiffReport } from '../../engine/club/regulations.js';
 
@@ -115,6 +117,19 @@ interface Props {
     readonly candidates: readonly Player[];
   }[];
   readonly onSignJoker: (injuredId: PlayerId, candidate: Player, annualSalary: number) => string | undefined;
+  /**
+   * V0.63 : le marché international.
+   *
+   * Meilleur à prix égal que le marché français, et non-JIFF : c'est le seul
+   * endroit du jeu où recruter **coûte une place** sur la feuille de match.
+   */
+  readonly international?: {
+    readonly targets: readonly InternationalTarget[];
+    readonly onBid: (
+      target: InternationalTarget,
+      bid: { fee: number; annualSalary: number; years: number },
+    ) => { readonly ok: boolean; readonly message: string };
+  };
 }
 
 function formatEuros(n: number): string {
@@ -137,10 +152,16 @@ export function TransferMarketScreen({
   onSignFreeAgent, onResolveIncomingOffer,
   leaguePlayers, clubNameById, onOpenPlayer,
   previewBid, onSubmitBid, aiMarket, transferWindow, jokerOptions, onSignJoker, regulation, loans,
+  international,
 }: Props) {
   const [tab, setTab] = useState<
-    'RECHERCHE' | 'SUIVIS' | 'MERCATO' | 'LIBRES' | 'JOKER' | 'OFFRES' | 'PRETS'
+    'RECHERCHE' | 'SUIVIS' | 'MERCATO' | 'ETRANGER' | 'LIBRES' | 'JOKER' | 'OFFRES' | 'PRETS'
   >('RECHERCHE');
+  /** V0.63 : cible étrangère dont on prépare l'offre. */
+  const [intlTarget, setIntlTarget] = useState<InternationalTarget | null>(null);
+  const [intlFee, setIntlFee] = useState(0);
+  const [intlSalary, setIntlSalary] = useState(0);
+  const [intlYears, setIntlYears] = useState(3);
   /** V0.55 — joueur dont on examine les propositions de prêt. */
   const [loanTarget, setLoanTarget] = useState<Player | null>(null);
   const [posFilter, setPosFilter] = useState<'ALL' | PositionLine>('ALL');
@@ -273,6 +294,7 @@ export function TransferMarketScreen({
           ['RECHERCHE', `Recherche de joueurs (${leaguePlayers.length})`],
           ['SUIVIS', `Liste de suivi (${shortlist?.entries.length ?? 0})`],
           ['MERCATO', `Mercato du championnat (${aiMarket.filter(t => t.kind === 'TRANSFERT').length})`],
+          ['ETRANGER', `Marché international (${international?.targets.length ?? 0})`],
           ['LIBRES', `Agents libres (${freeAgents.length})`],
           ['JOKER', `Joker médical (${jokerOptions.length})`],
           ['OFFRES', `Offres reçues (${incomingOffers.length})`],
@@ -741,6 +763,133 @@ export function TransferMarketScreen({
         </div>
       )}
 
+      {tab === 'ETRANGER' && (
+      <div className="dashboard-panel">
+        <div className="panel-tag">Marché international ({international?.targets.length ?? 0})</div>
+        <p className="market-hint">
+          Un joueur formé hors de France n'est pas JIFF : chaque recrue étrangère
+          prend une place sur une feuille de match qui doit en compter douze sur
+          vingt-trois. L'effectif compte {regulation.jiff.count} JIFF sur{' '}
+          {regulation.jiff.total}, soit{' '}
+          {regulation.jiff.foreignHeadroom > 0
+            ? `${regulation.jiff.foreignHeadroom} recrue${regulation.jiff.foreignHeadroom > 1 ? 's' : ''} étrangère${regulation.jiff.foreignHeadroom > 1 ? 's' : ''} possible${regulation.jiff.foreignHeadroom > 1 ? 's' : ''} avant de passer sous le seuil.`
+            : 'aucune marge : une recrue étrangère de plus et la feuille de match n\'est plus conforme.'}
+        </p>
+        {(!international || international.targets.length === 0) && (
+          <p className="empty">Aucun joueur étranger sur le marché cette fenêtre.</p>
+        )}
+        {international && international.targets.length > 0 && (
+          <table className="finances-history">
+            <thead>
+              <tr>
+                <th>Nom</th><th>Poste</th><th>Âge</th><th>Niveau</th>
+                <th>Club</th><th>Indemnité</th><th>Salaire attendu</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {international.targets.map(t => {
+                const age = currentSeason - Number(t.player.birthDate.slice(0, 4));
+                const horsPortee = playerClub.reputation < t.minimumReputation;
+                return (
+                  <tr key={t.player.id}>
+                    <td>
+                      {t.player.firstName} {t.player.lastName}
+                      <span className="pc-tag injury" style={{ marginLeft: 6 }}>non-JIFF</span>
+                    </td>
+                    <td className="c-pos"><PositionBadge position={t.player.position} /></td>
+                    <td>{age}</td>
+                    <td>{approximateOverall(t.player)}</td>
+                    <td>
+                      {t.fromClubName}
+                      <div className="offer-detail">{COUNTRY_LABEL[t.country]}</div>
+                    </td>
+                    <td>{formatEuros(t.askingPrice)}</td>
+                    <td>{formatEuros(t.salaryDemand)}</td>
+                    <td>
+                      <button
+                        type="button"
+                        disabled={horsPortee}
+                        title={horsPortee
+                          ? 'Il ne voit pas ce club comme une étape de sa carrière.'
+                          : 'Faire une offre'}
+                        onClick={() => {
+                          setIntlTarget(t);
+                          setIntlFee(t.askingPrice);
+                          setIntlSalary(t.salaryDemand);
+                          setIntlYears(3);
+                          setFeedback(null);
+                        }}
+                      >
+                        {horsPortee ? 'hors de portée' : 'Faire offre'}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+      )}
+
+      {intlTarget && international && (
+        <div className="modal-backdrop" onClick={() => setIntlTarget(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h3>{intlTarget.player.firstName} {intlTarget.player.lastName}</h3>
+            <p className="offer-detail">
+              {intlTarget.fromClubName} · {COUNTRY_LABEL[intlTarget.country]} ·
+              {' '}indemnité demandée {formatEuros(intlTarget.askingPrice)}
+            </p>
+            <label>
+              Indemnité de transfert
+              <input
+                type="number"
+                step={50_000}
+                value={intlFee}
+                onChange={e => setIntlFee(Number(e.target.value))}
+              />
+            </label>
+            <label>
+              Salaire annuel
+              <input
+                type="number"
+                step={10_000}
+                value={intlSalary}
+                onChange={e => setIntlSalary(Number(e.target.value))}
+              />
+            </label>
+            <label>
+              Durée (années)
+              <input
+                type="number"
+                min={1}
+                max={5}
+                value={intlYears}
+                onChange={e => setIntlYears(Number(e.target.value))}
+              />
+            </label>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="primary"
+                onClick={() => {
+                  const outcome = international.onBid(intlTarget, {
+                    fee: intlFee,
+                    annualSalary: intlSalary,
+                    years: intlYears,
+                  });
+                  setFeedback(outcome.message);
+                  if (outcome.ok) setIntlTarget(null);
+                }}
+              >
+                Envoyer l'offre
+              </button>
+              <button type="button" onClick={() => setIntlTarget(null)}>Annuler</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {tab === 'LIBRES' && (
       <div className="dashboard-panel">
         <div className="panel-tag">Agents libres ({freeAgents.length})</div>
@@ -771,7 +920,7 @@ export function TransferMarketScreen({
                       {fit.fit === 'GOOD' && <span className="pc-tag young" style={{ marginLeft: 6 }}>colle</span>}
                       {fit.fit === 'BAD' && <span className="pc-tag injury" style={{ marginLeft: 6 }}>contre-culture</span>}
                     </td>
-                    <td>{p.position}</td>
+                    <td className="c-pos"><PositionBadge position={p.position} /></td>
                     <td>{age}</td>
                     <td title={CERTAINTY_LABEL[certainty]}>{ability.display}</td>
                     <td className="potential-cell" title={CERTAINTY_LABEL[certainty]}>{potential.display}</td>

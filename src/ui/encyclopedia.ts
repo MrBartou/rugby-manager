@@ -172,6 +172,44 @@ export const GLOSSARY: readonly GlossaryEntry[] = [
     keywords: ['mercato', 'fenêtre', 'transfert', 'marché', 'suivi'],
   },
   {
+    id: 'marche-international',
+    term: 'Marché international',
+    topic: 'EFFECTIF',
+    inShort: 'Des joueurs meilleurs à prix égal, mais aucun n\'est JIFF. Chaque recrue serre le quota.',
+    definition:
+      'Le marché des joueurs formés hors de France : anglo-celtes, Sud-Africains, joueurs de l\'hémisphère sud.',
+    whatItMeans:
+      'On y trouve un ouvreur de vingt-six ans en janvier, ce que le marché français ne donne jamais. Le prix n\'est pas seulement l\'indemnité : la recrue n\'est pas JIFF, elle met des semaines à trouver ses repères, et un joueur de ce niveau ne signe pas dans n\'importe quel club : la réputation du vôtre compte autant que votre chéquier.',
+    gameNote:
+      'Les clubs étrangers sont fictifs, comme les adversaires de coupe d\'Europe : le jeu ne détient aucune licence sur les championnats étrangers.',
+    seeAlso: ['jiff', 'expatrie', 'mercato'],
+    keywords: ['international', 'étranger', 'recrue', 'transfert', 'non-jiff'],
+  },
+  {
+    id: 'expatrie',
+    term: 'Expatrié',
+    topic: 'REGLEMENT',
+    inShort: 'Un joueur parti à l\'étranger ne peut plus être sélectionné en équipe de France.',
+    definition:
+      'Un joueur français sous contrat dans un club hors de France.',
+    whatItMeans:
+      'C\'est ce qui fait d\'une offre étrangère une vraie décision. Les clubs européens paient au-dessus du marché français, souvent d\'un tiers ; en acceptant, vous encaissez, et votre international perd le maillot bleu, avec ce que la sélection lui apportait et ce qu\'elle vous apportait à vous.',
+    seeAlso: ['selection', 'marche-international', 'jiff'],
+    keywords: ['expatrié', 'étranger', 'vente', 'sélection', 'bleu'],
+  },
+  {
+    id: 'selection',
+    term: 'Sélection',
+    topic: 'COMPETITION',
+    inShort: 'Sept matchs par an. Une cape se gagne sur la feuille des vingt-trois, pas dans le groupe.',
+    definition:
+      'Le groupe France : trente-trois joueurs convoqués par fenêtre, deux tests en automne et cinq matchs au Tournoi.',
+    whatItMeans:
+      'Être convoqué ne suffit pas : seuls les vingt-trois d\'une feuille prennent une cape, et les matchs se jouent vraiment : votre joueur peut y marquer, s\'y blesser, et il en revient fatigué à proportion de ce qu\'il a disputé. C\'est la seule chose qu\'un club peut offrir qu\'un autre club ne peut pas acheter.',
+    seeAlso: ['expatrie', 'jiff', 'forme'],
+    keywords: ['sélection', 'france', 'cape', 'tournoi', 'international'],
+  },
+  {
     id: 'jiff-feuille',
     term: 'Feuille de match',
     topic: 'EFFECTIF',

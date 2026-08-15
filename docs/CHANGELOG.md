@@ -2,6 +2,102 @@
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/). Versions sémantiques.
 
+## [V0.63] : Le monde s'élargit
+
+Le jeu se jouait dans un pays fermé. Trente clubs français, un vivier français,
+et aux frontières deux trous : les adversaires européens étaient **régénérés à
+chaque saison** (quatre inconnus tirés au sort en septembre, oubliés en mai),
+et les matchs du XV de France étaient un score **estimé**, sans un plaquage ni
+un essai derrière.
+
+Cette version donne à l'extérieur ce que le championnat a depuis la V0.9 : de la
+mémoire, et des conséquences.
+
+### Ajouté
+
+- **Trente-deux clubs européens qui durent** (`season/european-world.ts`). Ils
+  existent en dehors de nous : ils gardent leur effectif, dérivent de niveau
+  d'une saison à l'autre, montent en coupe majeure ou en redescendent, et
+  gagnent des titres. Battre Ballymore en poule veut enfin dire quelque chose,
+  parce que Ballymore était là l'an dernier et sera là l'an prochain.
+- **Le palmarès européen, historisé.** Deux vainqueurs par saison, **y compris
+  les années où le club dirigé n'y jouait pas**. Jusqu'ici personne ne
+  remportait la coupe d'Europe ces années-là. Consultable au palmarès de
+  carrière : les finales année par année, et le classement des clubs par titres.
+- **Un marché international** (`club/international-market.ts`) : un vivier
+  anglo-celte et hémisphère sud, meilleur à prix égal que le marché français, et
+  **non-JIFF**. C'est le premier endroit du jeu où recruter coûte une place sur
+  la feuille de match.
+- **Une vente à l'étranger.** Les clubs européens viennent chercher les
+  meilleurs et paient environ un tiers au-dessus d'une offre française
+  comparable. Le joueur qui part perd le maillot bleu (`Player.abroad`) : c'est
+  la règle française des expatriés, et c'est ce qui fait de l'offre une
+  décision plutôt qu'un encaissement.
+- **Les tests internationaux, joués par le moteur.** Deux feuilles de
+  vingt-trois, quatre-vingts minutes simulées, contre des sélections qui durent
+  elles aussi (`season/national-opponent.ts`).
+- **Trois entrées d'encyclopédie** : marché international, expatrié, sélection.
+
+### Modifié
+
+- **Une cape se gagne sur la feuille, plus dans le groupe.** On en comptait une
+  par joueur convoqué : le vingt-huitième homme d'un groupe de trente-trois
+  rentrait chez lui avec cinq sélections sans avoir quitté la tribune.
+- **La fatigue de sélection suit les minutes disputées**, au lieu d'un forfait
+  par match de la fenêtre. Cinq matchs pleins et dix minutes en fin de Tournoi
+  ne se paient plus pareil.
+- **Un international revient avec des statistiques.** Sa fiche disait « douze
+  sélections » et rien d'autre ; elle dit maintenant ce qu'il y a fait. Ces
+  totaux restent séparés de ceux du championnat : un essai en bleu n'entre pas
+  au classement des marqueurs du Top 14.
+- **Les blessures en bleu existent.** Elles arrivent au club par une porte qu'il
+  ne contrôle pas : c'est le revers d'avoir cinq internationaux.
+- **La fabrique de joueurs étrangers est unique** (`season/foreign-players.ts`).
+  Elle vivait dans `data/`, au service du seul adversaire européen. Trois
+  usages en avaient besoin cette version : la recopier trois fois était la faute
+  que ce projet a déjà payée trois fois.
+
+### Retiré
+
+- **`playWindow`**, qui estimait un résultat international à partir d'un écart
+  de force. Les matchs se jouent : garder les deux aurait laissé deux réponses à
+  la question « qu'a fait la France en novembre ».
+
+### Notes de modélisation
+
+- **On persiste une identité, pas sept cent trente-six joueurs.** Un club
+  européen garde son nom, son niveau, sa forme, son palmarès et une graine
+  d'effectif ; ses vingt-trois joueurs sont reconstruits à l'identique depuis
+  cette graine. Les stocker ferait plus que doubler une sauvegarde pour une
+  information que le manager voit quatre-vingts minutes par an, et que la
+  reconstruction rend de toute façon identique. Ce qu'on ne peut pas modéliser
+  ainsi, leurs blessures et leur forme individuelle, n'a jamais existé : aucun
+  match entre clubs étrangers n'est simulé.
+- **Un effectif persistant doit vieillir sans devenir immortel.** Chaque poste
+  se renouvelle tous les six ans, décalé d'un poste à l'autre : environ quatre
+  joueurs changent par saison. Sans le décalage, les vingt-trois partiraient à
+  la retraite le même été ; sans le renouvellement, on affronterait des piliers
+  de quarante-deux ans à la vingtième saison.
+- **Le parcours réel du club dirigé prime sur le tableau.** Le reste de la coupe
+  est résolu à l'écart de niveau, mais on ne va pas faire perdre en quart de
+  finale une coupe que le manager vient de gagner sur le terrain.
+- **Le continent a besoin d'un rappel vers la moyenne.** Vingt saisons de dérive
+  aléatoire écrasent trente-deux clubs contre les bornes : tout le monde à 88 ou
+  tout le monde à 38, et plus aucun tirage intéressant. Un test déroule vingt
+  saisons et vérifie que l'écart tient.
+- **Trois portes pour signer un étranger, et il faut passer les trois** : le
+  club vendeur veut son indemnité, le joueur veut son salaire, et il veut un
+  club à sa hauteur. C'est la troisième qu'on oublie en écrivant un marché :
+  sans elle, un promu signe un All Black dès qu'il en a les moyens.
+- **Une nation adverse ne se simule que quand la France joue.** Personne ne
+  regarderait Italie-Écosse, et le classement du Tournoi se lit très bien dans
+  les cinq résultats français.
+
+### Vérification
+
+1454 tests verts, typecheck, lint et build propres, calibration 12/12. Le
+moteur de match n'a pas bougé, seuls ses appelants ont changé.
+
 ## [V0.62.1] : La passe de rattrapage sur le design
 
 Les trois nouveautés de la V0.62 ont été livrées fonctionnelles et laides. Ce

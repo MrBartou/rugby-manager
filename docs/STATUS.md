@@ -1,6 +1,6 @@
-# Statut global — V0.62.1
+# Statut global : V0.63
 
-> Dernière mise à jour : V0.62.1 livrée. **1417/1417 tests verts. Calibration 12/12 cibles atteintes (8000 matchs par scénario).**
+> Dernière mise à jour : V0.63 livrée. **1454/1454 tests verts. Calibration 12/12 cibles atteintes (8000 matchs par scénario).**
 >
 > Ce document a longtemps annoncé V0.5 alors que le code était déjà en V0.10+ : les jalons
 > V0.6 à V0.12 (carrière, transferts, finances, JIFF, formation, internationaux, records)
@@ -335,6 +335,13 @@
 - [x] Encyclopédie contextuelle, ouverte sur le terme de l'écran courant
 - [x] Commission, promotion des jeunes et clôture financière extraites vers le moteur
 - [x] **V0.62.1** : thème clair réellement fonctionnel (185 couleurs en dur passées aux variables, quatre teintes remontées au seuil AA et verrouillées par un test), réglages, encyclopédie et entraînement remis en forme
+
+### ✅ V0.63 : Le monde s'élargit
+- [x] Trente-deux clubs européens persistants : identité, niveau, forme et palmarès conservés d'une saison à l'autre, effectifs reconstruits à l'identique depuis une graine stable
+- [x] Palmarès européen historisé : deux vainqueurs par saison, même les années sans club dirigé dans le tableau
+- [x] Marché international : pool anglo-celte et hémisphère sud, recrues non-JIFF, réputation du club exigée par le joueur
+- [x] Vente à l'étranger : les clubs européens paient au-dessus du marché français, et l'expatrié perd la sélection
+- [x] Tests internationaux joués par le moteur de match : performances individuelles, capes réservées aux vingt-trois d'une feuille, fatigue au prorata des minutes, blessures en bleu
 
 ### ⬜ V0.9 — Bêta privée
 - [ ] Init Tauri (binaire desktop)

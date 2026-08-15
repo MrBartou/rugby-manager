@@ -23,8 +23,9 @@ import {
 } from '../season/internationals.js';
 import {
   applyCaps,
+  AUTUMN_OPPONENTS,
   internationalFatigue,
-  playWindow,
+  NATIONS,
   reportWindow,
   isEligible,
   seedInitialCaps,
@@ -32,9 +33,16 @@ import {
   selectionScore,
   UNKNOWN_PLAY_RATIO,
   type Caps,
+  type InternationalResult,
   type NationalSquad,
   type WindowReport,
 } from '../season/national-team.js';
+import {
+  buildFranceSheet,
+  buildInternationalMatchInput,
+  buildNationSquad,
+  FRANCE_NATIONAL_CLUB,
+} from '../season/national-opponent.js';
 import { applyBadFitMoodPenalty, evaluateIdentityFit } from '../club/identity-fit.js';
 import {
   applyMovement,
@@ -58,6 +66,13 @@ import {
   type IncomingOffer,
   type IncomingOfferResolution,
 } from '../club/transfer-market.js';
+import {
+  bidForInternationalTarget,
+  generateForeignInterest,
+  generateInternationalTargets,
+  type InternationalBid,
+  type InternationalTarget,
+} from '../club/international-market.js';
 import {
   canAffordTransfer,
   estimateMarketValue,
@@ -117,6 +132,13 @@ import {
   type EuropeanResult,
   type PoolOutcome,
 } from '../season/european-cup.js';
+import {
+  asOpponent,
+  clubsOfCompetition,
+  drawPoolOpponents,
+  EMPTY_EUROPEAN_WORLD,
+  type EuropeanWorld,
+} from '../season/european-world.js';
 import {
   relegationStatusForRank,
   resolveRelegation,
@@ -186,6 +208,22 @@ export interface PlayedMatch {
  * le développement, pas à départager les joueurs d'un championnat. Un troisième
  * ligne qui gratte trente ballons ne marque pas d'essai.
  */
+/**
+ * Ce qu'un joueur a produit **en sélection** sur la saison (V0.63).
+ *
+ * Volontairement plus court que la ligne de championnat : une carrière
+ * internationale se raconte en capes, en essais et en minutes, pas en
+ * franchissements. Et surtout, ces totaux ne se mélangent jamais à ceux du
+ * Top 14 : un essai en bleu n'entre pas au classement des marqueurs.
+ */
+export interface InternationalSeasonStat {
+  readonly matches: number;
+  readonly minutes: number;
+  readonly tries: number;
+  readonly tackles: number;
+  readonly meters: number;
+}
+
 export interface SeasonPlayerStat {
   readonly tries: number;
   readonly matches: number;
@@ -306,6 +344,13 @@ export interface SeasonState {
   readonly caps: Caps;
   /** V0.59 — capes gagnées pendant la saison en cours, pour le registre de carrière. */
   readonly capsThisSeason: ReadonlyMap<PlayerId, number>;
+  /**
+   * V0.63 : ce qu'ont produit les internationaux en sélection cette saison.
+   *
+   * Depuis que les tests sont joués par le moteur, une sélection n'est plus une
+   * ligne d'absence : elle a des essais, des plaquages et des mètres.
+   */
+  readonly internationalStats: ReadonlyMap<PlayerId, InternationalSeasonStat>;
   /** V0.59 — candidats à la sélection, classés au mérite. */
   readonly nationalShortlist: readonly { readonly player: Player; readonly score: number }[];
   /** V0.58 — bilan de la dernière fenêtre internationale soldée. */
@@ -423,6 +468,23 @@ export interface SeasonSession {
   resolveIncomingOffer(offerId: string, accept: boolean): IncomingOfferResolution | undefined;
   /** V0.6 — signe un free agent. Retourne le joueur mis à jour si accepté. */
   signFreeAgent(player: Player, offer: { years: number; annualSalary: number }): Player | undefined;
+  /**
+   * V0.63 : les joueurs étrangers à vendre cette fenêtre de mercato.
+   *
+   * Meilleurs à prix égal que le marché français, et non-JIFF : chaque recrue
+   * rapproche la feuille de match du quota.
+   */
+  getInternationalTargets(): readonly InternationalTarget[];
+  /**
+   * V0.63 : offre pour un joueur étranger.
+   *
+   * Le règlement et la trésorerie sont vérifiés ici, comme pour toute autre
+   * arrivée : l'interdiction de recruter ne s'arrête pas à la frontière.
+   */
+  signInternational(
+    target: InternationalTarget,
+    bid: InternationalBid,
+  ): { readonly ok: true; readonly player: Player } | { readonly ok: false; readonly reason: string };
   /**
    * V0.13 — enregistre le résultat d'un match européen.
    *
@@ -551,6 +613,21 @@ export interface SeasonSessionOptions {
    * qualification européenne. Absent = première saison, pas de coupe d'Europe.
    */
   readonly previousSeasonRank?: number;
+  /**
+   * V0.63 : le monde européen persistant.
+   *
+   * La session le **lit** sans jamais le modifier : les clubs européens vivent
+   * d'une saison à l'autre, c'est-à-dire plus longtemps qu'une session. Leur
+   * évolution appartient à l'intersaison (`runEuropeanSeason`).
+   */
+  readonly europeanWorld?: EuropeanWorld;
+  /**
+   * V0.63 : saison du début de carrière.
+   *
+   * Donne leur âge aux joueurs des sélections étrangères : sans elle, les
+   * All Blacks auraient vingt-deux ans à chaque nouvelle saison.
+   */
+  readonly careerStartSeason?: number;
   /**
    * V0.45 — politique commerciale et installations du club utilisateur.
    *
@@ -940,6 +1017,15 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
    * à chaque intersaison, ce compteur est naturellement annuel.
    */
   let capsGainedThisSeason: Map<PlayerId, number> = new Map();
+  /**
+   * V0.63 : ce qu'un international a **produit** en sélection cette saison.
+   *
+   * Distinct des statistiques de championnat, et volontairement : un essai
+   * marqué en bleu n'a rien à faire au classement des marqueurs du Top 14. Mais
+   * il a tout à faire sur la fiche du joueur, qui jusqu'ici ne disait que
+   * « sélectionné ».
+   */
+  const internationalStats = new Map<PlayerId, InternationalSeasonStat>();
 
   /** Tous les joueurs de la division qu'on joue, dans leur état du jour. */
   function leaguePlayers(): readonly Player[] {
@@ -1044,25 +1130,132 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
     const squad = currentNationalSquad();
     if (!window || !squad || !isWindowClosing(currentRound)) return;
 
-
-    const results = playWindow({
-      window,
-      franceStrength: squad.strength,
-      rng: createRng(`${opts.seed}_intl_${opts.currentSeason}_${window}`),
-    });
+    const results = playInternationalWindow(window, squad);
     latestWindowReport = reportWindow(window, results);
-    caps = applyCaps(caps, squad, results.length);
-    for (const id of squad.players) {
-      capsGainedThisSeason.set(id, (capsGainedThisSeason.get(id) ?? 0) + results.length);
+  }
+
+  /**
+   * V0.63 : la fenêtre internationale, jouée par le moteur de match.
+   *
+   * Chaque test est une vraie rencontre : un XV de France composé dans le
+   * groupe convoqué, une sélection adverse persistante, quatre-vingts minutes
+   * simulées. Ce qui en revient au club, la fatigue, les blessures et les
+   * performances, n'est plus forfaitaire mais mesuré sur ce qui s'est passé.
+   */
+  function playInternationalWindow(
+    window: 'AUTOMNE' | 'TOURNOI',
+    squad: NationalSquad,
+  ): readonly InternationalResult[] {
+    const opponents = window === 'AUTOMNE' ? AUTUMN_OPPONENTS : NATIONS;
+    const byId = new Map(nationalPlayers().map(p => [p.id as string, p] as const));
+    // Le groupe, dans l'ordre du sélectionneur : `selectNationalSquad` le rend
+    // déjà classé, poste par poste, au mérite.
+    const ranked = squad.players
+      .map(id => byId.get(id as string))
+      .filter((p): p is Player => p !== undefined);
+    if (ranked.length < 15) return [];
+
+    const results: InternationalResult[] = [];
+    /** Minutes jouées en sélection pendant la fenêtre, par joueur. */
+    const minutes = new Map<PlayerId, number>();
+
+    for (let i = 0; i < opponents.length; i++) {
+      const nation = opponents[i]!;
+      const sheet = buildFranceSheet({
+        ranked,
+        clubId: FRANCE_NATIONAL_CLUB,
+        matchIndex: i,
+      });
+      const atHome = i % 2 === 0;
+      const input = buildInternationalMatchInput({
+        nation,
+        france: sheet,
+        francePlayers: ranked,
+        nationSquad: buildNationSquad({
+          nation,
+          currentSeason: opts.currentSeason,
+          careerStartSeason: opts.careerStartSeason ?? opts.currentSeason,
+        }),
+        atHome,
+        matchId: `intl_${opts.currentSeason}_${window}_${nation.id}`,
+      });
+      const result = simulateMatch(input, `${opts.seed}_intl_${opts.currentSeason}_${window}_${i}`);
+
+      const franceScore = atHome ? result.homeScore : result.awayScore;
+      const opponentScore = atHome ? result.awayScore : result.homeScore;
+      results.push({ opponent: nation.name, franceScore, opponentScore, home: atHome });
+
+      // Une cape par feuille de match, pas par convocation : c'est la règle, et
+      // c'est ce qui redonne son prix au maillot.
+      for (const id of sheet.matchdayIds) {
+        const stat = result.individualStats.get(id);
+        if (stat && stat.minutesPlayed <= 0) continue;
+        caps = applyCaps(caps, { ...squad, players: [id] }, 1);
+        capsGainedThisSeason.set(id, (capsGainedThisSeason.get(id) ?? 0) + 1);
+        minutes.set(id, (minutes.get(id) ?? 0) + (stat?.minutesPlayed ?? 0));
+        accumulateInternationalStat(id, stat);
+      }
+
+      applyInternationalWear(sheet, result);
     }
 
-    const selected = new Set(squad.players.map(id => id as string));
-    const extra = internationalFatigue(results.length);
-    playerClubRoster = playerClubRoster.map(p => (
-      selected.has(p.id as string)
-        ? { ...p, dynamic: { ...p.dynamic, fatigue: Math.min(100, p.dynamic.fatigue + extra) } }
-        : p
-    ));
+    // La fatigue suit les minutes réellement disputées. Un joueur qui a fait
+    // cinq matchs pleins ne revient pas dans le même état que le vingt-deuxième
+    // homme entré dix minutes en fin de tournoi.
+    const perMatch = internationalFatigue(1);
+    playerClubRoster = playerClubRoster.map(p => {
+      const played = minutes.get(p.id);
+      if (played === undefined || played <= 0) return p;
+      const extra = Math.round((played / 80) * perMatch);
+      return { ...p, dynamic: { ...p.dynamic, fatigue: Math.min(100, p.dynamic.fatigue + extra) } };
+    });
+
+    return results;
+  }
+
+  /**
+   * Les blessures en bleu.
+   *
+   * Elles arrivent au club par une porte qu'il ne contrôle pas : c'est
+   * précisément ce qui les rend dures, et ce qui donne enfin un revers à la
+   * fierté d'avoir cinq internationaux.
+   */
+  function applyInternationalWear(
+    sheet: { readonly starterIds: readonly PlayerId[] },
+    result: MatchResult,
+  ): void {
+    const mine = new Set(playerClubRoster.map(p => p.id as string));
+    const fielded = sheet.starterIds.filter(id => mine.has(id as string));
+    if (fielded.length === 0) return;
+    const inj = rollPostMatchInjuries({
+      players: playerClubRoster,
+      starterIds: fielded,
+      currentRound,
+      seed: `${opts.seed}_intl_${result.matchId as string}`,
+    });
+    playerClubRoster = inj.players;
+    latestInjuries = [...latestInjuries, ...inj.newInjuries];
+  }
+
+  /** Le vivier de la sélection, joueurs du club dirigé compris. */
+  function nationalPlayers(): readonly Player[] {
+    return opts.nationalPool?.() ?? leaguePlayers();
+  }
+
+  function accumulateInternationalStat(
+    id: PlayerId,
+    stat: IndividualMatchStats | undefined,
+  ): void {
+    const current = internationalStats.get(id) ?? {
+      matches: 0, minutes: 0, tries: 0, tackles: 0, meters: 0,
+    };
+    internationalStats.set(id, {
+      matches: current.matches + 1,
+      minutes: current.minutes + (stat?.minutesPlayed ?? 0),
+      tries: current.tries + (stat?.tries ?? 0),
+      tackles: current.tackles + (stat?.tackles ?? 0),
+      meters: current.meters + Math.round(stat?.metersWithBall ?? 0),
+    });
   }
 
   /**
@@ -1264,13 +1457,41 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
   // V0.13 — Coupe d'Europe
   // ---------------------------------------------------------------------------
 
-  let europeanCampaign: EuropeanCampaign | undefined = (() => {
+  /**
+   * V0.63 : le continent, tel qu'il existe en dehors de nous.
+   *
+   * Vide quand la sauvegarde est antérieure à la V0.63 : les adversaires sont
+   * alors générés à la volée comme avant, plutôt que de refuser de charger.
+   */
+  const europeanWorld: EuropeanWorld = opts.europeanWorld ?? EMPTY_EUROPEAN_WORLD;
+
+  const europeanCompetition: CompetitionId | undefined = (() => {
     const rank = opts.previousSeasonRank;
     if (rank === undefined) return undefined;
-    const competition: CompetitionId | undefined = competitionForRank(rank);
-    if (!competition) return undefined;
-    return generatePoolCampaign(competition, `${opts.seed}_${opts.currentSeason}`);
+    return competitionForRank(rank);
   })();
+
+  let europeanCampaign: EuropeanCampaign | undefined = (() => {
+    if (!europeanCompetition) return undefined;
+    const drawn = drawPoolOpponents({
+      world: europeanWorld,
+      competition: europeanCompetition,
+      season: opts.currentSeason,
+      seed: opts.seed,
+      count: 4,
+    }).map(asOpponent);
+    return generatePoolCampaign(
+      europeanCompetition,
+      `${opts.seed}_${opts.currentSeason}`,
+      drawn.length > 0 ? drawn : undefined,
+    );
+  })();
+
+  /** Adversaires possibles en phase finale : le reste de la compétition. */
+  function knockoutPool(): readonly ReturnType<typeof asOpponent>[] {
+    if (!europeanCompetition) return [];
+    return clubsOfCompetition(europeanWorld, europeanCompetition).map(asOpponent);
+  }
 
   /** Match européen prévu pour la journée courante, s'il en reste un à jouer. */
   function computeEuropeanFixture(): EuropeanFixture | undefined {
@@ -1286,7 +1507,11 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
     }
 
     // Phases finales : elles se jouent après la fin du championnat régulier.
-    const knockout = nextKnockoutFixture(europeanCampaign, `${opts.seed}_${opts.currentSeason}`);
+    const knockout = nextKnockoutFixture(
+      europeanCampaign,
+      `${opts.seed}_${opts.currentSeason}`,
+      knockoutPool(),
+    );
     if (knockout && knockout.round === currentRound) return knockout;
     return undefined;
   }
@@ -1535,7 +1760,23 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
       seed: opts.seed,
       ...(opts.wantAwayIds !== undefined ? { wantAwayIds: opts.wantAwayIds() } : {}),
     });
-    pendingIncomingOffers = [...pendingIncomingOffers, ...newOffers];
+    // V0.63 : les clubs européens viennent aussi chercher les meilleurs. Leurs
+    // offres passent par la même porte que les françaises : c'est la même
+    // décision, avec une conséquence de plus : le joueur perd la sélection.
+    const fromAbroad = generateForeignInterest({
+      playerClubId: opts.playerClubId,
+      roster: playerClubRoster,
+      world: europeanWorld,
+      round: currentRound,
+      currentSeason: opts.currentSeason,
+      seed: opts.seed,
+    });
+    pendingIncomingOffers = [...pendingIncomingOffers, ...newOffers, ...fromAbroad];
+  }
+
+  /** L'acheteur est-il un club étranger ? */
+  function isForeignClub(clubId: ClubId): boolean {
+    return europeanWorld.clubs.some(c => c.id === clubId);
   }
 
   function recordRoundFinances(round: number, dayMatches: readonly { homeClubId: ClubId; awayClubId: ClubId }[]): void {
@@ -1826,6 +2067,7 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
       nationalSquad: currentNationalSquad(),
       caps,
       capsThisSeason: capsGainedThisSeason,
+      internationalStats,
       nationalShortlist: windowOf(currentRound) ? nationalShortlist() : [],
       latestWindowReport,
       isInternationalBreak: isInternationalBreak(currentRound),
@@ -2126,7 +2368,12 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
       if (!offer) return undefined;
       const player = playerClubRoster.find(p => p.id === offer.playerId);
       if (!player) return undefined;
-      const resolution = resolveIncomingOfferPure(offer, player, accept, opts.currentSeason);
+      const base = resolveIncomingOfferPure(offer, player, accept, opts.currentSeason);
+      // V0.63 : un départ hors de France se note sur le joueur, et c'est ce qui
+      // lui coûte le maillot bleu, et ce qui fait de cette vente un arbitrage.
+      const resolution: IncomingOfferResolution = base.kind === 'ACCEPTED' && isForeignClub(offer.fromClubId)
+        ? { ...base, updatedPlayer: { ...base.updatedPlayer, abroad: true } }
+        : base;
       pendingIncomingOffers = pendingIncomingOffers.filter(o => o.id !== offerId);
       if (resolution.kind === 'ACCEPTED') {
         // Cash : club joueur encaisse, club acheteur paye
@@ -2146,6 +2393,61 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
         playerClubRoster = playerClubRoster.filter(p => p.id !== offer.playerId);
       }
       return resolution;
+    },
+
+    getInternationalTargets(): readonly InternationalTarget[] {
+      if (europeanWorld.clubs.length === 0) return [];
+      // Deux vitrines par saison, calées sur les fenêtres de mercato : le
+      // marché d'hiver est plus maigre, comme le vrai.
+      return generateInternationalTargets({
+        world: europeanWorld,
+        currentSeason: opts.currentSeason,
+        seed: opts.seed,
+        window: currentRound <= 1 ? 'ETE' : 'HIVER',
+      });
+    },
+
+    signInternational(target: InternationalTarget, bid: InternationalBid) {
+      const registration = registrationCheck(bid.annualSalary);
+      if (registration && !registration.allowed) {
+        return { ok: false as const, reason: registration.reason ?? 'Signature refusée par la commission.' };
+      }
+      const affordability = affordabilityFor({
+        fee: bid.transferFee,
+        annualSalary: bid.annualSalary,
+        years: bid.years,
+      });
+      if (!affordability.canAfford) {
+        return { ok: false as const, reason: affordability.reason ?? 'Opération hors de portée.' };
+      }
+
+      const club = clubsById.get(opts.playerClubId);
+      if (!club) return { ok: false as const, reason: 'Club dirigé inconnu de cette partie.' };
+
+      const response = bidForInternationalTarget({
+        target,
+        bid,
+        buyingClub: club,
+        currentSeason: opts.currentSeason,
+        round: currentRound,
+        seed: opts.seed,
+      });
+      if (response.kind === 'REFUSE') return { ok: false as const, reason: response.reason };
+
+      applyClubMovement(opts.playerClubId, {
+        kind: 'TRANSFER_OUT',
+        amount: -bid.transferFee,
+        round: currentRound,
+        note: `Transfert ${target.player.lastName}`,
+      });
+
+      const signed = response.updatedPlayer;
+      if (evaluateIdentityFit(club, signed).fit === 'BAD') {
+        playerClubRoster = applyBadFitMoodPenalty(playerClubRoster, 4);
+      }
+      playerClubRoster = [...playerClubRoster, signed];
+      trainingByPlayer = new Map(trainingByPlayer).set(signed.id, DEFAULT_TRAINING_FOCUS);
+      return { ok: true as const, player: signed };
     },
 
     commitEuropeanMatch(

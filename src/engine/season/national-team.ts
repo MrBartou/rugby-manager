@@ -18,19 +18,21 @@
  *    prend cinq piliers, trois talonneurs et deux arrières ;
  *  - il **compte les capes**, et une carrière internationale finit par peser
  *    sur ce que vaut un joueur et sur ce qu'il accepte ;
- *  - il **joue les matchs** — deux tests d'automne, cinq matchs du Tournoi —
- *    et en publie les résultats ;
+ *  - il **cadre les fenêtres** (deux tests d'automne, cinq matchs du Tournoi)
+ *    et en publie le bilan ;
  *  - il **renvoie les joueurs fatigués**, et parfois blessés.
  *
- * ## Ce qu'il ne fait pas
+ * ## Ce qu'il ne fait plus, et ce qu'il ne fait toujours pas
  *
- * Il ne simule pas les rencontres internationales phase par phase. Le moteur en
- * serait capable, mais il faudrait construire cinq effectifs étrangers complets
- * pour une information qui tient en une ligne de score. On estime le résultat à
- * partir de la force du groupe retenu, comme `loans.ts` estime le temps de jeu
- * d'un joueur prêté plutôt que de lui simuler une saison de Pro D2.
+ * V0.63 : il ne résout plus les matchs lui-même. Il disait ici qu'estimer un
+ * score suffisait, « faute de construire cinq effectifs étrangers complets pour
+ * une information qui tient en une ligne ». Ces effectifs existent depuis que
+ * la coupe d'Europe en a besoin (`foreign-players.ts`), et les tests se jouent
+ * donc pour de vrai, avec des performances individuelles, des capes méritées
+ * et des blessures. Ce module compose le groupe et compte les capes ;
+ * `national-opponent.ts` fabrique les feuilles, la session joue les matchs.
  *
- * Et il ne déplace pas les trêves du calendrier : le club perd ses
+ * Et il ne déplace toujours pas les trêves du calendrier : le club perd ses
  * internationaux aux journées 9, 10, 16 et 17, comme depuis la V0.8. Le Tournoi
  * compte cinq matchs pour deux journées de trêve — ils sont donc résolus en
  * deux blocs. C'est une approximation assumée du calendrier réel, où le Top 14
@@ -38,7 +40,6 @@
  */
 
 import type { ClubId, Player, PlayerId, Position } from '../types.js';
-import type { Rng } from '../rng.js';
 
 // =============================================================================
 // Qui est sélectionnable
@@ -100,6 +101,10 @@ function ageOf(p: Player, currentSeason: number): number {
  */
 export function isEligible(p: Player, currentSeason: number): boolean {
   if (p.retired || p.freeAgent || !p.isJiff) return false;
+  // V0.63 : l'expatrié n'est plus sélectionnable. C'est la règle française, et
+  // c'est surtout ce qui donne son prix à une vente à l'étranger : le club
+  // encaisse, le joueur perd le maillot bleu.
+  if (p.abroad) return false;
   if (p.dynamic.injury) return false;
   if (p.dynamic.suspendedUntilRound !== undefined) return false;
   const age = ageOf(p, currentSeason);
@@ -377,32 +382,16 @@ export interface InternationalResult {
   readonly home: boolean;
 }
 
-/**
- * Résout une fenêtre internationale.
+/*
+ * V0.63 : `playWindow` a disparu.
  *
- * L'écart de force décide de l'espérance de points ; le bruit fait le reste. Le
- * modèle est volontairement simple et **bruyant** : une équipe de France qui
- * gagnerait mécaniquement tous ses matchs dès qu'elle est la mieux notée
- * enlèverait au Tournoi ce qui en fait un tournoi.
+ * Il estimait le résultat d'un test international à partir de l'écart de force
+ * entre la France et un nombre attaché à l'adversaire. Les matchs sont
+ * désormais **joués par le moteur**, avec deux vraies feuilles de vingt-trois :
+ * voir `national-opponent.ts` et `season-session.ts`. Garder les deux aurait
+ * laissé deux réponses à la question « qu'a fait la France en novembre », dont
+ * une que plus rien n'appelle.
  */
-export function playWindow(input: {
-  readonly window: Window;
-  readonly franceStrength: number;
-  readonly rng: Rng;
-}): readonly InternationalResult[] {
-  const opponents = input.window === 'AUTOMNE' ? AUTUMN_OPPONENTS : NATIONS;
-  const out: InternationalResult[] = [];
-
-  for (let i = 0; i < opponents.length; i++) {
-    const opp = opponents[i]!;
-    const home = i % 2 === 0;
-    const delta = (input.franceStrength - opp.strength) + (home ? 3 : 0);
-    const franceScore = Math.max(0, Math.round(22 + delta * 0.55 + input.rng.nextGaussian(0, 9)));
-    const oppScore = Math.max(0, Math.round(22 - delta * 0.45 + input.rng.nextGaussian(0, 9)));
-    out.push({ opponent: opp.name, franceScore, opponentScore: oppScore, home });
-  }
-  return out;
-}
 
 export interface WindowReport {
   readonly window: Window;

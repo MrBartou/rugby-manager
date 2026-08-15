@@ -17,8 +17,6 @@ import {
   applyCaps,
   internationalFatigue,
   isEligible,
-  playWindow,
-  reportWindow,
   seedInitialCaps,
   CAPS_PER_SEASON,
   selectNationalSquad,
@@ -26,7 +24,6 @@ import {
   selectionScore,
   type Caps,
 } from '../../src/engine/season/national-team.js';
-import { createRng } from '../../src/engine/rng.js';
 import { makeSquad } from './fixtures.js';
 import type { ClubId, Player, PlayerId, Position } from '../../src/engine/types.js';
 
@@ -259,24 +256,12 @@ describe('la sélection se paie', () => {
     expect(internationalFatigue(0)).toBe(0);
   });
 
-  it('le Tournoi se joue en cinq matchs, la tournée en deux', () => {
-    const rng = createRng('t');
-    expect(playWindow({ window: 'TOURNOI', franceStrength: 75, rng })).toHaveLength(5);
-    expect(playWindow({ window: 'AUTOMNE', franceStrength: 75, rng })).toHaveLength(2);
-  });
-
-  it('une meilleure équipe gagne plus souvent, sans gagner toujours', () => {
-    // Un Tournoi que la France remporterait mécaniquement dès qu'elle est la
-    // mieux notée n'aurait plus rien d'un tournoi.
-    let fortes = 0;
-    let faibles = 0;
-    for (let i = 0; i < 60; i++) {
-      const rng = createRng(`w${i}`);
-      fortes += reportWindow('TOURNOI', playWindow({ window: 'TOURNOI', franceStrength: 84, rng })).won;
-      faibles += reportWindow('TOURNOI', playWindow({ window: 'TOURNOI', franceStrength: 62, rng })).won;
-    }
-    expect(fortes).toBeGreaterThan(faibles);
-    expect(fortes).toBeLessThan(60 * 5);
+  it('un expatrié n\'est plus sélectionnable', () => {
+    // V0.63 : c'est ce qui donne son prix à une vente à l'étranger, le club
+    // encaisse, le joueur perd le maillot.
+    const parti = { ...CHAMPIONNAT[0]!, abroad: true };
+    expect(isEligible(CHAMPIONNAT[0]!, SEASON)).toBe(true);
+    expect(isEligible(parti, SEASON)).toBe(false);
   });
 
   it('nomme les joueurs du club, et distingue les premières sélections', () => {

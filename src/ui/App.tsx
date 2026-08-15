@@ -12,7 +12,7 @@ import {
 } from '../data/seed-browser.js';
 import type { ManualLineup } from '../data/seed-browser.js';
 import { buildEuropeanMatchInput } from '../data/european-opponent.js';
-import { COMPETITION_LABEL } from '../engine/season/european-cup.js';
+import { competitionForRank, COMPETITION_LABEL } from '../engine/season/european-cup.js';
 import type { MatchInput, RosterEntry } from '../engine/match/types.js';
 import type { Club, ClubId, Player, PlayerId } from '../engine/types.js';
 import type { PreloadedDecision } from '../engine/match/session.js';
@@ -231,6 +231,14 @@ import {
   type AcademyState,
 } from '../engine/club/academy.js';
 import { appendSeason, EMPTY_HISTORY, type CareerHistory } from '../engine/season/records.js';
+import {
+  createEuropeanWorld,
+  EMPTY_EUROPEAN_WORLD,
+  outcomeOfCampaign,
+  runEuropeanSeason,
+  type EuropeanWorld,
+  type FrenchEntrant,
+} from '../engine/season/european-world.js';
 import {
   compactBook,
   EMPTY_BOOK,
@@ -849,6 +857,15 @@ export function App() {
   const [snoozedContractIds, setSnoozedContractIds] = useState<ReadonlySet<string>>(new Set());
   const careerHistoryRef = useRef<CareerHistory>(EMPTY_HISTORY);
   /**
+   * V0.63 : le continent, qui vit plus longtemps qu'une session de saison.
+   *
+   * Il appartient donc à la carrière, comme le palmarès et les capes : la
+   * session le lit pour tirer ses adversaires, l'intersaison le fait avancer.
+   */
+  const europeanWorldRef = useRef<EuropeanWorld>(EMPTY_EUROPEAN_WORLD);
+  /** V0.63 : saison du premier jour, qui donne son âge au rugby étranger. */
+  const careerStartSeasonRef = useRef<number>(2025);
+  /**
    * V0.59 — le registre de carrière des joueurs.
    *
    * Remplace `careerHistory.playerCareerStats` : le détail saison par saison au
@@ -924,6 +941,9 @@ export function App() {
       }),
     ]);
     careerHistoryRef.current = EMPTY_HISTORY;
+    // V0.63 : l'Europe se peuple une fois pour toute la carrière.
+    europeanWorldRef.current = createEuropeanWorld(seed, 2025);
+    careerStartSeasonRef.current = 2025;
     reputationRef.current = INITIAL_REPUTATION;
     confidenceRef.current = INITIAL_BOARD_CONFIDENCE;
     setFiredNotice(null);
@@ -1020,6 +1040,8 @@ export function App() {
         .filter(r => r.status === 'SUR_LA_LISTE')
         .map(r => r.playerId),
       squadStatuses: () => squadStatusRef.current,
+      europeanWorld: europeanWorldRef.current,
+      careerStartSeason: careerStartSeasonRef.current,
       // V0.13 — première saison : la qualification européenne est estimée d'après
       // la réputation du club, faute de classement de la saison précédente.
       // V0.44 — sauf en Pro D2, qui n'a pas de coupe d'Europe.
@@ -1093,6 +1115,12 @@ export function App() {
       .filter((c): c is Club => c !== undefined);
 
     careerHistoryRef.current = save.careerHistory;
+    // V0.63 : une sauvegarde antérieure n'a pas de monde européen, on le crée
+    // maintenant, avec un palmarès vierge. Inventer les vainqueurs des saisons
+    // déjà jouées serait pire que de les laisser vides.
+    careerStartSeasonRef.current = save.careerStartSeason ?? save.currentSeason;
+    europeanWorldRef.current = save.europeanWorld
+      ?? createEuropeanWorld(save.seed, save.currentSeason);
     reputationRef.current = save.managerReputation;
     objectiveRef.current = save.objective;
     confidenceRef.current = save.boardConfidence;
@@ -1129,6 +1157,8 @@ export function App() {
         .filter(r => r.status === 'SUR_LA_LISTE')
         .map(r => r.playerId),
       squadStatuses: () => squadStatusRef.current,
+      europeanWorld: europeanWorldRef.current,
+      careerStartSeason: careerStartSeasonRef.current,
       // Pas de coupe d'Europe en Pro D2.
       ...(playerDivisionRef.current === 'TOP14'
         ? { previousSeasonRank: lastSeasonRank() ?? initialRankFromReputation(save.playerClubId) }
@@ -1339,6 +1369,8 @@ export function App() {
             RETIREMENT_GRACE_SEASONS,
           )].map(([playerId, career]) => ({ playerId, career })),
           nationalPicks: nationalPicksRef.current,
+          europeanWorld: europeanWorldRef.current,
+          careerStartSeason: careerStartSeasonRef.current,
           regulation: {
             sanctionedLastSeason: sanctionedLastSeasonRef.current,
             transferBan: transferBanRef.current,
@@ -1490,6 +1522,60 @@ export function App() {
           reputation: reputationRef.current.score,
         }),
       ]);
+
+      // V0.63 : la saison européenne des autres.
+      //
+      // Le club dirigé a joué sa campagne match par match ; le reste du tableau
+      // se résout à l'écart de niveau. C'est ce qui donne enfin un vainqueur à
+      // la coupe d'Europe les années où l'on n'y était pas, et un palmarès à
+      // consulter au bout de dix saisons.
+      {
+        const byIdEu = new Map(allClubs.map(c => [c.id as string, c] as const));
+        // L'ordre du championnat quand on l'a joué, la réputation sinon : une
+        // carrière de Pro D2 ne voit pas le classement de l'élite.
+        const ordered: readonly Club[] = playerDivisionRef.current === 'TOP14'
+          ? ranking.map(r => byIdEu.get(r.clubId as string)).filter((c): c is Club => c !== undefined)
+          : clubsOfDivision(divisionsRef.current, 'TOP14')
+            .map(id => byIdEu.get(id as string))
+            .filter((c): c is Club => c !== undefined)
+            .sort((a, b) => b.reputation - a.reputation);
+
+        const frenchEntrants: FrenchEntrant[] = [];
+        ordered.forEach((club, index) => {
+          const competition = competitionForRank(index + 1);
+          if (!competition) return;
+          frenchEntrants.push({
+            clubId: club.id,
+            name: club.name,
+            competition,
+            strength: club.reputation,
+          });
+        });
+
+        const campaign = state.europeanCampaign;
+        const euSeason = runEuropeanSeason({
+          world: europeanWorldRef.current,
+          season: state.currentSeason,
+          seed: seasonSeedRef.current,
+          frenchEntrants,
+          ...(campaign ? {
+            playerClub: {
+              clubId: state.playerClubId,
+              competition: campaign.competition,
+              outcome: outcomeOfCampaign(campaign),
+            },
+          } : {}),
+        });
+        europeanWorldRef.current = euSeason.world;
+        publish(euSeason.honours.map(h => ({
+          season: h.season,
+          round: 0,
+          kind: 'SAISON' as const,
+          headline: `${h.winnerName} remporte ${COMPETITION_LABEL[h.competition]}`,
+          detail: `Finale gagnée contre ${h.runnerUpName}.`,
+          involvesPlayer: h.winnerName === clubNameNow,
+        })));
+      }
     }
 
     // 1. Rollover : retraites + reset dynamic + vieillissement + free agents
@@ -1917,6 +2003,8 @@ export function App() {
         .filter(r => r.status === 'SUR_LA_LISTE')
         .map(r => r.playerId),
       squadStatuses: () => squadStatusRef.current,
+      europeanWorld: europeanWorldRef.current,
+      careerStartSeason: careerStartSeasonRef.current,
       // V0.13 — la qualification européenne dépend du classement qu'on vient de finir.
       // V0.44 — mais elle n'existe pas en Pro D2 : ne rien transmettre est ce
       // qui coupe la coupe d'Europe, plutôt qu'un rang bidon.
@@ -3347,6 +3435,7 @@ export function App() {
       atHome: fixture.atHome,
       matchId: `eu_${state.currentSeason}_${fixture.round}_${fixture.stage}`,
       seed: `${seasonSeedRef.current}_${state.currentSeason}`,
+      currentSeason: state.currentSeason,
     });
 
     setScreen({
@@ -4017,6 +4106,8 @@ export function App() {
         .filter(r => r.status === 'SUR_LA_LISTE')
         .map(r => r.playerId),
       squadStatuses: () => squadStatusRef.current,
+      europeanWorld: europeanWorldRef.current,
+      careerStartSeason: careerStartSeasonRef.current,
       restoreFrom: {
         currentRound: 1,
         history: [],
@@ -4537,6 +4628,7 @@ export function App() {
           playRatioByPlayer={playRatioByPlayerForPlayerClub()}
           onPlayMatch={playPlayerMatch}
           onPlayEuropeanMatch={playEuropeanMatch}
+          europeanWorld={europeanWorldRef.current}
           developmentReports={developmentReportsRef.current}
           onSimRoundOnly={onSimRoundOnly}
           onSkipRound={onSkipRound}
@@ -4724,6 +4816,11 @@ export function App() {
           playersById={new Map(listRoster(seasonState.playerClubId).map(p => [p.id, p] as const))}
           isCaptain={screen.player.id === captainRef.current}
           honours={honoursOf(honoursRef.current, screen.player.id)}
+          {...(() => {
+            // V0.63 : sa production en sélection, quand il en a une.
+            const stat = seasonRef.current?.getState().internationalStats.get(screen.player.id);
+            return stat ? { internationalStat: stat } : {};
+          })()}
           currentRound={seasonState.currentRound}
           caps={seasonState.caps.get(screen.player.id)?.caps ?? 0}
           {...(() => {
@@ -4868,6 +4965,7 @@ export function App() {
             mailboxRef.current = markAllRead(mailboxRef.current);
             setUnreadMails(0);
           }}
+          europeanWorld={europeanWorldRef.current}
         />
       )}
 
@@ -4975,6 +5073,27 @@ export function App() {
             }}
             previewBid={onPreviewBid}
             onSubmitBid={onSubmitBid}
+            international={{
+              targets: seasonRef.current?.getInternationalTargets() ?? [],
+              onBid: (target, bid) => {
+                const session = seasonRef.current;
+                if (!session) return { ok: false, message: 'Aucune saison en cours.' };
+                const outcome = session.signInternational(target, {
+                  transferFee: bid.fee,
+                  annualSalary: bid.annualSalary,
+                  years: bid.years,
+                });
+                if (!outcome.ok) return { ok: false, message: `Refusé : ${outcome.reason}` };
+                // La recrue entre dans la base comme n'importe quelle arrivée :
+                // sans cela, elle disparaîtrait au premier rechargement.
+                commitRoster([...listAllPlayersWithOverrides(), outcome.player]);
+                refreshSeason();
+                return {
+                  ok: true,
+                  message: `${outcome.player.firstName} ${outcome.player.lastName} rejoint le club.`,
+                };
+              },
+            }}
             aiMarket={aiMarketRef.current}
             transferWindow={seasonState.transferWindow}
             jokerOptions={seasonRef.current?.getJokerOptions() ?? []}
