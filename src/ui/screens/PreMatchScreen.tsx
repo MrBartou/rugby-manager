@@ -38,6 +38,7 @@ import {
   SET_PIECE_LABEL,
 } from '../../engine/match/tactics.js';
 import { OpponentDossier } from '../components/OpponentDossier.js';
+import type { SavedPlan } from '../../engine/match/tactics.js';
 import {
   MAX_CALLS,
   MIN_CALLS,
@@ -97,6 +98,16 @@ interface Props {
     readonly value: Playbook;
     readonly usage: CallUsage;
     readonly onChange: (playbook: Playbook) => void;
+  };
+  /**
+   * V0.65 : les plans mis de côté, rappelables d'un match à l'autre.
+   *
+   * La tactique ne vivait que dans ce tunnel : on la refaisait curseur par
+   * curseur chaque semaine, ce qui poussait à ne plus y toucher.
+   */
+  readonly savedPlans?: {
+    readonly value: readonly SavedPlan[];
+    readonly onSave: (plans: readonly SavedPlan[]) => void;
   };
   /** V0.51 — graphe de relations du club, pour la cohésion du XV aligné. */
   readonly relations?: import('../../engine/human/relationships.js').RelationsState;
@@ -221,6 +232,7 @@ export function PreMatchScreen({
   medicalQuality,
   rivalry,
   playbook,
+  savedPlans,
 }: Props) {
   const [starters, setStarters] = useState<readonly { playerId: string; position: Position }[]>(initialLineup.starters);
   const [subs, setSubs] = useState<readonly string[]>(initialLineup.substitutes);
@@ -527,6 +539,57 @@ export function PreMatchScreen({
         {/* ---- Plan de match (V0.32) ---------------------------------------- */}
         <div className="dashboard-panel">
           <div className="panel-tag">Plan de match</div>
+
+          {/* V0.65 — les plans enregistrés. Rappeler un plan doit coûter un
+              clic : c'est le seul moyen pour que le manager en change vraiment
+              d'un adversaire à l'autre. */}
+          {savedPlans && (
+            <div className="saved-plans">
+              {savedPlans.value.map(sp => {
+                const courant = sp.plan.occupation === occupation
+                  && sp.plan.defensiveLine === defLine
+                  && sp.discipline === discipline;
+                return (
+                  <div key={sp.id} className={`saved-plan ${courant ? 'active' : ''}`}>
+                    <button
+                      type="button"
+                      className="sp-recall"
+                      onClick={() => {
+                        setOccupation(sp.plan.occupation);
+                        setDefLine(sp.plan.defensiveLine);
+                        setSetPieces(sp.plan.setPiecesFocus.filter(
+                          (f): f is 'MELEE' | 'TOUCHE' | 'MAUL' => f !== 'NONE',
+                        ));
+                        setDiscipline(sp.discipline);
+                      }}
+                    >
+                      {sp.name}
+                    </button>
+                    <button
+                      type="button"
+                      className="sp-store"
+                      title="Enregistrer les réglages actuels dans ce plan"
+                      onClick={() => savedPlans.onSave(savedPlans.value.map(other => (
+                        other.id === sp.id
+                          ? {
+                            ...other,
+                            plan: {
+                              occupation,
+                              defensiveLine: defLine,
+                              setPiecesFocus: setPieces.length > 0 ? setPieces : ['NONE'],
+                            },
+                            discipline,
+                          }
+                          : other
+                      )))}
+                    >
+                      mémoriser
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           <div className="prep-row">
             <div className="prep-label">Occupation du terrain</div>

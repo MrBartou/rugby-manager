@@ -11247,3 +11247,41 @@ label.setting:hover { background: rgb(var(--overlay-hi) / 2%); }
   margin: 0 0 10px;
   padding: 7px 10px;
 }
+
+/* V0.65 : les plans A et B, rappelables en un clic. */
+.saved-plans {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.saved-plan {
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  overflow: hidden;
+}
+
+.saved-plan.active { border-color: var(--accent); }
+
+.sp-recall,
+.sp-store {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11.5px;
+  padding: 6px 10px;
+}
+
+.saved-plan.active .sp-recall { color: var(--accent); font-weight: 600; }
+
+.sp-store {
+  border-left: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 10.5px;
+}
+
+.sp-store:hover { color: var(--text); }

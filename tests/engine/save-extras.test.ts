@@ -17,6 +17,7 @@ import { createEuropeanWorld } from '@/engine/season/european-world.js';
 import { buildSeasonSaveFromState } from '@/data/season-save-repository.js';
 import { createSeasonSession } from '@/engine/game/season-session.js';
 import { DEFAULT_PLAYBOOK } from '@/engine/match/playbook.js';
+import { DEFAULT_SAVED_PLANS } from '@/engine/match/tactics.js';
 import type { ClubId, MatchId, Player, PlayerId, Position } from '@/engine/types.js';
 import type { MatchInput } from '@/engine/match/types.js';
 
@@ -126,6 +127,7 @@ describe('tout ce qu\'on confie à la sauvegarde en ressort', () => {
     // récupère un carnet neuf et redevient imprévisible sans avoir rien changé.
     playbook: DEFAULT_PLAYBOOK,
     lineoutUsage: { rouleau: 12 },
+    savedPlans: DEFAULT_SAVED_PLANS,
     preContracts: [{
       playerId: 'b_4' as PlayerId, playerName: 'B4',
       fromClubId: 'b' as ClubId, toClubId: 'a' as ClubId, toClubName: 'A',
@@ -164,6 +166,7 @@ describe('tout ce qu\'on confie à la sauvegarde en ressort', () => {
   it('le carnet de touche et ses habitudes ressortent tels quels', () => {
     expect(save.playbook).toEqual(DEFAULT_PLAYBOOK);
     expect(save.lineoutUsage).toEqual({ rouleau: 12 });
+    expect(save.savedPlans).toEqual(DEFAULT_SAVED_PLANS);
   });
 
   it('les agents et les créances ressortent tels quels', () => {

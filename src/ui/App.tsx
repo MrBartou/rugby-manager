@@ -131,6 +131,7 @@ import {
 import { decayStandings } from '../engine/club/agents.js';
 import { canCover } from '../engine/match/bench.js';
 import { DEFAULT_PLAYBOOK, type CallUsage, type Playbook } from '../engine/match/playbook.js';
+import { DEFAULT_SAVED_PLANS, type SavedPlan } from '../engine/match/tactics.js';
 import { analysisQualityOf } from '../engine/club/staff.js';
 import type { HomeWeeklyModifiers } from '../engine/match/types.js';
 import { applyPreContracts } from '../engine/club/contract-talks.js';
@@ -652,6 +653,8 @@ export function App() {
   const playbookRef = useRef<Playbook>(DEFAULT_PLAYBOOK);
   const lineoutUsageRef = useRef<CallUsage>({});
   const [playbookEpoch, setPlaybookEpoch] = useState(0);
+  /** V0.65 — les deux plans de touche du banc, A et B. */
+  const savedPlansRef = useRef<readonly SavedPlan[]>(DEFAULT_SAVED_PLANS);
   /**
    * V0.55 — joueurs ménagés cette semaine.
    *
@@ -1232,6 +1235,7 @@ export function App() {
     // rechargement aurait rendu au manager une innocence qu'il n'avait plus.
     playbookRef.current = save.playbook ?? DEFAULT_PLAYBOOK;
     lineoutUsageRef.current = save.lineoutUsage ?? {};
+    savedPlansRef.current = save.savedPlans ?? DEFAULT_SAVED_PLANS;
     setPlaybookEpoch(e => e + 1);
     aiMarketRef.current = save.aiMarket ?? [];
     winterMarketRef.current = save.winterMarketSeason ?? null;
@@ -1412,6 +1416,7 @@ export function App() {
           preContracts: seasonRef.current?.getPreContracts() ?? [],
           playbook: playbookRef.current,
           lineoutUsage: lineoutUsageRef.current,
+          savedPlans: savedPlansRef.current,
           regulation: {
             sanctionedLastSeason: sanctionedLastSeasonRef.current,
             transferBan: transferBanRef.current,
@@ -5427,6 +5432,14 @@ export function App() {
           roster={listRoster(screen.ctx.playerClubId)}
           medicalQuality={Math.min(100,
             (seasonState?.coaching.physique ?? 50) + medicalBonus(facilitiesRef.current))}
+          savedPlans={{
+            value: playbookEpoch >= 0 ? savedPlansRef.current : savedPlansRef.current,
+            onSave: (plans) => {
+              savedPlansRef.current = plans;
+              setPlaybookEpoch(e => e + 1);
+              notify('Plan enregistré.', 'success');
+            },
+          }}
           playbook={{
             // `playbookEpoch` force la relecture : le carnet vit dans une ref,
             // et une ref ne redessine rien toute seule.

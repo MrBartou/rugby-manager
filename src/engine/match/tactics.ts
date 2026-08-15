@@ -226,3 +226,49 @@ export const SET_PIECE_LABEL: Readonly<Record<'MELEE' | 'TOUCHE' | 'MAUL', strin
   TOUCHE: 'Touche',
   MAUL: 'Maul',
 };
+
+// =============================================================================
+// Les plans enregistrés — V0.65
+// =============================================================================
+
+/**
+ * Un plan mis de côté, réutilisable d'un match à l'autre.
+ *
+ * La tactique n'existait que dans le tunnel d'avant-match : on la refaisait
+ * curseur par curseur toutes les semaines, ce qui poussait à ne plus y toucher.
+ * Un plan qu'on nomme et qu'on rappelle en un clic rend au contraire le
+ * changement bon marché, et c'est le changement qui rend la tactique vivante.
+ *
+ * La consigne de discipline en fait partie : elle se décide avec le reste, et
+ * un plan « pression maximale » qui ne dirait rien du sol serait à moitié écrit.
+ */
+export interface SavedPlan {
+  readonly id: string;
+  readonly name: string;
+  readonly plan: PreMatchTacticalPlan;
+  readonly discipline: import('./referee.js').DisciplinePolicy;
+}
+
+/**
+ * Deux plans, pas dix.
+ *
+ * A et B, comme on dit sur un banc de touche : celui qu'on a préparé et celui
+ * qu'on sort quand le premier ne marche pas. Une bibliothèque de plans se
+ * transformerait en gestion de bibliothèque, et personne ne la relirait.
+ */
+export const MAX_SAVED_PLANS = 2;
+
+export const DEFAULT_SAVED_PLANS: readonly SavedPlan[] = [
+  {
+    id: 'A',
+    name: 'Plan A',
+    plan: { occupation: 'MEDIANE', defensiveLine: 'RIDEAU', setPiecesFocus: ['NONE'] },
+    discipline: 'EQUILIBRE',
+  },
+  {
+    id: 'B',
+    name: 'Plan B',
+    plan: { occupation: 'HAUTE', defensiveLine: 'MONTANTE', setPiecesFocus: ['TOUCHE'] },
+    discipline: 'CONTEST_TOTAL',
+  },
+];

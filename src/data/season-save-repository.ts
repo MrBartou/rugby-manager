@@ -31,6 +31,7 @@ import type { AgentStandings } from '../engine/club/agents.js';
 import type { TransferInstalment } from '../engine/club/transfer-deals.js';
 import type { PreContract } from '../engine/club/contract-talks.js';
 import type { CallUsage, Playbook } from '../engine/match/playbook.js';
+import type { SavedPlan } from '../engine/match/tactics.js';
 import type { ClubFacilities, ClubPlan, OngoingProject } from '../engine/club/club-management.js';
 import type { PlayerPromise, TransferRequest } from '../engine/human/player-talk.js';
 import type { SquadStatus } from '../engine/club/squad-status.js';
@@ -348,6 +349,8 @@ export interface SeasonSave extends SeasonSaveMeta {
    */
   readonly playbook?: Playbook;
   readonly lineoutUsage?: CallUsage;
+  /** V0.65 : les plans A et B du banc. */
+  readonly savedPlans?: readonly SavedPlan[];
   /** V0.45 — installations, chantier en cours et politique commerciale. */
   readonly direction?: {
     readonly facilities: ClubFacilities;
@@ -765,6 +768,7 @@ export function buildSeasonSaveFromState(
     readonly preContracts?: readonly PreContract[];
     readonly playbook?: Playbook;
     readonly lineoutUsage?: CallUsage;
+    readonly savedPlans?: readonly SavedPlan[];
   } = {},
 ): SeasonSave {
   const ranked = [...state.standings.values()].sort((a, b) => {
@@ -843,6 +847,7 @@ export function buildSeasonSaveFromState(
     ...(extras.preContracts !== undefined ? { preContracts: extras.preContracts } : {}),
     ...(extras.playbook !== undefined ? { playbook: extras.playbook } : {}),
     ...(extras.lineoutUsage !== undefined ? { lineoutUsage: extras.lineoutUsage } : {}),
+    ...(extras.savedPlans !== undefined ? { savedPlans: extras.savedPlans } : {}),
     ...(extras.careerStartSeason !== undefined ? { careerStartSeason: extras.careerStartSeason } : {}),
   };
 }
