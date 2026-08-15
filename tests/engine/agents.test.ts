@@ -26,17 +26,19 @@ import {
 import { makeSquad } from './fixtures.js';
 import type { ClubId, PlayerId } from '../../src/engine/types.js';
 
-const POOL = buildAgentPool('graine');
+const POOL = buildAgentPool();
 const SQUAD = makeSquad('c1' as ClubId, 70).players;
 
 describe('le vivier', () => {
-  it('compte dix-huit agents, et deux graines donnent deux viviers', () => {
+  it('compte dix-huit agents', () => {
     expect(POOL).toHaveLength(AGENT_POOL_SIZE);
-    expect(buildAgentPool('autre')).not.toEqual(POOL);
   });
 
-  it('se reconstruit à l\'identique à graine égale', () => {
-    expect(buildAgentPool('graine')).toEqual(POOL);
+  it('ne bouge pas d\'une saison à l\'autre : le casting est fixe', () => {
+    // La graine de partie change chaque saison. Un vivier tiré dessus aurait
+    // fait dériver les tarifs d'hommes que l'on connaît depuis vingt ans, sans
+    // que la relation, elle, change d'interlocuteur.
+    expect(buildAgentPool()).toEqual(POOL);
   });
 
   it('la commission reste dans une fourchette crédible', () => {

@@ -112,6 +112,15 @@ describe('tout ce qu\'on confie à la sauvegarde en ressort', () => {
     // l'Europe redeviendrait quatre inconnus régénérés chaque saison.
     europeanWorld: createEuropeanWorld('extras', 2025),
     careerStartSeason: 2025,
+    // V0.64 : la mémoire des agents et les créances entre clubs. Deux états que
+    // rien ne permet de reconstruire : oubliés, le mercato repart amnésique et
+    // les annuités dues s'effacent.
+    agentStandings: { ag3: -42 },
+    transferLedger: [{
+      id: 'ech_a_0_2025_1', payerClubId: 'a' as ClubId, payeeClubId: 'b' as ClubId,
+      playerId: 'a_0' as PlayerId, playerName: 'P0',
+      amount: 500_000, season: 2027, reason: 'ECHEANCE' as const,
+    }],
     pendingEvents: [{
       id: 'evt_1', type: 'CONFLIT_VESTIAIRE', atRound: 12,
       title: 'Conflit', context: 'Deux joueurs se sont accrochés.',
@@ -140,6 +149,11 @@ describe('tout ce qu\'on confie à la sauvegarde en ressort', () => {
     const manquants = Object.keys(extras as unknown as Record<string, unknown>)
       .filter(key => save[key] === undefined);
     expect(manquants).toEqual([]);
+  });
+
+  it('les agents et les créances ressortent tels quels', () => {
+    expect(save.agentStandings).toEqual({ ag3: -42 });
+    expect((save.transferLedger as readonly { amount: number }[])[0]!.amount).toBe(500_000);
   });
 
   it('le monde européen ressort avec ses trente-deux clubs', () => {

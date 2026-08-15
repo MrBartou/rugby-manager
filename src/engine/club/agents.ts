@@ -76,17 +76,31 @@ const LAST_NAMES = [
   'Rey', 'Salvador', 'Taillefer', 'Vidal',
 ];
 
-export function buildAgentPool(seed: string): readonly Agent[] {
-  const rng = createRng(`agents_${seed}`);
+/**
+ * Le vivier ne dépend d'aucune graine, et c'est délibéré.
+ *
+ * La graine de partie change à chaque saison (`seed_s2027`, `seed_s2028`) :
+ * tirer les agents dessus aurait fait dériver leur commission d'une saison à
+ * l'autre, pour des hommes que le manager est censé apprendre à connaître sur
+ * vingt ans. Les identifiants, eux, auraient survécu, si bien que la relation
+ * serait restée collée à un agent qui aurait changé de tarif tous les étés.
+ *
+ * Un casting fixe, donc, comme les quinze entraîneurs rivaux nommés de la V0.53.
+ * Ce qui varie d'une carrière à l'autre n'est pas qui ils sont, c'est ce qu'on
+ * en fait.
+ */
+export function buildAgentPool(): readonly Agent[] {
   const pool: Agent[] = [];
   for (let i = 0; i < AGENT_POOL_SIZE; i++) {
     const style: AgentStyle = i % 3 === 0 ? 'REQUIN' : i % 3 === 1 ? 'CARRIERISTE' : 'FAMILIAL';
     const base = style === 'REQUIN' ? 0.075 : style === 'CARRIERISTE' ? 0.055 : 0.04;
+    // Un pas irrégulier plutôt qu'un tirage : deux agents du même tempérament ne
+    // se confondent pas, et personne ne bouge d'une saison à l'autre.
     pool.push({
       id: `ag${i}`,
       name: `${FIRST_NAMES[i % FIRST_NAMES.length]} ${LAST_NAMES[i % LAST_NAMES.length]}`,
       style,
-      commission: Math.round((base + rng.next() * 0.02) * 1000) / 1000,
+      commission: Math.round((base + ((i * 7) % 11) * 0.002) * 1000) / 1000,
     });
   }
   return pool;

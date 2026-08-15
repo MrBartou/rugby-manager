@@ -55,8 +55,32 @@ import {
 import {
   matchdayBonusPayout,
   salaryForSeason,
+  sellOnDue,
   type MatchdayParticipation,
 } from '../club/contract-clauses.js';
+import {
+  agentOf,
+  agentStance as agentStanceFor,
+  applyAgentEvent,
+  buildAgentPool,
+  standingOf,
+  type Agent,
+  type AgentStanceKind,
+  type AgentStandings,
+} from '../club/agents.js';
+import {
+  scheduleInstalments,
+  sellOnInstalment,
+  settleDueInstalments,
+  upfrontCost,
+  type TransferInstalment,
+} from '../club/transfer-deals.js';
+import {
+  findChallenger,
+  interestedClubs,
+  resolveChallenge,
+} from '../club/bidding-war.js';
+import type { ContractBonuses, ContractOption } from '../types.js';
 import {
   buildContractDecision,
   resolveContractDecision as resolveContractDecisionPure,
@@ -289,6 +313,8 @@ export interface SeasonState {
   readonly resolvedContractDecisions: readonly ContractDecisionResolution[];
   /** V0.6 — offres entrantes IA en attente de décision (sur les joueurs du club joueur). */
   readonly pendingIncomingOffers: readonly IncomingOffer[];
+  /** V0.64 — échéances de transfert encore dues, tous clubs confondus. */
+  readonly transferLedger: readonly TransferInstalment[];
   /** V0.13 — campagne européenne du club joueur (undefined si non qualifié). */
   readonly europeanCampaign: EuropeanCampaign | undefined;
   /** V0.13 — match européen à disputer cette journée, le cas échéant. */
@@ -392,6 +418,22 @@ export interface BidTerms {
   readonly fee: number;
   readonly annualSalary: number;
   readonly years: number;
+
+  /**
+   * V0.64 — le montage et les clauses.
+   *
+   * Facultatifs, et c'est voulu : l'écran de transfert doit pouvoir rester une
+   * offre sèche pour qui n'a pas envie de monter un dossier. Ce qui change,
+   * c'est que le manager qui s'en donne la peine dispose enfin d'autre chose
+   * que de son chéquier.
+   */
+  readonly instalments?: number;
+  readonly sellOn?: number;
+  readonly bonuses?: ContractBonuses;
+  readonly releaseClause?: number;
+  readonly salaryProgression?: number;
+  readonly option?: ContractOption;
+  readonly signingBonus?: number;
 }
 
 /**
@@ -421,11 +463,39 @@ export interface BidPreview {
   readonly cooldownRounds: number;
   /** Renseigné si aucune offre n'est possible du tout. */
   readonly blocked?: string;
+
+  /**
+   * V0.64 — ce qu'on doit savoir avant de miser : qui d'autre suit ce joueur, et
+   * à qui l'on va devoir parler.
+   *
+   * Le nombre de clubs intéressés est affiché **avant** l'offre, jamais après :
+   * perdre une cible qu'on savait convoitée est une décision ratée, perdre une
+   * cible dont personne n'avait parlé est un tirage au sort.
+   */
+  readonly interestedClubs: number;
+  readonly agentName: string;
+  readonly agentStance: AgentStanceKind;
+  readonly agentReason: string;
+  /** Commission due à l'agent pour ce contrat, aux conditions affichées. */
+  readonly agentCommission: number;
 }
 
 export type BidOutcome =
   | { readonly kind: 'SIGNED'; readonly player: Player; readonly fee: number; readonly resolution: TransferResolution }
   | { readonly kind: 'REFUSED'; readonly resolution: TransferResolution; readonly cooldownRounds: number }
+  /**
+   * V0.64 — tout était accepté, et un concurrent l'a emporté sur le fil. Le
+   * joueur mis à jour part **chez le rival** : une surenchère qui laisserait la
+   * cible à son club serait une défaite sans conséquence, donc une fausse
+   * défaite.
+   */
+  | {
+    readonly kind: 'LOST';
+    readonly player: Player;
+    readonly toClubName: string;
+    readonly reason: string;
+    readonly cooldownRounds: number;
+  }
   | { readonly kind: 'BLOCKED'; readonly reason: string };
 
 export interface BidRecord {
@@ -471,6 +541,10 @@ export interface SeasonSession {
   resolveContractDecision(decisionId: string, optionId: ContractDecisionOptionId): ContractDecisionResolution | undefined;
   /** V0.6 — résout une offre entrante (accepter/refuser). Met à jour finances + clubId joueur. */
   resolveIncomingOffer(offerId: string, accept: boolean): IncomingOfferResolution | undefined;
+  /** V0.64 — relations avec les agents, à sauvegarder telles quelles. */
+  getAgentStandings(): AgentStandings;
+  /** V0.64 — échéances de transfert restant dues. */
+  getTransferLedger(): readonly TransferInstalment[];
   /** V0.6 — signe un free agent. Retourne le joueur mis à jour si accepté. */
   signFreeAgent(player: Player, offer: { years: number; annualSalary: number }): Player | undefined;
   /**
@@ -744,6 +818,9 @@ export interface SeasonSessionOptions {
     readonly pendingEvents?: readonly HumanEvent[];
     /** V0.58 — capes internationales accumulées au fil des saisons. */
     readonly caps?: ReadonlyMap<PlayerId, import('../season/national-team.js').CapRecord>;
+    /** V0.64 — relations avec les agents, et échéances de transfert en cours. */
+    readonly agentStandings?: AgentStandings;
+    readonly transferLedger?: readonly TransferInstalment[];
   };
 }
 
@@ -821,6 +898,18 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
   let playerClubRoster: readonly Player[] = opts.playerClubRoster;
   // Offres entrantes IA en attente
   let pendingIncomingOffers: IncomingOffer[] = [];
+
+  /*
+   * V0.64 — les agents et les créances.
+   *
+   * Le vivier se reconstruit depuis la graine de la partie : il n'a pas à être
+   * sauvegardé, et le lien joueur-agent se recalcule de la même façon. Ce qui se
+   * sauvegarde, c'est ce qui s'est passé entre le manager et eux, plus le
+   * registre des échéances : deux états qu'aucune règle ne permet de retrouver.
+   */
+  const agentPool: readonly Agent[] = buildAgentPool();
+  let agentStandings: AgentStandings = { ...(opts.restoreFrom?.agentStandings ?? {}) };
+  let transferLedger: readonly TransferInstalment[] = [...(opts.restoreFrom?.transferLedger ?? [])];
   // V0.7 : blessures fraîches du dernier match (reset à chaque match du joueur)
   let latestInjuries: readonly RolledInjury[] = [];
   // V0.8 : cartons du dernier match
@@ -1322,6 +1411,37 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
   const clubsById = new Map<ClubId, Club>();
   if (opts.allClubs) for (const c of opts.allClubs) clubsById.set(c.id, c);
 
+  /*
+   * V0.64 — les échéances arrivées à terme se soldent à l'ouverture de la
+   * saison, avant toute autre opération.
+   *
+   * Ici et pas au rollover : la session est le seul endroit qui tienne les
+   * trésoreries de tous les clubs, et une créance qui ne serait payée qu'au
+   * club dirigé aurait rendu l'échelonnement profitable dans un seul sens. Les
+   * échéances soldées quittent le registre, ce qui rend l'opération idempotente
+   * au rechargement.
+   */
+  {
+    const settlement = settleDueInstalments(transferLedger, opts.currentSeason);
+    for (const due of settlement.settled) {
+      applyClubMovement(due.payerClubId, {
+        kind: 'TRANSFER_OUT',
+        amount: -due.amount,
+        note: due.reason === 'REVENTE'
+          ? `Pourcentage à la revente : ${due.playerName}`
+          : `Échéance de transfert : ${due.playerName}`,
+      });
+      applyClubMovement(due.payeeClubId, {
+        kind: 'TRANSFER_IN',
+        amount: due.amount,
+        note: due.reason === 'REVENTE'
+          ? `Pourcentage à la revente : ${due.playerName}`
+          : `Échéance de transfert : ${due.playerName}`,
+      });
+    }
+    transferLedger = settlement.remaining;
+  }
+
   // ---------------------------------------------------------------------------
   // V0.14 — Entraînement et staff
   // ---------------------------------------------------------------------------
@@ -1440,6 +1560,35 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
     });
   }
 
+  /**
+   * Rang perçu d'un club : classement du moment et stature, moyennés.
+   *
+   * Extrait de `submitBid` en V0.64 parce que trois appelants en ont désormais
+   * besoin, dont le chiffrage. Le recopier une deuxième fois aurait été la faute
+   * que ce projet a déjà payée trois fois.
+   */
+  function rankOfClub(clubId: ClubId): number {
+    const ranked = rankedStandings(standings);
+    const index = ranked.findIndex(st => st.clubId === clubId);
+    const currentRank = index >= 0 ? index + 1 : opts.clubIds.length;
+    const byReputation = [...(opts.allClubs ?? [])].sort((a, b) => b.reputation - a.reputation);
+    const repIndex = byReputation.findIndex(c => c.id === clubId);
+    if (repIndex < 0) return currentRank;
+    return perceivedRank(currentRank, repIndex + 1);
+  }
+
+  /** Les clubs susceptibles de se positionner sur une cible. */
+  function rivalsFor(player: Player): readonly Club[] {
+    if (!opts.rosterByClub || !opts.allClubs) return [];
+    return interestedClubs({
+      player,
+      clubs: opts.allClubs,
+      ownClubId: opts.playerClubId,
+      currentSeason: opts.currentSeason,
+      rosterOf: (clubId) => opts.rosterByClub!(clubId),
+    });
+  }
+
   function buildBidPreview(player: Player): BidPreview {
     const finances = financesByClub.get(opts.playerClubId);
     const club = clubsById.get(opts.playerClubId);
@@ -1458,6 +1607,19 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
       ? Math.round((player.contract.annualSalary * 4) / 10_000) * 10_000
       : Math.round(((valueRange.min + valueRange.max) / 2) / 10_000) * 10_000;
 
+    // V0.64 — l'agent parle avant qu'on ait chiffré quoi que ce soit, et la
+    // commission s'affiche sur le salaire attendu tant que le manager n'a rien
+    // proposé : elle bougera avec son offre.
+    const agent = agentOf(agentPool, player.id);
+    const stance = agentStanceFor({
+      agent,
+      standing: standingOf(agentStandings, agent.id),
+      annualSalary: expectedMarketSalary(player, opts.currentSeason),
+      years: 3,
+      buyerRank: rankOfClub(opts.playerClubId),
+      totalClubs: opts.clubIds.length,
+    });
+
     const base = {
       valueRange,
       suggestedFee,
@@ -1468,6 +1630,11 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
       balance,
       payrollHeadroom,
       cooldownRounds: Math.max(0, (bidCooldowns.get(player.id) ?? 0) - currentRound),
+      interestedClubs: rivalsFor(player).length,
+      agentName: agent.name,
+      agentStance: stance.kind,
+      agentReason: stance.reason,
+      agentCommission: stance.commission,
     };
 
     const blocked = ((): string | undefined => {
@@ -2093,6 +2260,7 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
       pendingContractDecisions,
       resolvedContractDecisions,
       pendingIncomingOffers,
+      transferLedger,
       transferWindow: transferWindowStatus(currentRound, calendar.totalRounds),
       bidCooldowns,
       jokersUsedFor,
@@ -2403,6 +2571,14 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
       return resolution;
     },
 
+    getAgentStandings(): AgentStandings {
+      return agentStandings;
+    },
+
+    getTransferLedger(): readonly TransferInstalment[] {
+      return transferLedger;
+    },
+
     resolveIncomingOffer(offerId: string, accept: boolean): IncomingOfferResolution | undefined {
       const offer = pendingIncomingOffers.find(o => o.id === offerId);
       if (!offer) return undefined;
@@ -2594,6 +2770,22 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
         };
       }
 
+      // V0.64 — l'agent avant l'argent. Un agent brouillé ferme la porte sans
+      // que le club vendeur ait à se prononcer : c'est ce qui donne un coût réel
+      // aux négociations mal menées des saisons précédentes.
+      const agent = agentOf(agentPool, player.id);
+      const stance = agentStanceFor({
+        agent,
+        standing: standingOf(agentStandings, agent.id),
+        annualSalary: terms.annualSalary,
+        years: terms.years,
+        buyerRank: rankOfClub(opts.playerClubId),
+        totalClubs: opts.clubIds.length,
+      });
+      if (stance.kind === 'BLOQUE') {
+        return { kind: 'BLOCKED', reason: stance.reason };
+      }
+
       const affordability = affordabilityFor(terms);
       if (!affordability.canAfford) {
         return { kind: 'BLOCKED', reason: affordability.reason ?? 'Opération hors de portée.' };
@@ -2601,19 +2793,7 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
 
       const sellingClub = clubsById.get(player.clubId)!;
       const sellingRoster = opts.rosterByClub!(player.clubId);
-      const ranked = rankedStandings(standings);
-      const byReputation = [...(opts.allClubs ?? [])].sort((a, b) => b.reputation - a.reputation);
-
-      // Même lecture que pour l'IA : un joueur juge un club sur son classement
-      // *et* sa stature. Utiliser le seul classement du moment rendrait un grand
-      // club en difficulté brusquement repoussant, ce qui ne correspond à rien.
-      const rankOf = (clubId: ClubId): number => {
-        const index = ranked.findIndex(s => s.clubId === clubId);
-        const currentRank = index >= 0 ? index + 1 : opts.clubIds.length;
-        const repIndex = byReputation.findIndex(c => c.id === clubId);
-        if (repIndex < 0) return currentRank;
-        return perceivedRank(currentRank, repIndex + 1);
-      };
+      const rankOf = rankOfClub;
 
       const resolution = resolveTransferOffer(
         {
@@ -2624,7 +2804,16 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
             fee: terms.fee,
             annualSalary: terms.annualSalary,
             years: terms.years,
+            ...(terms.instalments !== undefined ? { instalments: terms.instalments } : {}),
+            ...(terms.sellOn !== undefined ? { sellOn: terms.sellOn } : {}),
+            ...(terms.bonuses !== undefined ? { bonuses: terms.bonuses } : {}),
+            ...(terms.releaseClause !== undefined ? { releaseClause: terms.releaseClause } : {}),
+            ...(terms.salaryProgression !== undefined
+              ? { salaryProgression: terms.salaryProgression } : {}),
+            ...(terms.option !== undefined ? { option: terms.option } : {}),
+            ...(terms.signingBonus !== undefined ? { signingBonus: terms.signingBonus } : {}),
           },
+          agentFactor: stance.salaryFactor,
           player,
           sellingClub,
           sellingRoster,
@@ -2652,6 +2841,15 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
           : resolution.refusedBy === 'JOUEUR' ? BID_COOLDOWN_PLAYER
             : BID_COOLDOWN_CLUB;
         if (cooldown > 0) bidCooldowns.set(player.id, currentRound + cooldown);
+        // L'agent se souvient de la façon dont on a traité son joueur. Une offre
+        // très basse laisse une trace, une négociation ouverte presque aucune.
+        const lowball = resolution.refusedBy === 'CLUB'
+          && resolution.clubResponse.counterFee === undefined;
+        agentStandings = applyAgentEvent(
+          agentStandings,
+          agent.id,
+          lowball ? 'OFFRE_INSULTANTE' : 'NEGOCIATION_ABANDONNEE',
+        );
         bidHistory.push({
           playerId: player.id,
           playerName: `${player.firstName} ${player.lastName}`,
@@ -2667,21 +2865,127 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
 
       const signed = resolution.player!;
 
+      /*
+       * V0.64 — la surenchère se joue ici, après les deux accords.
+       *
+       * Le club vendeur a dit oui, le joueur a dit oui : c'est le moment où la
+       * nouvelle circule, et où un concurrent qui suivait le dossier peut
+       * s'aligner. Le placer avant aurait fait perdre des cibles sans qu'on
+       * sache si l'affaire était seulement faisable.
+       */
+      const challenger = findChallenger({
+        player,
+        candidates: rivalsFor(player),
+        currentSeason: opts.currentSeason,
+        rankOf: rankOfClub,
+        reputationRankOf: rankOfClub,
+        rng: createRng(`rival_${opts.seed}_${player.id}_${currentRound}`),
+      });
+      if (challenger) {
+        const verdict = resolveChallenge({
+          challenge: challenger,
+          ourSalary: terms.annualSalary,
+          ourRank: rankOfClub(opts.playerClubId),
+          player,
+          totalClubs: opts.clubIds.length,
+          rng: createRng(`rival_choice_${opts.seed}_${player.id}_${currentRound}`),
+        });
+        if (verdict.lost) {
+          bidCooldowns.set(player.id, currentRound + BID_COOLDOWN_PLAYER);
+          bidHistory.push({
+            playerId: player.id,
+            playerName: `${player.firstName} ${player.lastName}`,
+            round: currentRound,
+            fee: terms.fee,
+            annualSalary: terms.annualSalary,
+            accepted: false,
+            reason: verdict.reason,
+          });
+          return {
+            kind: 'LOST',
+            player: {
+              ...player,
+              clubId: challenger.clubId,
+              contract: {
+                startSeason: opts.currentSeason,
+                endSeason: opts.currentSeason + challenger.years,
+                annualSalary: challenger.annualSalary,
+              },
+            },
+            toClubName: challenger.clubName,
+            reason: verdict.reason,
+            cooldownRounds: BID_COOLDOWN_PLAYER,
+          };
+        }
+      }
+
+      // La première annuité seule sort de la trésorerie : c'est tout l'intérêt
+      // du paiement échelonné, et le reste part au registre des échéances.
+      const upfront = upfrontCost({
+        fee: terms.fee,
+        instalments: terms.instalments ?? 1,
+        sellOn: terms.sellOn ?? 0,
+      });
       applyClubMovement(opts.playerClubId, {
         kind: 'TRANSFER_OUT',
-        amount: -terms.fee,
+        amount: -upfront,
         round: currentRound,
-        note: `Transfert ${player.lastName}`,
+        note: upfront < terms.fee
+          ? `Transfert ${player.lastName} (1re annuité)`
+          : `Transfert ${player.lastName}`,
       });
       // L'indemnité alimente la trésorerie du vendeur : c'est ce qui permettra
       // à l'IA de se renforcer à son tour une fois le marché IA en place.
       if (financesByClub.has(player.clubId)) {
         applyClubMovement(player.clubId, {
           kind: 'TRANSFER_IN',
-          amount: terms.fee,
+          amount: upfront,
           round: currentRound,
           note: `Vente ${player.lastName}`,
         });
+      }
+
+      transferLedger = [
+        ...transferLedger,
+        ...scheduleInstalments({
+          terms: {
+            fee: terms.fee,
+            instalments: terms.instalments ?? 1,
+            sellOn: terms.sellOn ?? 0,
+          },
+          payerClubId: opts.playerClubId,
+          payeeClubId: player.clubId,
+          playerId: player.id,
+          playerName: player.lastName,
+          season: opts.currentSeason,
+        }),
+      ];
+
+      // La commission de l'agent, payée par le club qui recrute. C'est la
+      // dépense qui rend une bonne relation d'agent rentable, et une mauvaise
+      // coûteuse.
+      if (stance.commission > 0) {
+        applyClubMovement(opts.playerClubId, {
+          kind: 'TRANSFER_OUT',
+          amount: -stance.commission,
+          round: currentRound,
+          note: `Commission ${agent.name}`,
+        });
+      }
+      agentStandings = applyAgentEvent(agentStandings, agent.id, 'SIGNATURE');
+
+      // Le pourcentage à la revente dû à un ancien club se solde immédiatement :
+      // le vendeur d'aujourd'hui doit une part à celui d'hier.
+      const owed = sellOnDue(player.contract, terms.fee);
+      if (owed > 0 && player.contract.sellOn) {
+        transferLedger = [...transferLedger, sellOnInstalment({
+          payerClubId: player.clubId,
+          payeeClubId: player.contract.sellOn.beneficiaryClubId,
+          playerId: player.id,
+          playerName: player.lastName,
+          amount: owed,
+          season: opts.currentSeason,
+        })];
       }
 
       // Une recrue à contre-culture crispe le vestiaire, comme pour un agent libre.

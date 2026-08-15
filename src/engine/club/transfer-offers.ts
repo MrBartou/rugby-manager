@@ -337,6 +337,13 @@ export interface PlayerDecisionInput {
   /** Effectif de l'acheteur : sert à estimer le temps de jeu promis. */
   readonly buyerRoster: readonly Player[];
   readonly totalClubs: number;
+  /**
+   * V0.64 — coefficient imposé par l'agent du joueur, 1 quand il ne s'en mêle
+   * pas. Au-dessus de 1, il renchérit sur ce que son joueur attend ; en dessous,
+   * il aplanit. Il agit sur l'**attente**, pas sur l'offre : un agent ne change
+   * pas ce que le club propose, il change ce qui suffit à convaincre.
+   */
+  readonly agentFactor?: number;
 }
 
 /**
@@ -348,7 +355,7 @@ export interface PlayerDecisionInput {
 export function evaluatePlayerOffer(input: PlayerDecisionInput, rng: Rng): OfferResponse {
   const { offer, player, currentSeason, buyerRank, currentRank, buyerRoster, totalClubs } = input;
 
-  const expected = expectedMarketSalary(player, currentSeason);
+  const expected = expectedMarketSalary(player, currentSeason) * (input.agentFactor ?? 1);
   const current = averageSalary(player.contract);
 
   // Un joueur sous contrat ne part pas par défaut : il faut une vraie raison.
@@ -450,6 +457,7 @@ export interface ResolveTransferInput extends ClubDecisionInput {
   readonly currentRank: number;
   readonly buyerRoster: readonly Player[];
   readonly totalClubs: number;
+  readonly agentFactor?: number;
 }
 
 /**
@@ -473,6 +481,7 @@ export function resolveTransferOffer(input: ResolveTransferInput, rng: Rng): Tra
       currentRank: input.currentRank,
       buyerRoster: input.buyerRoster,
       totalClubs: input.totalClubs,
+      ...(input.agentFactor !== undefined ? { agentFactor: input.agentFactor } : {}),
     },
     rng,
   );

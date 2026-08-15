@@ -126,6 +126,7 @@ import {
   type ActiveLoan,
   type LoanOffer,
 } from '../engine/club/loans.js';
+import { decayStandings } from '../engine/club/agents.js';
 import {
   reactionSummary,
   roomReaction,
@@ -1199,6 +1200,11 @@ export function App() {
         ...(save.statsMatchCount !== undefined ? { statsMatchCount: save.statsMatchCount } : {}),
         ...(save.caps ? { caps: new Map(save.caps.map(e => [e.playerId, e.record])) } : {}),
         ...(save.pendingEvents ? { pendingEvents: save.pendingEvents } : {}),
+        // V0.64 — un mercato qui ne se souvient de rien : c'est ce qu'on aurait
+        // eu sans ces deux lignes. L'agent brouillé redevenait aimable et les
+        // annuités dues s'effaçaient au premier rechargement.
+        ...(save.agentStandings ? { agentStandings: save.agentStandings } : {}),
+        ...(save.transferLedger ? { transferLedger: save.transferLedger } : {}),
       },
     });
     aiMarketRef.current = save.aiMarket ?? [];
@@ -1371,6 +1377,12 @@ export function App() {
           nationalPicks: nationalPicksRef.current,
           europeanWorld: europeanWorldRef.current,
           careerStartSeason: careerStartSeasonRef.current,
+          // V0.64 — les agents se souviennent, et les créances survivent au
+          // rechargement. Lus sur la session plutôt que tenus dans un ref : la
+          // session en est le seul propriétaire, et un ref de plus aurait été
+          // une deuxième source de vérité pour la même donnée.
+          agentStandings: seasonRef.current?.getAgentStandings() ?? {},
+          transferLedger: seasonRef.current?.getTransferLedger() ?? [],
           regulation: {
             sanctionedLastSeason: sanctionedLastSeasonRef.current,
             transferBan: transferBanRef.current,
@@ -1970,6 +1982,13 @@ export function App() {
     }
 
     // 3. Recrée une SeasonSession neuve pour la nouvelle saison
+    //
+    // V0.64 — on relève d'abord ce que la session sortante emporterait avec
+    // elle : les relations d'agents et les échéances de transfert encore dues.
+    // Les lire après l'avoir remplacée aurait rendu les deux à zéro, ce qui est
+    // exactement la façon dont ce projet a déjà perdu trois états.
+    const previousAgentStandings = seasonRef.current?.getAgentStandings() ?? {};
+    const previousLedger = seasonRef.current?.getTransferLedger() ?? [];
     const newSeed = `${seasonSeedRef.current}_s${rollover.newSeason}`;
     seasonSeedRef.current = newSeed;
     seasonRef.current = createSeasonSession({
@@ -2028,6 +2047,12 @@ export function App() {
             leaguePoints: -points,
           })),
         financesByClub: closedFinances,
+        // V0.64 — les agents passent la saison avec nous, avec une rancune qui
+        // s'estompe d'un dixième. Les créances passent telles quelles : c'est la
+        // nouvelle session qui soldera celles arrivées à terme, pour tous les
+        // clubs à la fois.
+        agentStandings: decayStandings(previousAgentStandings),
+        transferLedger: previousLedger,
       },
     });
 
@@ -3274,6 +3299,8 @@ export function App() {
         expectedSalary: 0, currentSalary: player.contract.annualSalary,
         contractYearsLeft: 0, sellingClubName: '—', balance: 0, payrollHeadroom: 0,
         cooldownRounds: 0, blocked: 'Aucune saison en cours.',
+        interestedClubs: 0, agentName: '—', agentStance: 'NEUTRE',
+        agentReason: '', agentCommission: 0,
       };
     }
     return session.previewBid(player);
@@ -3295,6 +3322,13 @@ export function App() {
         outcome.resolution.refusedBy === 'CLUB' ? 'Le club vendeur refuse' : 'Le joueur refuse',
         'warn',
       );
+    } else if (outcome.kind === 'LOST') {
+      // V0.64 — le concurrent l'emporte, et le joueur part **vraiment** chez
+      // lui. Le laisser à son club aurait fait de la surenchère une défaite
+      // sans conséquence, qu'on aurait retentée la journée suivante.
+      const list = listAllPlayersWithOverrides();
+      commitRoster(list.map(p => (p.id === outcome.player.id ? outcome.player : p)));
+      notify(`${outcome.player.lastName} signe à ${outcome.toClubName}`, 'warn');
     } else {
       notify(outcome.reason, 'warn');
     }
