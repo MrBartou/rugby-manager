@@ -9,6 +9,7 @@
  * V0.4 phase 2 : ajoutera relations clés.
  */
 
+import { useState } from 'react';
 import type { ClubId, Player, PlayerId } from '../../engine/types.js';
 import type { SquadStatus } from '../../engine/club/squad-status.js';
 import {
@@ -116,6 +117,24 @@ interface Props {
     readonly lastOutcome?: PlayerTalkOutcome;
     readonly onTalk: (topic: TalkTopic) => void;
   };
+  /**
+   * V0.64 — les discussions de contrat.
+   *
+   * Elles vivent ici, sous le contrat qu'elles modifient. Les mettre dans
+   * l'écran des transferts aurait séparé la demande du joueur de la seule
+   * information qui permette d'y répondre : ce qu'il touche aujourd'hui.
+   */
+  readonly contract?: {
+    readonly agentName: string;
+    readonly request?: {
+      readonly annualSalary: number;
+      readonly extraYears: number;
+      readonly reason: string;
+    };
+    readonly terminationCost: number;
+    readonly onRenegotiate: (annualSalary: number, extraYears: number) => string;
+    readonly onTerminate: (offered: number) => string;
+  };
 }
 
 /**
@@ -164,7 +183,7 @@ const TALK_TOPICS: readonly TalkTopic[] = [
   'FELICITER', 'RECADRER', 'RASSURER_ROLE', 'PROMETTRE_TEMPS_DE_JEU', 'DEMANDER_EFFORT',
 ];
 
-export function PlayerScreen({ player, currentSeason, recentResults, playRatio, relations, playersById, onBack, onSelectPlayer , familiarity, seasonStat, isCaptain, squadStatus, honours, currentRound, adaptation, caps, internationalStat, career, clubNameOf, talk }: Props) {
+export function PlayerScreen({ player, currentSeason, recentResults, playRatio, relations, playersById, onBack, onSelectPlayer , familiarity, seasonStat, isCaptain, squadStatus, honours, currentRound, adaptation, caps, internationalStat, career, clubNameOf, talk, contract }: Props) {
   // V0.15 — le joueur n'est pas forcément bien connu : chaque attribut est
   // présenté via l'estimation du scout plutôt qu'en valeur brute.
   const est = (key: string, value: number) =>
@@ -520,7 +539,34 @@ export function PlayerScreen({ player, currentSeason, recentResults, playRatio, 
                 <span style={{ color: 'var(--accent, var(--green))' }}>Dernière année — décision attendue</span>
               </li>
             )}
+            {/* V0.64 — les clauses signées. Un contrat qui les porte sans les
+                montrer laisserait le manager découvrir sa clause libératoire le
+                jour où un club l'active. */}
+            {player.contract.releaseClause !== undefined && (
+              <li><span>Clause libératoire</span>
+                <strong>{formatEurosShort(player.contract.releaseClause)}</strong>
+              </li>
+            )}
+            {player.contract.bonuses?.perMatch !== undefined && (
+              <li><span>Prime par match</span>
+                <strong>{formatEurosShort(player.contract.bonuses.perMatch)}</strong>
+              </li>
+            )}
+            {player.contract.salaryProgression !== undefined && (
+              <li><span>Salaire progressif</span>
+                <strong>+{Math.round(player.contract.salaryProgression * 100)} %/an</strong>
+              </li>
+            )}
+            {player.contract.sellOn !== undefined && (
+              <li><span>Dû à son ancien club</span>
+                <strong>{Math.round(player.contract.sellOn.percent * 100)} % de sa revente</strong>
+              </li>
+            )}
           </ul>
+
+          {contract && !player.freeAgent && (
+            <ContractTalks contract={contract} currentSalary={player.contract.annualSalary} />
+          )}
         </div>
 
         {/* V0.59 — le registre de carrière. On ne l'affiche qu'à partir d'une
@@ -597,5 +643,91 @@ export function PlayerScreen({ player, currentSeason, recentResults, playRatio, 
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * V0.64 — la table de discussion du contrat.
+ *
+ * Deux boutons et un chiffre : ce qu'il réclame, et ce qu'il coûterait de le
+ * laisser partir. On affiche la contre-proposition à 90 % parce que c'est là que
+ * se joue la négociation : un loyal l'accepte, un ambitieux la prend pour un
+ * refus, et le manager apprend à qui il a affaire.
+ */
+function ContractTalks({
+  contract, currentSalary,
+}: {
+  readonly contract: NonNullable<Props['contract']>;
+  readonly currentSalary: number;
+}) {
+  const [note, setNote] = useState<string | null>(null);
+  const [confirmingExit, setConfirmingExit] = useState(false);
+
+  return (
+    <div className="contract-talks">
+      <div className="ct-agent">Agent : {contract.agentName}</div>
+
+      {contract.request ? (
+        <>
+          <p className="ct-demand">
+            {contract.request.reason} Il demande{' '}
+            <strong>{formatEurosShort(contract.request.annualSalary)}/an</strong>
+            {contract.request.extraYears > 0
+              && ` et ${contract.request.extraYears} saison de plus`}
+            {' '}(il touche {formatEurosShort(currentSalary)}).
+          </p>
+          <div className="ct-actions">
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setNote(contract.onRenegotiate(
+                contract.request!.annualSalary, contract.request!.extraYears,
+              ))}
+            >
+              Accepter sa demande
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setNote(contract.onRenegotiate(
+                Math.round(contract.request!.annualSalary * 0.9), contract.request!.extraYears,
+              ))}
+            >
+              Proposer 90 %
+            </button>
+          </div>
+        </>
+      ) : (
+        <p className="ct-demand ct-quiet">Il ne réclame rien pour l'instant.</p>
+      )}
+
+      {contract.terminationCost > 0 && (
+        <div className="ct-actions">
+          {confirmingExit ? (
+            <>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  setNote(contract.onTerminate(contract.terminationCost));
+                  setConfirmingExit(false);
+                }}
+              >
+                Confirmer : {formatEurosShort(contract.terminationCost)}
+              </button>
+              <button type="button" className="modal-skip" onClick={() => setConfirmingExit(false)}>
+                Annuler
+              </button>
+            </>
+          ) : (
+            <button type="button" className="modal-skip" onClick={() => setConfirmingExit(true)}>
+              Résilier à l'amiable ({formatEurosShort(contract.terminationCost)})
+            </button>
+          )}
+        </div>
+      )}
+
+      {note !== null && <p className="ct-note">{note}</p>}
+    </div>
   );
 }

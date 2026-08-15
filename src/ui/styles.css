@@ -11054,3 +11054,41 @@ label.setting:hover { background: rgb(var(--overlay-hi) / 2%); }
   .ency-head { flex-direction: column; align-items: stretch; }
   .ency-search { width: 100%; }
 }
+
+/* --- V0.64 : les discussions de contrat, sur la fiche du joueur ---
+   Elles se lisent sous le contrat qu'elles modifient : la demande n'a de sens
+   qu'à côté du salaire actuel. */
+.contract-talks {
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+}
+
+.ct-agent {
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.ct-demand {
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.ct-demand.ct-quiet { color: var(--text-dim); font-style: italic; }
+
+.ct-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.ct-note {
+  border-left: 2px solid var(--accent);
+  color: var(--text);
+  font-size: 11.5px;
+  margin: 0;
+  padding-left: 9px;
+}

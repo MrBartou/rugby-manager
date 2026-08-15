@@ -80,6 +80,16 @@ import {
   interestedClubs,
   resolveChallenge,
 } from '../club/bidding-war.js';
+import {
+  answerRenegotiation,
+  applyRenegotiation,
+  applyTermination,
+  evaluateTermination,
+  renegotiationRequest,
+  terminationCost,
+  wantsRenegotiation,
+  type RenegotiationRequest,
+} from '../club/contract-talks.js';
 import type { ContractBonuses, ContractOption } from '../types.js';
 import {
   buildContractDecision,
@@ -519,6 +529,23 @@ export interface BidRecord {
 const BID_COOLDOWN_CLUB = 2;
 const BID_COOLDOWN_PLAYER = 4;
 
+/** V0.64 — ce qu'un joueur de l'effectif a sur le cœur, côté contrat. */
+export interface ContractTalk {
+  readonly playerId: PlayerId;
+  readonly agentName: string;
+  /** Renseigné quand il réclame une revalorisation. */
+  readonly request?: RenegotiationRequest;
+  /** Ce qu'il faudrait lui verser pour rompre à l'amiable, 0 s'il finit son bail. */
+  readonly terminationCost: number;
+}
+
+export interface TalkOutcome {
+  readonly ok: boolean;
+  readonly message: string;
+  /** Joueur mis à jour, à répercuter dans la base par l'interface. */
+  readonly player?: Player;
+}
+
 export interface SeasonSession {
   getState(): SeasonState;
   /**
@@ -541,6 +568,16 @@ export interface SeasonSession {
   resolveContractDecision(decisionId: string, optionId: ContractDecisionOptionId): ContractDecisionResolution | undefined;
   /** V0.6 — résout une offre entrante (accepter/refuser). Met à jour finances + clubId joueur. */
   resolveIncomingOffer(offerId: string, accept: boolean): IncomingOfferResolution | undefined;
+  /**
+   * V0.64 — l'état des discussions de contrat d'un joueur de l'effectif.
+   *
+   * Une seule méthode pour les deux sujets : la revalorisation qu'il réclame et
+   * ce qu'il en coûterait de le libérer. Les deux se lisent au même endroit
+   * dans le jeu, sur sa fiche, et se répondent l'un l'autre.
+   */
+  getContractTalk(playerId: PlayerId): ContractTalk | undefined;
+  renegotiate(playerId: PlayerId, annualSalary: number, extraYears: number): TalkOutcome;
+  terminateContract(playerId: PlayerId, offered: number): TalkOutcome;
   /** V0.64 — relations avec les agents, à sauvegarder telles quelles. */
   getAgentStandings(): AgentStandings;
   /** V0.64 — échéances de transfert restant dues. */
@@ -2569,6 +2606,114 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
         );
       }
       return resolution;
+    },
+
+    getContractTalk(playerId: PlayerId): ContractTalk | undefined {
+      const player = playerClubRoster.find(p => p.id === playerId);
+      if (!player) return undefined;
+      const agent = agentOf(agentPool, player.id);
+      const playRatio = statsMatchCount > 0
+        ? Math.min(1, (seasonPlayerStats.get(player.id)?.matches ?? 0) / statsMatchCount)
+        : 0;
+      const args = {
+        player,
+        currentSeason: opts.currentSeason,
+        playRatio,
+        ...(opts.squadStatuses?.().get(player.id) !== undefined
+          ? { squadStatus: opts.squadStatuses().get(player.id)! } : {}),
+      };
+      return {
+        playerId,
+        agentName: agent.name,
+        ...(wantsRenegotiation(args) ? { request: renegotiationRequest(args) } : {}),
+        terminationCost: terminationCost({ player, currentSeason: opts.currentSeason }),
+      };
+    },
+
+    renegotiate(playerId: PlayerId, annualSalary: number, extraYears: number): TalkOutcome {
+      const talk = this.getContractTalk(playerId);
+      const player = playerClubRoster.find(p => p.id === playerId);
+      if (!talk || !player) return { ok: false, message: 'Joueur introuvable.' };
+      if (!talk.request) {
+        return { ok: false, message: `${player.lastName} ne demande rien pour l'instant.` };
+      }
+
+      const agent = agentOf(agentPool, player.id);
+      const stance = agentStanceFor({
+        agent,
+        standing: standingOf(agentStandings, agent.id),
+        annualSalary,
+        years: Math.max(1, player.contract.endSeason - opts.currentSeason + extraYears),
+      });
+      if (stance.kind === 'BLOQUE') return { ok: false, message: stance.reason };
+
+      const response = answerRenegotiation({
+        player,
+        request: talk.request,
+        offeredSalary: annualSalary,
+        agentFactor: stance.salaryFactor,
+        seed: `${opts.seed}_${currentRound}`,
+      });
+
+      if (response.kind !== 'ACCEPT') {
+        agentStandings = applyAgentEvent(agentStandings, agent.id, 'NEGOCIATION_ABANDONNEE');
+        return {
+          ok: false,
+          message: response.kind === 'REFUSE'
+            ? response.reason
+            : `${response.reason} (${stance.reason})`,
+        };
+      }
+
+      const updated = applyRenegotiation(player, annualSalary, extraYears, opts.currentSeason);
+      playerClubRoster = playerClubRoster.map(p => (p.id === playerId ? updated : p));
+      agentStandings = applyAgentEvent(agentStandings, agent.id, 'PROLONGATION');
+      // La commission se paie aussi sur une prolongation : c'est le même homme
+      // qui a négocié, et c'est ce qui rend une revalorisation coûteuse deux fois.
+      if (stance.commission > 0) {
+        applyClubMovement(opts.playerClubId, {
+          kind: 'TRANSFER_OUT',
+          amount: -stance.commission,
+          round: currentRound,
+          note: `Commission ${agent.name}`,
+        });
+      }
+      return {
+        ok: true,
+        message: `${player.lastName} prolonge aux nouvelles conditions.`,
+        player: updated,
+      };
+    },
+
+    terminateContract(playerId: PlayerId, offered: number): TalkOutcome {
+      const player = playerClubRoster.find(p => p.id === playerId);
+      if (!player) return { ok: false, message: 'Joueur introuvable.' };
+
+      const response = evaluateTermination({ player, currentSeason: opts.currentSeason, offered });
+      if (response.kind !== 'ACCEPT') {
+        return { ok: false, message: response.reason };
+      }
+      if ((financesByClub.get(opts.playerClubId)?.balance ?? 0) < offered) {
+        return { ok: false, message: 'Votre trésorerie ne couvre pas cette indemnité de départ.' };
+      }
+
+      const libre = applyTermination(player);
+      playerClubRoster = playerClubRoster.filter(p => p.id !== playerId);
+      applyClubMovement(opts.playerClubId, {
+        kind: 'TRANSFER_OUT',
+        amount: -offered,
+        round: currentRound,
+        note: `Résiliation ${player.lastName}`,
+      });
+      // L'agent perd un client au club : il s'en souvient.
+      agentStandings = applyAgentEvent(
+        agentStandings, agentOf(agentPool, player.id).id, 'JOUEUR_ECARTE',
+      );
+      return {
+        ok: true,
+        message: `${player.lastName} quitte le club à l'amiable.`,
+        player: libre,
+      };
     },
 
     getAgentStandings(): AgentStandings {

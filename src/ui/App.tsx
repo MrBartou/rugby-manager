@@ -728,6 +728,8 @@ export function App() {
   const [statusEpoch, setStatusEpoch] = useState(0);
   /** Compteur d'époque : les refs ne déclenchent aucun rendu à elles seules. */
   const [requestEpoch, setRequestEpoch] = useState(0);
+  /** V0.64 — force la relecture des discussions de contrat après chaque échange. */
+  const [talkEpoch, setTalkEpoch] = useState(0);
 
   /** V0.45 — suites de la commission : elles courent sur la saison suivante. */
   const sanctionedLastSeasonRef = useRef(false);
@@ -4993,6 +4995,46 @@ export function App() {
               : {}),
             onTalk: (topic) => talkToPlayer(screen.player, topic),
           }}
+          {...(() => {
+            // V0.64 — la revalorisation et la résiliation, là où le contrat se
+            // lit déjà. `talkEpoch` force la relecture après chaque discussion :
+            // le moteur possède l'effectif, la fiche n'en a qu'une copie.
+            const talk = talkEpoch >= 0
+              ? seasonRef.current?.getContractTalk(screen.player.id)
+              : undefined;
+            if (!talk) return {};
+            return {
+              contract: {
+                agentName: talk.agentName,
+                ...(talk.request ? { request: talk.request } : {}),
+                terminationCost: talk.terminationCost,
+                onRenegotiate: (salary: number, extraYears: number) => {
+                  const outcome = seasonRef.current!.renegotiate(
+                    screen.player.id, salary, extraYears,
+                  );
+                  if (outcome.ok && outcome.player) {
+                    commitRoster(listAllPlayersWithOverrides()
+                      .map(p => (p.id === outcome.player!.id ? outcome.player! : p)));
+                    setScreen({ kind: 'player', player: outcome.player });
+                  }
+                  setTalkEpoch(e => e + 1);
+                  refreshSeason();
+                  return outcome.message;
+                },
+                onTerminate: (offered: number) => {
+                  const outcome = seasonRef.current!.terminateContract(screen.player.id, offered);
+                  if (outcome.ok && outcome.player) {
+                    commitRoster(listAllPlayersWithOverrides()
+                      .map(p => (p.id === outcome.player!.id ? outcome.player! : p)));
+                    setScreen({ kind: 'squad' });
+                  }
+                  setTalkEpoch(e => e + 1);
+                  refreshSeason();
+                  return outcome.message;
+                },
+              },
+            };
+          })()}
           onBack={() => setScreen({ kind: 'squad' })}
         />
       )}
