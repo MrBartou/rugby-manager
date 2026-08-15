@@ -102,6 +102,13 @@ export function OpponentDossier({ report, scouting }: Props) {
 
       <p className="dos-hint">{reportHint(report)}</p>
 
+      {/* V0.65 — l'avertissement de touche. Il vient avant les menaces parce
+          qu'il porte sur nous : c'est la seule ligne du dossier sur laquelle le
+          manager peut encore agir avant le coup d'envoi. */}
+      {report.lineoutWarning !== undefined && (
+        <p className="dos-warning">{report.lineoutWarning}</p>
+      )}
+
       {report.threats.length > 0 && (
         <div className="dos-block">
           <span className="dos-label">À surveiller</span>

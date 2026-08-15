@@ -4006,6 +4006,13 @@ export function App() {
       form: recentResultsFor(club.id),
       ...(rankIndex >= 0 ? { rank: rankIndex + 1 } : { rank: undefined }),
       currentRound: state.currentRound,
+      // V0.65 — le dossier se retourne vers nous : ce que leur cellule vidéo a
+      // repéré de nos habitudes de touche. Leur qualité d'analyse se déduit de
+      // leur réputation, faute d'un encadrement modélisé pour les clubs gérés
+      // par la machine : un gros club prépare mieux ses adversaires.
+      ownPlaybook: playbookRef.current,
+      ownCallUsage: lineoutUsageRef.current,
+      opponentAnalysis: Math.max(0, Math.min(1, (club.reputation - 40) / 55)),
     });
   };
 

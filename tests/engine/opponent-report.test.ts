@@ -12,6 +12,7 @@ import { buildOpponentReport, reportHint } from '../../src/engine/club/opponent-
 import { EMPTY_SCOUTING, advanceScouting, type ScoutingState } from '../../src/engine/club/scouting.js';
 import { makeSquad } from './fixtures.js';
 import type { Club, ClubId, Player } from '../../src/engine/types.js';
+import { DEFAULT_PLAYBOOK, type CallUsage } from '../../src/engine/match/playbook.js';
 
 function club(id: string, identity: Club['tacticalIdentity'] = 'MIXTE'): Club {
   return {
@@ -163,5 +164,47 @@ describe('lecture générale', () => {
       currentRound: 6,
     });
     expect(r.threats.some(t => t.player.id === suspendu.id)).toBe(false);
+  });
+});
+
+// =============================================================================
+// V0.65 — l'avertissement de touche
+// =============================================================================
+
+describe('le dossier se retourne vers nous', () => {
+  const usageRepete: CallUsage = { rouleau: 27, sortie: 3 };
+
+  const dossier = (over: Record<string, unknown>) => buildOpponentReport({
+    club: club('moyen'),
+    roster: ROSTERS.get('moyen' as ClubId)!,
+    leagueRosters: ROSTERS,
+    scouting: knownScouting(ROSTERS.get('moyen' as ClubId)!),
+    form: [1, 0, 1, -1, 1],
+    rank: 5,
+    currentRound: 8,
+    ownPlaybook: DEFAULT_PLAYBOOK,
+    ownCallUsage: usageRepete,
+    opponentAnalysis: 1,
+    ...over,
+  });
+
+  it('prévient quand nos habitudes sont lisibles et qu\'ils savent lire', () => {
+    const report = dossier({});
+    expect(report.lineoutWarning).toBeDefined();
+    expect(report.lineoutWarning).toContain('Rouleau');
+  });
+
+  it('se tait quand l\'adversaire ne prépare rien', () => {
+    expect(dossier({ opponentAnalysis: 0 }).lineoutWarning).toBeUndefined();
+  });
+
+  it('se tait quand on varie', () => {
+    expect(dossier({ ownCallUsage: { rouleau: 10, sortie: 10, fond: 10 } }).lineoutWarning)
+      .toBeUndefined();
+  });
+
+  it('et se tait quand on ne lui a rien transmis', () => {
+    expect(dossier({ ownPlaybook: undefined, ownCallUsage: undefined, opponentAnalysis: undefined }).lineoutWarning)
+      .toBeUndefined();
   });
 });

@@ -11235,3 +11235,15 @@ label.setting:hover { background: rgb(var(--overlay-hi) / 2%); }
   color: var(--yellow);
   font-size: 11.5px;
 }
+
+/* V0.65 : l'avertissement de touche du dossier. Il porte sur nous, pas sur eux,
+   d'où le traitement distinct de la ligne de conseil. */
+.dos-warning {
+  background: color-mix(in srgb, var(--yellow) 12%, transparent);
+  border-left: 2px solid var(--yellow);
+  color: var(--text);
+  font-size: 11.5px;
+  line-height: 1.5;
+  margin: 0 0 10px;
+  padding: 7px 10px;
+}
