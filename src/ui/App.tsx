@@ -1228,6 +1228,11 @@ export function App() {
         ...(save.preContracts ? { preContracts: save.preContracts } : {}),
       },
     });
+    // V0.65 — le carnet et les habitudes qu'il a créées. Un carnet neuf au
+    // rechargement aurait rendu au manager une innocence qu'il n'avait plus.
+    playbookRef.current = save.playbook ?? DEFAULT_PLAYBOOK;
+    lineoutUsageRef.current = save.lineoutUsage ?? {};
+    setPlaybookEpoch(e => e + 1);
     aiMarketRef.current = save.aiMarket ?? [];
     winterMarketRef.current = save.winterMarketSeason ?? null;
     newsRef.current = save.news ? { items: save.news } : EMPTY_NEWS;
@@ -1405,6 +1410,8 @@ export function App() {
           agentStandings: seasonRef.current?.getAgentStandings() ?? {},
           transferLedger: seasonRef.current?.getTransferLedger() ?? [],
           preContracts: seasonRef.current?.getPreContracts() ?? [],
+          playbook: playbookRef.current,
+          lineoutUsage: lineoutUsageRef.current,
           regulation: {
             sanctionedLastSeason: sanctionedLastSeasonRef.current,
             transferBan: transferBanRef.current,
