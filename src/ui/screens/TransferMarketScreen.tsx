@@ -89,6 +89,21 @@ interface Props {
     readonly tradeoff: (offer: LoanOffer, player: Player) => string;
     readonly onSend: (player: Player, offer: LoanOffer) => void;
   };
+  /**
+   * V0.64 — les joueurs en fin de contrat ailleurs, qu'on peut engager pour la
+   * saison suivante sans verser un centime à leur club.
+   */
+  readonly preContracts?: {
+    readonly windowOpen: boolean;
+    readonly targets: readonly {
+      readonly player: Player;
+      readonly clubName: string;
+      readonly expectedSalary: number;
+      readonly agentName: string;
+      readonly takenBy?: string;
+    }[];
+    readonly onSign: (player: Player, annualSalary: number, years: number) => string;
+  };
   readonly onBack?: () => void;
   /** V0.61 — ouvrir la fiche d'un joueur suivi. */
   readonly onOpenPlayer?: (player: Player) => void;
@@ -157,11 +172,15 @@ export function TransferMarketScreen({
   onSignFreeAgent, onResolveIncomingOffer,
   leaguePlayers, clubNameById, onOpenPlayer,
   previewBid, onSubmitBid, aiMarket, transferWindow, jokerOptions, onSignJoker, regulation, loans,
+  preContracts,
   international,
 }: Props) {
   const [tab, setTab] = useState<
     'RECHERCHE' | 'SUIVIS' | 'MERCATO' | 'ETRANGER' | 'LIBRES' | 'JOKER' | 'OFFRES' | 'PRETS'
+    | 'PRECONTRATS'
   >('RECHERCHE');
+  /** V0.64 — retour de la dernière tentative de pré-contrat. */
+  const [preContractNote, setPreContractNote] = useState<string | null>(null);
   /** V0.63 : cible étrangère dont on prépare l'offre. */
   const [intlTarget, setIntlTarget] = useState<InternationalTarget | null>(null);
   const [intlFee, setIntlFee] = useState(0);
@@ -328,6 +347,7 @@ export function TransferMarketScreen({
           ['JOKER', `Joker médical (${jokerOptions.length})`],
           ['OFFRES', `Offres reçues (${incomingOffers.length})`],
           ['PRETS', `Prêts (${loans?.active.length ?? 0})`],
+          ['PRECONTRATS', `Pré-contrats (${preContracts?.targets.length ?? 0})`],
         ] as const).map(([key, label]) => (
           <button
             key={key}
@@ -929,6 +949,51 @@ export function TransferMarketScreen({
               <button type="button" onClick={() => setIntlTarget(null)}>Annuler</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {tab === 'PRECONTRATS' && (
+        <div className="dashboard-panel">
+          <div className="panel-tag">Fins de contrat ailleurs</div>
+          {/* La règle avant la liste : sans elle, un onglet vide pendant la
+              moitié de la saison passe pour une panne. */}
+          <p className="market-hint">
+            À six mois de l'échéance, un joueur peut s'engager ailleurs pour la saison
+            suivante. Il finit la sienne dans son club, puis vous rejoint sans indemnité.
+          </p>
+          {preContractNote !== null && <p className="bid-hint">{preContractNote}</p>}
+          {!preContracts || !preContracts.windowOpen ? (
+            <p className="market-empty">La fenêtre des pré-contrats n'est pas encore ouverte.</p>
+          ) : preContracts.targets.length === 0 ? (
+            <p className="market-empty">Aucun joueur en dernière année dans le championnat.</p>
+          ) : (
+            <ul className="offers-list">
+              {preContracts.targets.map(t => (
+                <li key={t.player.id as string} className="offer-row">
+                  <div className="offer-text">
+                    <strong>{t.player.firstName} {t.player.lastName}</strong>
+                    {' '}({t.clubName})
+                    <div className="offer-detail">
+                      {t.player.position.replaceAll('_', ' ').toLowerCase()}
+                      {' · '}attend environ {formatEuros(t.expectedSalary)}/an
+                      {' · '}agent : {t.agentName}
+                      {t.takenBy !== undefined && ` · déjà engagé à ${t.takenBy}`}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={t.takenBy !== undefined}
+                    onClick={() => setPreContractNote(
+                      preContracts.onSign(t.player, Math.round(t.expectedSalary * 1.05), 3),
+                    )}
+                  >
+                    S'engager
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 

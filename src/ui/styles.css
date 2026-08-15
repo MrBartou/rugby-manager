@@ -11092,3 +11092,13 @@ label.setting:hover { background: rgb(var(--overlay-hi) / 2%); }
   margin: 0;
   padding-left: 9px;
 }
+
+/* V0.64 : la règle du pré-contrat, en tête de son onglet. Un onglet vide la
+   moitié de la saison passe pour une panne si l'on n'explique pas pourquoi. */
+.market-hint {
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.55;
+  margin: 0 0 10px;
+  max-width: 62ch;
+}

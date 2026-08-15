@@ -130,6 +130,7 @@ import {
 } from '../engine/club/loans.js';
 import { decayStandings } from '../engine/club/agents.js';
 import { canCover } from '../engine/match/bench.js';
+import { applyPreContracts } from '../engine/club/contract-talks.js';
 import {
   reactionSummary,
   roomReaction,
@@ -1210,6 +1211,7 @@ export function App() {
         // annuités dues s'effaçaient au premier rechargement.
         ...(save.agentStandings ? { agentStandings: save.agentStandings } : {}),
         ...(save.transferLedger ? { transferLedger: save.transferLedger } : {}),
+        ...(save.preContracts ? { preContracts: save.preContracts } : {}),
       },
     });
     aiMarketRef.current = save.aiMarket ?? [];
@@ -1388,6 +1390,7 @@ export function App() {
           // une deuxième source de vérité pour la même donnée.
           agentStandings: seasonRef.current?.getAgentStandings() ?? {},
           transferLedger: seasonRef.current?.getTransferLedger() ?? [],
+          preContracts: seasonRef.current?.getPreContracts() ?? [],
           regulation: {
             sanctionedLastSeason: sanctionedLastSeasonRef.current,
             transferBan: transferBanRef.current,
@@ -1654,8 +1657,34 @@ export function App() {
       const loan = loansRef.current.find(l => l.playerId === p.id)!;
       return { ...p, clubId: loan.clubId };
     });
-    const rollover = rolloverSeason({
+    // V0.64 — les pré-contrats s'exécutent ici, avant tout le reste du
+    // rollover. Avant l'expiration des contrats, précisément : un joueur qui a
+    // signé ailleurs ne doit pas passer par la case agent libre, sans quoi le
+    // marché IA le redistribuerait et la signature de janvier n'aurait servi à
+    // rien.
+    const preContracts = session.getPreContracts();
+    const apresPreContrats = applyPreContracts({
       players: apresOptions,
+      preContracts,
+      newSeason: state.currentSeason + 1,
+    });
+    for (const pc of preContracts) {
+      publish([{
+        season: state.currentSeason,
+        round: 0,
+        kind: 'TRANSFERT' as const,
+        headline: `${pc.playerName} rejoint ${pc.toClubName}`,
+        detail: pc.toClubId === state.playerClubId
+          ? 'Pré-contrat signé en cours de saison : il arrive libre.'
+          : 'Pré-contrat signé en cours de saison : il part libre, sans indemnité.',
+        clubId: state.playerClubId,
+        playerId: pc.playerId,
+        involvesPlayer: true,
+      }]);
+    }
+
+    const rollover = rolloverSeason({
+      players: apresPreContrats,
       currentSeason: state.currentSeason,
       seed: seasonSeedRef.current,
       development: withLoanMinutes,
@@ -5255,6 +5284,26 @@ export function App() {
               }),
               tradeoff: loanTradeoff,
               onSend: sendOnLoan,
+            }}
+            preContracts={{
+              // V0.64 — la fenêtre s'ouvre à mi-championnat, et l'écran doit le
+              // dire plutôt que d'afficher une liste vide sans raison.
+              windowOpen: seasonState.currentRound
+                >= Math.ceil(seasonState.calendar.totalRounds / 2),
+              targets: (seasonRef.current?.getPreContractTargets() ?? []).map(t => ({
+                player: t.player,
+                clubName: t.clubName,
+                expectedSalary: t.expectedSalary,
+                agentName: t.agentName,
+                ...(t.takenBy !== undefined ? { takenBy: t.takenBy } : {}),
+              })),
+              onSign: (player, annualSalary, years) => {
+                const outcome = seasonRef.current?.signPreContract(player, annualSalary, years);
+                if (!outcome) return 'Aucune saison en cours.';
+                notify(outcome.message, outcome.ok ? 'success' : 'warn');
+                refreshSeason();
+                return outcome.message;
+              },
             }}
             previewBid={onPreviewBid}
             onSubmitBid={onSubmitBid}

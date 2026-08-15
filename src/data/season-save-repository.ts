@@ -29,6 +29,7 @@ import type { DivisionState } from '../engine/season/divisions.js';
 import type { StaffMember } from '../engine/club/staff.js';
 import type { AgentStandings } from '../engine/club/agents.js';
 import type { TransferInstalment } from '../engine/club/transfer-deals.js';
+import type { PreContract } from '../engine/club/contract-talks.js';
 import type { ClubFacilities, ClubPlan, OngoingProject } from '../engine/club/club-management.js';
 import type { PlayerPromise, TransferRequest } from '../engine/human/player-talk.js';
 import type { SquadStatus } from '../engine/club/squad-status.js';
@@ -335,6 +336,8 @@ export interface SeasonSave extends SeasonSaveMeta {
    */
   readonly agentStandings?: AgentStandings;
   readonly transferLedger?: readonly TransferInstalment[];
+  /** V0.64 : pré-contrats signés, à honorer au prochain changement de saison. */
+  readonly preContracts?: readonly PreContract[];
   /** V0.45 — installations, chantier en cours et politique commerciale. */
   readonly direction?: {
     readonly facilities: ClubFacilities;
@@ -749,6 +752,7 @@ export function buildSeasonSaveFromState(
     /** V0.64 : relations avec les agents et échéances de transfert. */
     readonly agentStandings?: AgentStandings;
     readonly transferLedger?: readonly TransferInstalment[];
+    readonly preContracts?: readonly PreContract[];
   } = {},
 ): SeasonSave {
   const ranked = [...state.standings.values()].sort((a, b) => {
@@ -824,6 +828,7 @@ export function buildSeasonSaveFromState(
     ...(extras.europeanWorld !== undefined ? { europeanWorld: extras.europeanWorld } : {}),
     ...(extras.agentStandings !== undefined ? { agentStandings: extras.agentStandings } : {}),
     ...(extras.transferLedger !== undefined ? { transferLedger: extras.transferLedger } : {}),
+    ...(extras.preContracts !== undefined ? { preContracts: extras.preContracts } : {}),
     ...(extras.careerStartSeason !== undefined ? { careerStartSeason: extras.careerStartSeason } : {}),
   };
 }

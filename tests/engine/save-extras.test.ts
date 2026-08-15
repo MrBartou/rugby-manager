@@ -121,6 +121,11 @@ describe('tout ce qu\'on confie à la sauvegarde en ressort', () => {
       playerId: 'a_0' as PlayerId, playerName: 'P0',
       amount: 500_000, season: 2027, reason: 'ECHEANCE' as const,
     }],
+    preContracts: [{
+      playerId: 'b_4' as PlayerId, playerName: 'B4',
+      fromClubId: 'b' as ClubId, toClubId: 'a' as ClubId, toClubName: 'A',
+      signedSeason: 2025, annualSalary: 220_000, years: 3,
+    }],
     pendingEvents: [{
       id: 'evt_1', type: 'CONFLIT_VESTIAIRE', atRound: 12,
       title: 'Conflit', context: 'Deux joueurs se sont accrochés.',
