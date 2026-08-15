@@ -157,17 +157,51 @@ export interface HiddenAttributes {
 /**
  * Contrat.
  *
- * V0.60 : `performanceBonus` et `releaseClause` sont retirés. Déclarés en V0.1,
- * jamais renseignés, jamais lus : le mercato les ignorait, la masse salariale ne
- * les comptait pas, aucun écran ne les affichait. Un champ qui existe sans
- * exister est pire qu'un champ absent, parce qu'on croit pouvoir s'y fier.
- * Ils reviendront avec la clause libératoire, prévue en V0.64.
+ * V0.60 : `performanceBonus` et `releaseClause` avaient été retirés. Déclarés en
+ * V0.1, jamais renseignés, jamais lus : le mercato les ignorait, la masse
+ * salariale ne les comptait pas, aucun écran ne les affichait. Un champ qui
+ * existe sans exister est pire qu'un champ absent, parce qu'on croit pouvoir
+ * s'y fier.
+ *
+ * V0.64 : ils reviennent, avec le reste de la structure de contrat, et cette
+ * fois branchés. Les règles qui les lisent vivent dans `club/contract-clauses.ts`,
+ * et il n'y en a pas d'autres : `annualSalary` reste le salaire de la première
+ * année, `salaryForSeason()` dit celui qui est dû aujourd'hui.
  */
 export interface Contract {
   startSeason: number;
   endSeason: number;
-  annualSalary: number;                // en euros
+  annualSalary: number;                // en euros, première année du contrat
   signingBonus?: number;
+
+  /** V0.64 — indemnité au-delà de laquelle le club ne peut plus refuser. */
+  releaseClause?: number;
+  /** V0.64 — primes de match, d'essai et de sélection. */
+  bonuses?: ContractBonuses;
+  /** V0.64 — hausse annuelle du salaire, en fraction (0,05 = +5 % par an). */
+  salaryProgression?: number;
+  /** V0.64 — année supplémentaire, à la main du club ou du joueur. */
+  option?: ContractOption;
+  optionExercised?: boolean;
+  /** V0.64 — part de la revente due à un ancien club. */
+  sellOn?: SellOnClause;
+}
+
+export interface ContractBonuses {
+  perMatch?: number;
+  perTry?: number;
+  perCap?: number;
+}
+
+export interface ContractOption {
+  readonly years: number;
+  readonly annualSalary: number;
+  readonly holder: 'CLUB' | 'JOUEUR';
+}
+
+export interface SellOnClause {
+  readonly beneficiaryClubId: ClubId;
+  readonly percent: number;
 }
 
 /** Le joueur (entité complète). */
