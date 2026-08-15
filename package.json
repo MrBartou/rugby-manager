@@ -1,6 +1,6 @@
 {
   "name": "rugby-manager",
-  "version": "0.63.0",
+  "version": "0.64.0",
   "description": "Le FM du rugby français — focus modélisation match + vie de vestiaire",
   "private": true,
   "type": "module",

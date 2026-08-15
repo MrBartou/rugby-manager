@@ -2,6 +2,100 @@
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/). Versions sémantiques.
 
+## [V0.64] : Le mercato mûrit
+
+Un contrat n'avait que deux chiffres, un salaire et une durée. Négocier revenait
+donc à pousser un curseur : soit on payait assez, soit non. Un manager sans
+trésorerie n'avait aucun moyen de signer autrement qu'en payant le prix fort, un
+joueur sous-payé pendant cinq ans n'avait aucun moyen de le faire savoir, et
+l'« agent » restait ce qu'il était depuis la V0.6, un nom au-dessus d'un mail.
+
+Cette version donne au marché ce qui lui manquait pour être un marché : plusieurs
+façons de dire oui, et quelqu'un en face.
+
+### Ajouté
+
+- **Les clauses de contrat** (`club/contract-clauses.ts`). Clause libératoire,
+  primes de match, d'essai et de sélection, salaire progressif, année en option
+  tenue par le club ou par le joueur. `releaseClause` et `performanceBonus`
+  avaient été déclarés en V0.1 et retirés en V0.60 faute de lecteur : ils
+  reviennent branchés, avec le reste.
+- **Les primes se paient le soir du match**, sur une ligne de bilan distincte du
+  salaire. Une prime qui tomberait en juin n'apprendrait rien au manager sur ce
+  qu'elle lui coûte.
+- **Le paiement échelonné et le pourcentage à la revente**
+  (`club/transfer-deals.ts`). L'acheteur ne sort que la première annuité ; les
+  suivantes vivent dans un registre d'échéances qui traverse les saisons et se
+  solde à l'ouverture de chaque exercice, pour tous les clubs à la fois.
+- **Dix-huit agents** (`club/agents.ts`) qui se partagent le championnat. Ils
+  prennent une commission sur ce que leur joueur signe, se souviennent de la
+  façon dont on les a traités, freinent, bloquent, ou proposent d'eux-mêmes un
+  joueur. Les « sollicitations d'agents » notées non faites depuis la V0.43 le
+  sont enfin.
+- **La revalorisation en cours de contrat et la résiliation à l'amiable**
+  (`club/contract-talks.ts`), sur la fiche du joueur, sous le contrat qu'elles
+  modifient.
+- **Les pré-contrats à six mois de l'échéance**, dans les deux sens : on engage
+  le joueur d'un autre pour la saison suivante sans verser d'indemnité, et on
+  peut se faire prendre le sien de la même façon.
+- **La surenchère** (`club/bidding-war.ts`). Le nombre de clubs qui suivent une
+  cible s'affiche **avant** de miser, et l'un d'eux peut l'emporter sur le fil
+  une fois les deux accords obtenus.
+- **Le prêt avec option d'achat**, obligatoire ou facultative, et le **rappel
+  anticipé** d'un joueur prêté en cas de crise de blessures au poste.
+
+### Modifié
+
+- **La masse salariale lit le salaire en vigueur**, et la saison est un paramètre
+  obligatoire de `computeAnnualPayroll`. Sans cela, un contrat qui monte de 8 %
+  par an aurait été facturé au tarif de sa signature pendant toute sa durée.
+- **Le club vendeur ne compare plus le nominal** mais ce qu'il touche vraiment,
+  échéances escomptées et part de revente comprises.
+- **Le joueur ne compare plus le salaire nu** mais tout le contrat ramené en
+  salaire garanti équivalent : primes décotées, clause libératoire valorisée,
+  année en option comptée du côté de celui qui la tient.
+
+### Notes de modélisation
+
+- **Ce qu'une clause vaut n'est pas ce qu'elle coûte.** Une prime de match à
+  4 000 € coûte au club 4 000 € par titularisation, mais ne vaut au joueur que ce
+  qu'il croit pouvoir en toucher : un remplaçant ne l'échange pas contre le même
+  salaire garanti qu'un cadre. Et même à espérance égale, une prime vaut moins
+  qu'un salaire, parce qu'elle peut ne pas tomber. C'est de cet écart que
+  naissent les décisions du mercato.
+- **Un montage ne doit jamais valoir mieux que l'argent.** Le coefficient de la
+  part à la revente avait d'abord été posé à 1,1, en raisonnant sur un joueur
+  revendu plus cher qu'acheté. Le test de sûreté du module a montré ce que cela
+  ouvrait : quatre annuités et trente pour cent de revente valaient au vendeur
+  22 % de plus que le comptant, c'est-à-dire qu'on achetait au rabais avec des
+  promesses. Ramené à 0,5.
+- **Un agent pour dix joueurs, et non un par joueur.** Un agent attaché à un seul
+  client n'aurait pas de mémoire utile : on le froisse, on ne le revoit jamais.
+  Dix-huit hommes qui se partagent le championnat rendent chaque négociation
+  conséquente, parce que celui qu'on a humilié en juin tient l'ouvreur qu'on
+  voudra en janvier. Et leur casting est fixe : la graine de partie change à
+  chaque saison, tirer les agents dessus aurait fait dériver le tarif d'hommes
+  qu'on est censé connaître depuis vingt ans.
+- **Une rancune doit s'estomper.** Sans oubli, une carrière de vingt saisons
+  finissait avec dix-huit agents à -100 et un mercato fermé pour de bon. Un
+  dixième par an : tenace, pas éternel.
+- **La concurrence se joue sur le joueur, pas sur le chèque.** Une enchère où
+  chacun renchérit jusqu'au dernier aurait donné un marché que le plus riche
+  gagne toujours. Le concurrent s'aligne sur l'indemnité, déjà connue, et se bat
+  sur ce qui décide vraiment un joueur : le salaire et le rang. Un club modeste
+  peut donc perdre une cible malgré une offre supérieure, et la leçon est juste.
+- **Le rappel d'un prêté n'est pas un droit.** Libre, il aurait vidé le prêt de
+  son arbitrage : on prêterait tout le monde en août pour rapatrier qui l'on veut
+  à la première blessure. Il n'existe que dans le cas qui l'a fait entrer dans
+  les usages, la crise de blessures à un poste, et il fait tomber l'option
+  d'achat.
+- **Le pré-contrat s'exécute avant l'expiration des contrats**, au rollover. Dans
+  l'autre ordre, le joueur serait passé par la case agent libre et le marché IA
+  l'aurait redistribué : la signature de janvier n'aurait servi à rien.
+- **La clause libératoire passe avant le refus pour effectif dégarni.** L'inverse
+  aurait produit un jeu où la clause fonctionne sauf quand elle sert, c'est-à-dire
+  sur le joueur qu'on ne peut pas remplacer.
+
 ## [V0.63] : Le monde s'élargit
 
 Le jeu se jouait dans un pays fermé. Trente clubs français, un vivier français,

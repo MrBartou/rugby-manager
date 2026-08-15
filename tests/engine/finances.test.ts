@@ -59,7 +59,7 @@ function makePlayer(salary: number, opts: Partial<Player> = {}): Player {
 describe('finances — calculs', () => {
   it('payroll annuel = somme des salaires actifs', () => {
     const players = [makePlayer(100_000), makePlayer(200_000), makePlayer(300_000)];
-    expect(computeAnnualPayroll(players)).toBe(600_000);
+    expect(computeAnnualPayroll(players, 2025)).toBe(600_000);
   });
 
   it('payroll exclut les retraités', () => {
@@ -67,25 +67,37 @@ describe('finances — calculs', () => {
       makePlayer(100_000),
       makePlayer(500_000, { retired: true }),
     ];
-    expect(computeAnnualPayroll(players)).toBe(100_000);
+    expect(computeAnnualPayroll(players, 2025)).toBe(100_000);
   });
 
   it('payroll par journée = annuel / 26', () => {
     const players = [makePlayer(2_600_000)];
-    expect(computeRoundPayroll(players)).toBe(2_600_000 / REGULAR_ROUNDS);
+    expect(computeRoundPayroll(players, 2025)).toBe(2_600_000 / REGULAR_ROUNDS);
   });
 
   it('la Pro D2 étale le même salaire sur ses trente journées', () => {
     // V0.60 : le 26 en dur ne facturait que 26 des 30 journées de Pro D2, soit
     // 15 % de masse salariale offerte à toute la division.
     const players = [makePlayer(3_000_000)];
-    expect(computeRoundPayroll(players, 30)).toBe(100_000);
-    expect(computeRoundPayroll(players, 30) * 30).toBe(3_000_000);
+    expect(computeRoundPayroll(players, 2025, 30)).toBe(100_000);
+    expect(computeRoundPayroll(players, 2025, 30) * 30).toBe(3_000_000);
+  });
+
+  it('un salaire progressif coûte plus cher la quatrième année que la première', () => {
+    // V0.64 : la masse salariale lit le salaire **en vigueur**. Sans cela, un
+    // contrat qui monte de 8 % par an aurait été facturé au tarif de sa
+    // signature pendant toute sa durée, et la progression n'aurait été qu'un
+    // argument de négociation gratuit.
+    const players = [makePlayer(200_000, {
+      contract: { startSeason: 2025, endSeason: 2029, annualSalary: 200_000, salaryProgression: 0.08 },
+    })];
+    expect(computeAnnualPayroll(players, 2025)).toBe(200_000);
+    expect(computeAnnualPayroll(players, 2028)).toBeGreaterThan(250_000);
   });
 
   it('et un nombre de journées absurde retombe sur la valeur par défaut', () => {
     const players = [makePlayer(2_600_000)];
-    expect(computeRoundPayroll(players, 0)).toBe(computeRoundPayroll(players));
+    expect(computeRoundPayroll(players, 2025, 0)).toBe(computeRoundPayroll(players, 2025));
   });
 
   // V0.60 : la billetterie a quitté ce fichier. Elle vivait ici pour les clubs

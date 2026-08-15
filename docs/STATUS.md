@@ -1,6 +1,6 @@
-# Statut global : V0.63
+# Statut global : V0.64
 
-> Dernière mise à jour : V0.63 livrée. **1454/1454 tests verts. Calibration 12/12 cibles atteintes (8000 matchs par scénario).**
+> Dernière mise à jour : V0.64 livrée. **1557/1557 tests verts. Calibration 12/12 cibles atteintes (8000 matchs par scénario, inchangée : le moteur de match n'a pas bougé).**
 >
 > Ce document a longtemps annoncé V0.5 alors que le code était déjà en V0.10+ : les jalons
 > V0.6 à V0.12 (carrière, transferts, finances, JIFF, formation, internationaux, records)
@@ -342,6 +342,16 @@
 - [x] Marché international : pool anglo-celte et hémisphère sud, recrues non-JIFF, réputation du club exigée par le joueur
 - [x] Vente à l'étranger : les clubs européens paient au-dessus du marché français, et l'expatrié perd la sélection
 - [x] Tests internationaux joués par le moteur de match : performances individuelles, capes réservées aux vingt-trois d'une feuille, fatigue au prorata des minutes, blessures en bleu
+
+### ✅ V0.64 : Le mercato mûrit
+- [x] Clauses de contrat branchées : clause libératoire, primes de match, d'essai et de sélection, salaire progressif, année en option
+- [x] Les primes se paient le soir du match, sur une ligne de bilan distincte du salaire
+- [x] Paiement échelonné et pourcentage à la revente, escomptés par le vendeur selon sa trésorerie ; registre d'échéances soldé à l'ouverture de chaque saison, pour tous les clubs
+- [x] Dix-huit agents se partagent le championnat : commission prélevée, relation qui se dégrade et s'estompe, blocage d'un dossier, sollicitations spontanées
+- [x] Revalorisation en cours de contrat et résiliation à l'amiable, depuis la fiche du joueur
+- [x] Surenchère : le nombre de clubs intéressés s'affiche avant l'offre, et l'un d'eux peut emporter la cible après les deux accords
+- [x] Pré-contrats à six mois de l'échéance, dans les deux sens : on signe le joueur d'un autre, on perd le sien
+- [x] Prêt avec option d'achat obligatoire ou facultative, levée sur les minutes réellement jouées, et rappel anticipé réservé à la crise de blessures
 
 ### ⬜ V0.9 — Bêta privée
 - [ ] Init Tauri (binaire desktop)

@@ -244,26 +244,31 @@ tout reste procédural mais devient **persistant**.
 
 ---
 
-## V0.64 — Le mercato mûrit
+## V0.64 — Le mercato mûrit ✅ *livrée*
 
 **Objectif : la profondeur de négociation d'un FM.** La structure de contrat est
 plate (salaire + durée) et l'« agent » n'est qu'un expéditeur de mail.
 
-- [ ] **Clauses réelles** : brancher `releaseClause` (clause libératoire) et
-      `performanceBonus` (déclarés dans `Contract`, jamais lus) + primes de match /
-      d'essai / de sélection, salaire progressif, option d'année supplémentaire
-- [ ] **Pourcentage à la revente** et **paiement échelonné** dans les négociations
-      entre clubs
-- [ ] **Agents comme acteurs** : commission, relation avec le manager, agent qui
-      bloque un deal ou propose un joueur (les « sollicitations d'agents » notées
-      non faites depuis V0.43)
-- [ ] **Renégociation en cours de contrat** à l'initiative du manager (prolongation,
-      revalorisation — reliquat V0.43)
-- [ ] **Surenchère concurrentielle** : un club IA peut se positionner sur votre cible
-      (hors périmètre depuis V0.6)
-- [ ] Pré-contrats à 6 mois de la fin (esprit Bosman), résiliation à l'amiable
-- [ ] **Prêt avec option d'achat** (obligatoire ou non), et rappel anticipé d'un
-      prêté en cas de crise de blessures
+- [x] **Clauses réelles** : `releaseClause` et les primes reviennent, branchées
+      (`club/contract-clauses.ts`). Primes de match, d'essai et de sélection payées
+      le soir même, salaire progressif facturé à la masse salariale, année en
+      option tenue par le club ou par le joueur.
+- [x] **Pourcentage à la revente** et **paiement échelonné** : le vendeur compare
+      en euros d'aujourd'hui, l'acheteur ne sort que la première annuité, et un
+      registre d'échéances traverse les saisons (`club/transfer-deals.ts`).
+- [x] **Agents comme acteurs** : dix-huit agents se partagent le championnat,
+      prennent leur commission, se souviennent, bloquent un dossier ou proposent
+      un joueur (`club/agents.ts`). Les « sollicitations d'agents » de la V0.43
+      sont faites.
+- [x] **Renégociation en cours de contrat** à l'initiative du joueur comme du
+      manager, sur sa fiche (`club/contract-talks.ts`).
+- [x] **Surenchère concurrentielle** : le nombre de clubs sur le coup s'affiche
+      avant de miser, et l'un d'eux peut emporter la cible sur le fil
+      (`club/bidding-war.ts`).
+- [x] Pré-contrats à six mois de la fin, dans les deux sens, et résiliation à
+      l'amiable.
+- [x] **Prêt avec option d'achat** (obligatoire ou non), et rappel anticipé en
+      crise de blessures.
 
 ---
 

@@ -11,6 +11,7 @@
  * Pas de banqueroute en V0.6 — le solde peut devenir négatif, c'est juste un warning.
  */
 
+import { salaryForSeason } from './contract-clauses.js';
 import type { Club, ClubId, Player } from '../types.js';
 
 /**
@@ -44,7 +45,13 @@ export interface PastSeasonFinances {
 }
 
 export interface FinancialMovement {
-  readonly kind: 'PAYROLL' | 'MATCH_REVENUE' | 'SPONSOR' | 'TRANSFER_IN' | 'TRANSFER_OUT';
+  /**
+   * `BONUS` est distinct de `PAYROLL` depuis la V0.64 : une prime se déclenche
+   * ou non, alors qu'un salaire tombe. Les confondre aurait rendu illisible la
+   * seule question qui compte au bilan, celle de savoir si les clauses signées
+   * l'été ont coûté ce qu'on avait prévu.
+   */
+  readonly kind: 'PAYROLL' | 'BONUS' | 'MATCH_REVENUE' | 'SPONSOR' | 'TRANSFER_IN' | 'TRANSFER_OUT';
   readonly amount: number;        // signé : revenu = positif, dépense = négatif
   readonly round?: number;
   readonly note?: string;
@@ -54,12 +61,20 @@ export interface FinancialMovement {
 // Calculs
 // =============================================================================
 
-/** Payroll annuel = somme des salaires des joueurs actifs du club. */
-export function computeAnnualPayroll(playersOfClub: readonly Player[]): number {
+/**
+ * Payroll annuel = somme des salaires **en vigueur** des joueurs actifs.
+ *
+ * La saison est un paramètre obligatoire depuis la V0.64, et non une valeur par
+ * défaut : un contrat progressif ne coûte pas la même chose la première et la
+ * quatrième année, et une valeur par défaut aurait laissé la moitié des appels
+ * facturer le salaire de la signature pendant cinq ans sans que rien ne casse.
+ * C'est le défaut favori de ce projet, on le ferme à la compilation.
+ */
+export function computeAnnualPayroll(playersOfClub: readonly Player[], season: number): number {
   let total = 0;
   for (const p of playersOfClub) {
     if (p.retired) continue;
-    total += p.contract.annualSalary;
+    total += salaryForSeason(p.contract, season);
   }
   return total;
 }
@@ -71,10 +86,11 @@ export function computeAnnualPayroll(playersOfClub: readonly Player[]): number {
  */
 export function computeRoundPayroll(
   playersOfClub: readonly Player[],
+  season: number,
   regularRounds: number = REGULAR_ROUNDS,
 ): number {
   const rounds = regularRounds > 0 ? regularRounds : REGULAR_ROUNDS;
-  return Math.round(computeAnnualPayroll(playersOfClub) / rounds);
+  return Math.round(computeAnnualPayroll(playersOfClub, season) / rounds);
 }
 
 /** Recette annuelle "sponsor + TV" — V0.6 : prise sur annualBudget du club. */

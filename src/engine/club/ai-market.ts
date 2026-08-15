@@ -509,7 +509,7 @@ export function runAiMarket(input: AiMarketInput): AiMarketResult {
   const trimmable = input.clubs.filter(c => c.id !== input.playerClubId);
   for (const club of rules.replenish ? trimmable : []) {
     let roster = rosterOf(club.id);
-    let payroll = computeAnnualPayroll(roster);
+    let payroll = computeAnnualPayroll(roster, input.currentSeason);
     const cap = salaryCapFor(capOf);
     let released = 0;
 
@@ -545,7 +545,7 @@ export function runAiMarket(input: AiMarketInput): AiMarketResult {
 
       released++;
       roster = rosterOf(club.id);
-      payroll = computeAnnualPayroll(roster);
+      payroll = computeAnnualPayroll(roster, input.currentSeason);
     }
   }
 
@@ -667,7 +667,7 @@ function attemptSigning(ctx: SigningContext): AiTransfer | undefined {
 
   const budget = budgets.get(buyer.id) ?? 0;
   const roster = rosterOf(buyer.id);
-  const payroll = computeAnnualPayroll(roster);
+  const payroll = computeAnnualPayroll(roster, ctx.currentSeason);
 
   // Deux contraintes distinctes, et c'est la plus serrée qui commande :
   //  - le **budget** dit ce que le club peut payer ;
@@ -793,8 +793,8 @@ function replenishSquad(args: {
   // relâcher de nouveau la saison suivante — une boucle absurde observée en
   // mesure sur six saisons.
   let headroom = Math.min(
-    club.annualBudget - computeAnnualPayroll(squad()),
-    salaryCapFor(args.division) - computeAnnualPayroll(squad()),
+    club.annualBudget - computeAnnualPayroll(squad(), currentSeason),
+    salaryCapFor(args.division) - computeAnnualPayroll(squad(), currentSeason),
   );
 
   while (squad().length < TARGET_SQUAD_SIZE) {

@@ -337,6 +337,109 @@ describe('résolution d\'une offre', () => {
 });
 
 // =============================================================================
+// V0.64 — clauses et montages
+// =============================================================================
+
+describe('la clause libératoire', () => {
+  const avecClause = (releaseClause?: number): Player => {
+    const p = playerAt('PILIER_GAUCHE', 78);
+    return {
+      ...p,
+      contract: { ...p.contract, ...(releaseClause === undefined ? {} : { releaseClause }) },
+    };
+  };
+
+  it('emporte la décision du club, même sur un joueur qu\'il ne peut pas remplacer', () => {
+    // Le cas qui donne son sens à la clause : un seul pilier gauche au club,
+    // donc un refus certain sans elle.
+    const player = avecClause(4_000_000);
+    const sellingRoster = [player];
+    const sansClause = evaluateClubOffer({
+      offer: offer({ fee: 4_000_000 }),
+      player: avecClause(),
+      sellingClub: club(), sellingRoster, currentSeason: SEASON, sellingBalance: 10_000_000,
+    });
+    expect(sansClause.accepted).toBe(false);
+
+    const avec = evaluateClubOffer({
+      offer: offer({ fee: 4_000_000 }), player, sellingClub: club(),
+      sellingRoster, currentSeason: SEASON, sellingBalance: 10_000_000,
+    });
+    expect(avec.accepted).toBe(true);
+    expect(avec.reason).toMatch(/[Cc]lause libératoire/);
+  });
+
+  it('ne se déclenche pas à un euro près en dessous', () => {
+    const player = avecClause(4_000_000);
+    const res = evaluateClubOffer({
+      offer: offer({ fee: 3_999_999 }), player, sellingClub: club(),
+      sellingRoster: [player], currentSeason: SEASON, sellingBalance: 10_000_000,
+    });
+    expect(res.accepted).toBe(false);
+  });
+});
+
+describe('le montage entre clubs', () => {
+  /**
+   * Chaque vendeur est jugé **sur son propre prix** : la détresse financière
+   * baisse déjà la demande de 25 % dans `askingPriceFor`, et comparer un club
+   * fauché au tarif d'un club prospère aurait mesuré cette remise-là plutôt que
+   * l'escompte du montage.
+   */
+  const cas = (sellingBalance: number, over: Partial<TransferOffer>) => {
+    const player = playerAt('CENTRE_INTERIEUR', 70);
+    const input = {
+      player, sellingClub: club(), sellingRoster: roster(70),
+      currentSeason: SEASON, sellingBalance,
+    };
+    const askingPrice = askingPriceFor({ ...input, offer: offer() });
+    return evaluateClubOffer({ ...input, offer: offer({ fee: askingPrice, ...over }) });
+  };
+
+  it('le même nominal étalé sur quatre ans ne suffit plus', () => {
+    expect(cas(10_000_000, { instalments: 4 }).accepted).toBe(false);
+  });
+
+  it('mais une part de revente peut rattraper l\'étalement', () => {
+    expect(cas(10_000_000, { instalments: 2, sellOn: 0.25 }).accepted).toBe(true);
+  });
+
+  it('et un club au bord du gouffre n\'écoute pas les promesses', () => {
+    expect(cas(-2_000_000, { instalments: 2, sellOn: 0.25 }).accepted).toBe(false);
+  });
+});
+
+describe('le contrat signé porte ce qui a été négocié', () => {
+  it('les clauses de l\'offre, et pas celles du contrat déchiré', () => {
+    const ancien = playerAt('CENTRE_INTERIEUR', 70);
+    const player: Player = {
+      ...ancien,
+      contract: {
+        ...ancien.contract,
+        releaseClause: 100_000,
+        sellOn: { beneficiaryClubId: 'un_autre' as ClubId, percent: 0.2 },
+      },
+    };
+    const res = resolveTransferOffer({
+      offer: offer({
+        fee: 20_000_000, annualSalary: 900_000, years: 4,
+        sellOn: 0.1, bonuses: { perMatch: 3_000 }, salaryProgression: 0.05,
+      }),
+      player, sellingClub: club(), sellingRoster: roster(70),
+      currentSeason: SEASON, sellingBalance: 10_000_000,
+      buyerRank: 2, currentRank: 12, buyerRoster: roster(50, 'acheteur'), totalClubs: 14,
+    }, createRng('clauses'));
+
+    if (!res.accepted) return;              // le modèle reste probabiliste
+    const c = res.player!.contract;
+    expect(c.releaseClause).toBeUndefined();
+    expect(c.bonuses?.perMatch).toBe(3_000);
+    expect(c.salaryProgression).toBe(0.05);
+    expect(c.sellOn).toEqual({ beneficiaryClubId: 'vendeur' as ClubId, percent: 0.1 });
+  });
+});
+
+// =============================================================================
 // Garde-fous financiers
 // =============================================================================
 

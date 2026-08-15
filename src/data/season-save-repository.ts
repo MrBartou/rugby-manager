@@ -27,6 +27,9 @@ import type { Mail } from '../engine/season/mailbox.js';
 import type { ManagerContract } from '../engine/season/contract-negotiation.js';
 import type { DivisionState } from '../engine/season/divisions.js';
 import type { StaffMember } from '../engine/club/staff.js';
+import type { AgentStandings } from '../engine/club/agents.js';
+import type { TransferInstalment } from '../engine/club/transfer-deals.js';
+import type { PreContract } from '../engine/club/contract-talks.js';
 import type { ClubFacilities, ClubPlan, OngoingProject } from '../engine/club/club-management.js';
 import type { PlayerPromise, TransferRequest } from '../engine/human/player-talk.js';
 import type { SquadStatus } from '../engine/club/squad-status.js';
@@ -324,6 +327,17 @@ export interface SeasonSave extends SeasonSaveMeta {
    * All Blacks auraient vingt-deux ans à chaque saison.
    */
   readonly careerStartSeason?: number;
+  /**
+   * V0.64 : ce que les agents gardent de nous, et ce que les clubs se doivent.
+   *
+   * Deux états qu'aucune règle ne permet de reconstruire. Une carrière rechargée
+   * sans eux repartirait avec des agents amnésiques et des créances effacées,
+   * c'est-à-dire avec un mercato qui ne se souvient de rien.
+   */
+  readonly agentStandings?: AgentStandings;
+  readonly transferLedger?: readonly TransferInstalment[];
+  /** V0.64 : pré-contrats signés, à honorer au prochain changement de saison. */
+  readonly preContracts?: readonly PreContract[];
   /** V0.45 — installations, chantier en cours et politique commerciale. */
   readonly direction?: {
     readonly facilities: ClubFacilities;
@@ -735,6 +749,10 @@ export function buildSeasonSaveFromState(
     readonly europeanWorld?: EuropeanWorld;
     /** V0.63 : saison du début de carrière. */
     readonly careerStartSeason?: number;
+    /** V0.64 : relations avec les agents et échéances de transfert. */
+    readonly agentStandings?: AgentStandings;
+    readonly transferLedger?: readonly TransferInstalment[];
+    readonly preContracts?: readonly PreContract[];
   } = {},
 ): SeasonSave {
   const ranked = [...state.standings.values()].sort((a, b) => {
@@ -808,6 +826,9 @@ export function buildSeasonSaveFromState(
     ...(extras.expectations !== undefined ? { expectations: extras.expectations } : {}),
     ...(extras.headToHead !== undefined ? { headToHead: extras.headToHead } : {}),
     ...(extras.europeanWorld !== undefined ? { europeanWorld: extras.europeanWorld } : {}),
+    ...(extras.agentStandings !== undefined ? { agentStandings: extras.agentStandings } : {}),
+    ...(extras.transferLedger !== undefined ? { transferLedger: extras.transferLedger } : {}),
+    ...(extras.preContracts !== undefined ? { preContracts: extras.preContracts } : {}),
     ...(extras.careerStartSeason !== undefined ? { careerStartSeason: extras.careerStartSeason } : {}),
   };
 }

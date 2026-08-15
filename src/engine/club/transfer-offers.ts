@@ -24,10 +24,18 @@
  */
 
 import type { Rng } from '../rng.js';
-import type { Club, ClubId, Player, PlayerId } from '../types.js';
+import type { Club, ClubId, Contract, Player, PlayerId } from '../types.js';
 import { approximateOverall } from './development.js';
 import { canCover } from '../match/bench.js';
 import { expectedMarketSalary } from './contracts.js';
+import {
+  averageSalary,
+  expectedEarningsForPlayer,
+  perceivedContractValue,
+  releaseClauseMet,
+} from './contract-clauses.js';
+import { effectiveFee, normaliseTerms, type DealTerms } from './transfer-deals.js';
+import type { ContractBonuses, ContractOption } from '../types.js';
 
 // =============================================================================
 // Valorisation
@@ -98,11 +106,53 @@ export interface TransferOffer {
   readonly playerId: PlayerId;
   readonly fromClubId: ClubId;
   readonly toClubId: ClubId;
-  /** Indemnité de transfert proposée au club vendeur. */
+  /** Indemnité de transfert proposée au club vendeur, toutes échéances comprises. */
   readonly fee: number;
-  /** Salaire annuel proposé au joueur. */
+  /** Salaire annuel proposé au joueur, première année. */
   readonly annualSalary: number;
   readonly years: number;
+
+  /**
+   * V0.64 — le montage entre clubs, et les clauses proposées au joueur.
+   *
+   * Tout est facultatif : une offre sèche reste une offre valable, et c'est
+   * encore la plus fréquente. Ce qui compte est que les deux camps lisent la
+   * même offre, chacun avec sa règle : le club la ramène en euros d'aujourd'hui,
+   * le joueur en salaire garanti équivalent.
+   */
+  readonly instalments?: number;
+  readonly sellOn?: number;
+  readonly bonuses?: ContractBonuses;
+  readonly releaseClause?: number;
+  readonly salaryProgression?: number;
+  readonly option?: ContractOption;
+  readonly signingBonus?: number;
+}
+
+/** Le montage tel que le vendeur le lira. */
+export function dealTermsOf(offer: TransferOffer): DealTerms {
+  return normaliseTerms({
+    fee: offer.fee,
+    instalments: offer.instalments ?? 1,
+    sellOn: offer.sellOn ?? 0,
+  });
+}
+
+/** Le contrat que le joueur signerait si tout aboutissait. */
+export function contractFromOffer(offer: TransferOffer, currentSeason: number): Contract {
+  return {
+    startSeason: currentSeason,
+    endSeason: currentSeason + offer.years,
+    annualSalary: offer.annualSalary,
+    ...(offer.signingBonus !== undefined ? { signingBonus: offer.signingBonus } : {}),
+    ...(offer.bonuses !== undefined ? { bonuses: offer.bonuses } : {}),
+    ...(offer.releaseClause !== undefined ? { releaseClause: offer.releaseClause } : {}),
+    ...(offer.salaryProgression !== undefined ? { salaryProgression: offer.salaryProgression } : {}),
+    ...(offer.option !== undefined ? { option: offer.option } : {}),
+    ...(offer.sellOn !== undefined && offer.sellOn > 0
+      ? { sellOn: { beneficiaryClubId: offer.fromClubId, percent: offer.sellOn } }
+      : {}),
+  };
 }
 
 export type RefusalSource = 'CLUB' | 'JOUEUR';
@@ -188,8 +238,24 @@ export function askingPriceFor(input: ClubDecisionInput): number {
 }
 
 export function evaluateClubOffer(input: ClubDecisionInput): OfferResponse {
-  const { offer, player, sellingRoster } = input;
+  const { offer, player, sellingRoster, sellingBalance } = input;
   const cover = coverAtPosition(player, sellingRoster);
+
+  /*
+   * V0.64 — la clause libératoire passe avant tout le reste, y compris avant le
+   * refus pour effectif dégarni.
+   *
+   * C'est le sens même de la clause : le club a vendu par avance son droit de
+   * dire non. La placer après le contrôle de couverture aurait produit un jeu
+   * où la clause fonctionne sauf quand elle sert, c'est-à-dire sur le joueur
+   * qu'on ne peut pas remplacer.
+   */
+  if (releaseClauseMet(player.contract, offer.fee)) {
+    return {
+      accepted: true,
+      reason: `Clause libératoire de ${formatM(player.contract.releaseClause ?? 0)} atteinte : le club ne peut pas s'y opposer.`,
+    };
+  }
 
   // Aucune couverture : le club ne peut pas aligner une équipe sans lui, quel
   // que soit le chèque. Ce refus passe **avant** l'examen du prix — sinon une
@@ -203,14 +269,23 @@ export function evaluateClubOffer(input: ClubDecisionInput): OfferResponse {
 
   const askingPrice = askingPriceFor(input);
 
-  if (offer.fee >= askingPrice) {
-    return { accepted: true, reason: `Indemnité jugée suffisante (valeur estimée ${formatM(askingPrice)}).` };
+  // Le vendeur ne compare pas le nominal : il compare ce qu'il touche vraiment,
+  // échéances escomptées et part de revente comprises.
+  const cashEquivalent = effectiveFee(dealTermsOf(offer), sellingBalance);
+
+  if (cashEquivalent >= askingPrice) {
+    return {
+      accepted: true,
+      reason: offer.fee > cashEquivalent
+        ? `Montage accepté : ${formatM(offer.fee)} qui en valent ${formatM(cashEquivalent)} aujourd'hui.`
+        : `Indemnité jugée suffisante (valeur estimée ${formatM(askingPrice)}).`,
+    };
   }
 
   // Le vendeur ne chiffre sa demande que face à une offre sérieuse. Sinon un
   // euro symbolique suffirait à connaître le tarif de tout le championnat, et
   // le scouting perdrait sa raison d'être dans la valorisation.
-  const engaged = offer.fee >= askingPrice * ENGAGEMENT_THRESHOLD;
+  const engaged = cashEquivalent >= askingPrice * ENGAGEMENT_THRESHOLD;
 
   if (!engaged) {
     return { accepted: false, reason: 'Offre très en dessous de la valeur du joueur.' };
@@ -262,6 +337,13 @@ export interface PlayerDecisionInput {
   /** Effectif de l'acheteur : sert à estimer le temps de jeu promis. */
   readonly buyerRoster: readonly Player[];
   readonly totalClubs: number;
+  /**
+   * V0.64 : coefficient imposé par l'agent du joueur, 1 quand il ne s'en mêle
+   * pas. Au-dessus de 1, il renchérit sur ce que son joueur attend ; en dessous,
+   * il aplanit. Il agit sur l'**attente**, pas sur l'offre : un agent ne change
+   * pas ce que le club propose, il change ce qui suffit à convaincre.
+   */
+  readonly agentFactor?: number;
 }
 
 /**
@@ -273,18 +355,41 @@ export interface PlayerDecisionInput {
 export function evaluatePlayerOffer(input: PlayerDecisionInput, rng: Rng): OfferResponse {
   const { offer, player, currentSeason, buyerRank, currentRank, buyerRoster, totalClubs } = input;
 
-  const expected = expectedMarketSalary(player, currentSeason);
-  const current = player.contract.annualSalary;
+  const expected = expectedMarketSalary(player, currentSeason) * (input.agentFactor ?? 1);
+  const current = averageSalary(player.contract);
 
   // Un joueur sous contrat ne part pas par défaut : il faut une vraie raison.
   // Sans cette inertie, une offre tiède suffirait à débaucher n'importe qui.
   let score = -16;
 
+  // 3 bis. Le temps de jeu se calcule avant le salaire depuis la V0.64 : c'est
+  //        lui qui dit ce que le joueur espère toucher en primes.
+  const betterAtPosition = buyerRoster.filter(
+    p => p.position === player.position
+      && !p.retired && !p.freeAgent
+      && approximateOverall(p) > approximateOverall(player),
+  ).length;
+
   // 1. Salaire — comparé à ce qu'il touche et à ce qu'il vaut sur le marché.
   //    Le terme **sature** : sinon tripler le salaire rapportait +200 points et
   //    l'argent écrasait le projet sportif, le temps de jeu et la loyauté. Au-delà
   //    d'un certain niveau, un joueur bien payé l'est déjà assez.
-  const salaryRatio = offer.annualSalary / Math.max(expected, current);
+  //
+  //    V0.64 : ce n'est plus le salaire nu qui entre ici, mais tout le contrat
+  //    ramené en salaire garanti équivalent. Sans cela, les primes et la clause
+  //    libératoire auraient été deux lignes que le joueur signait sans les lire.
+  const offeredContract = contractFromOffer(offer, currentSeason);
+  const perceived = perceivedContractValue({
+    player,
+    contract: offeredContract,
+    earnings: expectedEarningsForPlayer({
+      player,
+      expectedPlayRatio: betterAtPosition === 0 ? 0.85 : betterAtPosition === 1 ? 0.6 : 0.3,
+      roundsInSeason: 26,
+    }),
+    marketValue: estimateMarketValue(player, currentSeason),
+  });
+  const salaryRatio = perceived / Math.max(expected, current);
   const salaryAppeal = Math.tanh((salaryRatio - 1) * 1.5) * 42;
   score += salaryAppeal;
 
@@ -297,11 +402,6 @@ export function evaluatePlayerOffer(input: PlayerDecisionInput, rng: Rng): Offer
   score += normalisedGain * (player.hidden.ambition / 100) * 3.2;
 
   // 3. Temps de jeu probable — combien de joueurs meilleurs à son poste chez l'acheteur ?
-  const betterAtPosition = buyerRoster.filter(
-    p => p.position === player.position
-      && !p.retired && !p.freeAgent
-      && approximateOverall(p) > approximateOverall(player),
-  ).length;
   const playingTimePenalty = betterAtPosition === 0 ? 12 : betterAtPosition === 1 ? 0 : -14 * betterAtPosition;
   score += playingTimePenalty;
 
@@ -357,6 +457,7 @@ export interface ResolveTransferInput extends ClubDecisionInput {
   readonly currentRank: number;
   readonly buyerRoster: readonly Player[];
   readonly totalClubs: number;
+  readonly agentFactor?: number;
 }
 
 /**
@@ -380,6 +481,7 @@ export function resolveTransferOffer(input: ResolveTransferInput, rng: Rng): Tra
       currentRank: input.currentRank,
       buyerRoster: input.buyerRoster,
       totalClubs: input.totalClubs,
+      ...(input.agentFactor !== undefined ? { agentFactor: input.agentFactor } : {}),
     },
     rng,
   );
@@ -391,12 +493,14 @@ export function resolveTransferOffer(input: ResolveTransferInput, rng: Rng): Tra
   const player: Player = {
     ...input.player,
     clubId: input.offer.toClubId,
-    contract: {
-      ...input.player.contract,
-      startSeason: input.currentSeason,
-      endSeason: input.currentSeason + input.offer.years,
-      annualSalary: input.offer.annualSalary,
-    },
+    /*
+     * Le contrat est **remplacé**, pas fusionné avec l'ancien. Un étalement
+     * conservé par `...contract` aurait fait suivre au joueur la clause
+     * libératoire négociée avec son club précédent, et la part de revente due à
+     * un club encore antérieur : deux clauses qui appartiennent au contrat
+     * qu'on vient de déchirer.
+     */
+    contract: contractFromOffer(input.offer, input.currentSeason),
     // Un joueur qui vient d'obtenir son transfert arrive gonflé à bloc.
     dynamic: { ...input.player.dynamic, mood: Math.min(100, input.player.dynamic.mood + 12) },
   };

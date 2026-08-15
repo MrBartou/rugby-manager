@@ -313,7 +313,15 @@ describe('Season flow — offre pour un joueur sous contrat', () => {
     const after = session.getState();
     expect(after.playerClubRoster.length).toBe(rosterBefore + 1);
     expect(after.playerClubRoster.some(p => p.id === target.id)).toBe(true);
-    expect(after.financesByClub.get('a' as ClubId)!.balance).toBe(balanceBefore - fee);
+    // V0.64 : l'acheteur paie l'indemnité **et** la commission de l'agent, que
+    // le vendeur ne touche pas. C'est la dépense qui rend une relation d'agent
+    // rentable ou coûteuse, et elle doit se voir au bilan.
+    const commission = session.previewBid(target).agentCommission;
+    expect(commission).toBeGreaterThan(0);
+    expect(after.financesByClub.get('a' as ClubId)!.balance)
+      .toBeLessThan(balanceBefore - fee);
+    expect(balanceBefore - after.financesByClub.get('a' as ClubId)!.balance - fee)
+      .toBeLessThan(fee * 0.2);
     expect(after.financesByClub.get('b' as ClubId)!.balance).toBe(sellerBefore + fee);
 
     expect(outcome.player.clubId).toBe('a');

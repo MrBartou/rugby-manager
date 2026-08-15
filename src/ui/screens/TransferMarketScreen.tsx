@@ -75,15 +75,43 @@ interface Props {
   readonly loans?: {
     readonly candidates: readonly Player[];
     readonly active: readonly {
+      readonly playerId: PlayerId;
       readonly playerName: string;
       readonly clubName: string;
       readonly playingTime: number;
       readonly costLine: string;
+      /** V0.64 : option d'achat consentie au club d'accueil, s'il y en a une. */
+      readonly optionLine?: string;
     }[];
+    /** V0.64 : rappel anticipé : le moteur dira s'il est permis. */
+    readonly onRecall?: (playerId: PlayerId) => { readonly ok: boolean; readonly message: string };
     readonly offersFor: (player: Player) => readonly LoanOffer[];
     readonly tradeoff: (offer: LoanOffer, player: Player) => string;
     readonly onSend: (player: Player, offer: LoanOffer) => void;
   };
+  /**
+   * V0.64 : les joueurs en fin de contrat ailleurs, qu'on peut engager pour la
+   * saison suivante sans verser un centime à leur club.
+   */
+  readonly preContracts?: {
+    readonly windowOpen: boolean;
+    readonly targets: readonly {
+      readonly player: Player;
+      readonly clubName: string;
+      readonly expectedSalary: number;
+      readonly agentName: string;
+      readonly takenBy?: string;
+    }[];
+    readonly onSign: (player: Player, annualSalary: number, years: number) => string;
+  };
+  /**
+   * V0.64 : ce qu'un agent conquis vient vous proposer de lui-même.
+   */
+  readonly agentCalls?: readonly {
+    readonly agentId: string;
+    readonly playerId: PlayerId;
+    readonly pitch: string;
+  }[];
   readonly onBack?: () => void;
   /** V0.61 — ouvrir la fiche d'un joueur suivi. */
   readonly onOpenPlayer?: (player: Player) => void;
@@ -152,11 +180,15 @@ export function TransferMarketScreen({
   onSignFreeAgent, onResolveIncomingOffer,
   leaguePlayers, clubNameById, onOpenPlayer,
   previewBid, onSubmitBid, aiMarket, transferWindow, jokerOptions, onSignJoker, regulation, loans,
+  preContracts, agentCalls,
   international,
 }: Props) {
   const [tab, setTab] = useState<
     'RECHERCHE' | 'SUIVIS' | 'MERCATO' | 'ETRANGER' | 'LIBRES' | 'JOKER' | 'OFFRES' | 'PRETS'
+    | 'PRECONTRATS'
   >('RECHERCHE');
+  /** V0.64 : retour de la dernière tentative de pré-contrat. */
+  const [preContractNote, setPreContractNote] = useState<string | null>(null);
   /** V0.63 : cible étrangère dont on prépare l'offre. */
   const [intlTarget, setIntlTarget] = useState<InternationalTarget | null>(null);
   const [intlFee, setIntlFee] = useState(0);
@@ -180,6 +212,19 @@ export function TransferMarketScreen({
   const [bidSalary, setBidSalary] = useState(200_000);
   const [bidYears, setBidYears] = useState(3);
   const [bidResult, setBidResult] = useState<BidOutcome | null>(null);
+  /*
+   * V0.64 : le montage et les clauses.
+   *
+   * Repliés par défaut : le mercato doit rester une offre sèche pour qui ne veut
+   * pas monter un dossier. Les déplier est un choix, et c'est ce choix qui donne
+   * au manager pauvre les moyens de signer au-dessus de sa trésorerie.
+   */
+  const [recallNote, setRecallNote] = useState<string | null>(null);
+  const [showTerms, setShowTerms] = useState(false);
+  const [instalments, setInstalments] = useState(1);
+  const [sellOn, setSellOn] = useState(0);
+  const [matchBonus, setMatchBonus] = useState(0);
+  const [releaseClause, setReleaseClause] = useState(0);
 
   const openOfferDialog = (p: Player) => {
     setSelectedFA(p);
@@ -198,6 +243,11 @@ export function TransferMarketScreen({
     setFee(pv.suggestedFee);
     setBidSalary(Math.max(pv.expectedSalary, pv.currentSalary));
     setBidYears(3);
+    setShowTerms(false);
+    setInstalments(1);
+    setSellOn(0);
+    setMatchBonus(0);
+    setReleaseClause(0);
   };
 
   const closeBidDialog = () => {
@@ -208,7 +258,13 @@ export function TransferMarketScreen({
 
   const submitBid = () => {
     if (!target) return;
-    const outcome = onSubmitBid(target, { fee, annualSalary: bidSalary, years: bidYears });
+    const outcome = onSubmitBid(target, {
+      fee, annualSalary: bidSalary, years: bidYears,
+      ...(instalments > 1 ? { instalments } : {}),
+      ...(sellOn > 0 ? { sellOn } : {}),
+      ...(matchBonus > 0 ? { bonuses: { perMatch: matchBonus } } : {}),
+      ...(releaseClause > 0 ? { releaseClause } : {}),
+    });
     setBidResult(outcome);
     // Le chiffrage bouge après coup — trésorerie entamée, délai posé. Sans ce
     // rappel, la modale affichait encore l'ancienne trésorerie après signature
@@ -299,6 +355,7 @@ export function TransferMarketScreen({
           ['JOKER', `Joker médical (${jokerOptions.length})`],
           ['OFFRES', `Offres reçues (${incomingOffers.length})`],
           ['PRETS', `Prêts (${loans?.active.length ?? 0})`],
+          ['PRECONTRATS', `Pré-contrats (${preContracts?.targets.length ?? 0})`],
         ] as const).map(([key, label]) => (
           <button
             key={key}
@@ -660,6 +717,7 @@ export function TransferMarketScreen({
       {tab === 'PRETS' && loans && (
         <div className="dashboard-panel">
           <div className="panel-tag">Joueurs prêtés ({loans.active.length})</div>
+          {recallNote !== null && <p className="bid-hint">{recallNote}</p>}
           {loans.active.length === 0 ? (
             <p className="market-empty">Aucun joueur prêté cette saison.</p>
           ) : (
@@ -670,8 +728,20 @@ export function TransferMarketScreen({
                     <strong>{l.playerName}</strong> à <strong>{l.clubName}</strong>
                     <div className="offer-detail">
                       {Math.round(l.playingTime * 100)} % du temps de jeu promis · {l.costLine}
+                      {l.optionLine !== undefined && ` · ${l.optionLine}`}
                     </div>
                   </div>
+                  {/* V0.64 : le rappel n'est pas un droit : le bouton existe
+                      toujours, et le moteur explique pourquoi il refuse. */}
+                  {loans.onRecall && (
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => setRecallNote(loans.onRecall!(l.playerId).message)}
+                    >
+                      Rappeler
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -890,9 +960,64 @@ export function TransferMarketScreen({
         </div>
       )}
 
+      {tab === 'PRECONTRATS' && (
+        <div className="dashboard-panel">
+          <div className="panel-tag">Fins de contrat ailleurs</div>
+          {/* La règle avant la liste : sans elle, un onglet vide pendant la
+              moitié de la saison passe pour une panne. */}
+          <p className="market-hint">
+            À six mois de l'échéance, un joueur peut s'engager ailleurs pour la saison
+            suivante. Il finit la sienne dans son club, puis vous rejoint sans indemnité.
+          </p>
+          {preContractNote !== null && <p className="bid-hint">{preContractNote}</p>}
+          {!preContracts || !preContracts.windowOpen ? (
+            <p className="market-empty">La fenêtre des pré-contrats n'est pas encore ouverte.</p>
+          ) : preContracts.targets.length === 0 ? (
+            <p className="market-empty">Aucun joueur en dernière année dans le championnat.</p>
+          ) : (
+            <ul className="offers-list">
+              {preContracts.targets.map(t => (
+                <li key={t.player.id as string} className="offer-row">
+                  <div className="offer-text">
+                    <strong>{t.player.firstName} {t.player.lastName}</strong>
+                    {' '}({t.clubName})
+                    <div className="offer-detail">
+                      {t.player.position.replaceAll('_', ' ').toLowerCase()}
+                      {' · '}attend environ {formatEuros(t.expectedSalary)}/an
+                      {' · '}agent : {t.agentName}
+                      {t.takenBy !== undefined && ` · déjà engagé à ${t.takenBy}`}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={t.takenBy !== undefined}
+                    onClick={() => setPreContractNote(
+                      preContracts.onSign(t.player, Math.round(t.expectedSalary * 1.05), 3),
+                    )}
+                  >
+                    S'engager
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       {tab === 'LIBRES' && (
       <div className="dashboard-panel">
         <div className="panel-tag">Agents libres ({freeAgents.length})</div>
+        {/* V0.64 : les sollicitations, notées non faites depuis la V0.43. Elles
+            n'ont de valeur que par celui qui les porte : un agent ne vous
+            appelle que si vous avez bien travaillé avec lui. */}
+        {agentCalls !== undefined && agentCalls.length > 0 && (
+          <ul className="agent-calls">
+            {agentCalls.map(call => (
+              <li key={`${call.agentId}_${call.playerId as string}`}>{call.pitch}</li>
+            ))}
+          </ul>
+        )}
         {freeAgents.length === 0 && <p className="empty">Aucun joueur libre disponible.</p>}
         {freeAgents.length > 0 && (
           <table className="finances-history">
@@ -968,7 +1093,10 @@ export function TransferMarketScreen({
           askingPrice !== undefined ? askingPrice * 1.15 : 0,
         );
 
-        const feeOverBudget = fee > preview.balance;
+        // V0.64 : seule la première annuité sort tout de suite : c'est elle que
+        // la trésorerie doit couvrir, et non l'indemnité entière.
+        const upfront = Math.round(fee / instalments);
+        const feeOverBudget = upfront > preview.balance;
         const salaryOverBudget = bidSalary > preview.payrollHeadroom;
         const canSubmit = !signed && !preview.blocked && preview.cooldownRounds === 0
           && !feeOverBudget && !salaryOverBudget;
@@ -1016,7 +1144,31 @@ export function TransferMarketScreen({
                     <span className="bf-label">Marge salariale</span>
                     <span className={`bf-value ${salaryOverBudget ? 'over' : ''}`}>{formatEuros(preview.payrollHeadroom)}/an</span>
                   </div>
+                  {/* V0.64 : ce qu'on doit savoir avant de miser : qui d'autre
+                      suit le joueur, et à qui l'on parle. Affiché ici et pas
+                      après le refus : perdre une cible qu'on savait convoitée
+                      est une décision, l'apprendre après coup est un tirage. */}
+                  <div className="bid-fact">
+                    <span className="bf-label">Clubs sur le coup</span>
+                    <span className={`bf-value ${preview.interestedClubs >= 3 ? 'over' : ''}`}>
+                      {preview.interestedClubs === 0 ? 'aucun' : preview.interestedClubs}
+                    </span>
+                  </div>
+                  <div className="bid-fact">
+                    <span className="bf-label">Agent</span>
+                    <span className="bf-value">{preview.agentName}</span>
+                  </div>
+                  <div className="bid-fact">
+                    <span className="bf-label">Commission</span>
+                    <span className="bf-value">{formatEuros(preview.agentCommission)}</span>
+                  </div>
                 </div>
+
+                {preview.agentStance !== 'NEUTRE' && (
+                  <p className={`bid-hint ${preview.agentStance === 'BLOQUE' ? 'bid-agent-blocked' : ''}`}>
+                    {preview.agentReason}
+                  </p>
+                )}
 
                 {value.certainty === 'INCONNU' && (
                   <p className="bid-hint">
@@ -1064,6 +1216,78 @@ export function TransferMarketScreen({
                   </label>
                 </div>
 
+                {/* V0.64 : le dossier, replié tant qu'on n'en veut pas. */}
+                <button
+                  type="button"
+                  className="bid-terms-toggle"
+                  aria-expanded={showTerms}
+                  onClick={() => setShowTerms(v => !v)}
+                >
+                  {showTerms ? 'Masquer le montage' : 'Monter un dossier (échéances, revente, primes)'}
+                </button>
+
+                {showTerms && (
+                  <div className="bid-sliders bid-terms">
+                    <label className="bid-slider">
+                      <span className="bs-head">
+                        Paiement échelonné
+                        <strong>
+                          {instalments === 1
+                            ? 'comptant'
+                            : `${instalments} annuités de ${formatEuros(upfront)}`}
+                        </strong>
+                      </span>
+                      <input
+                        type="range" min={1} max={4} value={instalments}
+                        disabled={signed}
+                        onChange={e => setInstalments(Number(e.target.value))}
+                      />
+                    </label>
+                    <label className="bid-slider">
+                      <span className="bs-head">
+                        Pourcentage à la revente
+                        <strong>{sellOn === 0 ? 'aucun' : `${Math.round(sellOn * 100)} %`}</strong>
+                      </span>
+                      <input
+                        type="range" min={0} max={30} step={5} value={Math.round(sellOn * 100)}
+                        disabled={signed}
+                        onChange={e => setSellOn(Number(e.target.value) / 100)}
+                      />
+                    </label>
+                    <label className="bid-slider">
+                      <span className="bs-head">
+                        Prime par match disputé
+                        <strong>{matchBonus === 0 ? 'aucune' : `${formatEuros(matchBonus)}`}</strong>
+                      </span>
+                      <input
+                        type="range" min={0} max={20_000} step={1_000} value={matchBonus}
+                        disabled={signed}
+                        onChange={e => setMatchBonus(Number(e.target.value))}
+                      />
+                    </label>
+                    <label className="bid-slider">
+                      <span className="bs-head">
+                        Clause libératoire
+                        <strong>{releaseClause === 0 ? 'aucune' : formatEuros(releaseClause)}</strong>
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={Math.round(feeSliderMax * 2)}
+                        step={100_000}
+                        value={Math.min(releaseClause, Math.round(feeSliderMax * 2))}
+                        disabled={signed}
+                        onChange={e => setReleaseClause(Number(e.target.value))}
+                      />
+                    </label>
+                    <p className="bid-hint">
+                      Étaler l'indemnité soulage la trésorerie mais fait baisser ce que le
+                      vendeur en retire. Une prime et une clause libératoire, elles, rendent
+                      le contrat plus attirant pour le joueur.
+                    </p>
+                  </div>
+                )}
+
                 {/* Réponse. Le refus doit toujours être attribué : sans savoir qui a
                     dit non, le manager ne sait pas quel curseur bouger. */}
                 {bidResult && bidResult.kind === 'BLOCKED' && (
@@ -1100,6 +1324,12 @@ export function TransferMarketScreen({
                     </div>
                   );
                 })()}
+                {bidResult && bidResult.kind === 'LOST' && (
+                  <div className="bid-response refused">
+                    <strong>Doublé sur le fil</strong>
+                    <p>{bidResult.reason}</p>
+                  </div>
+                )}
                 {bidResult && bidResult.kind === 'SIGNED' && (
                   <div className="bid-response accepted">
                     <strong>Accord trouvé</strong>
