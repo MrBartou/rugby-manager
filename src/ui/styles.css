@@ -11285,3 +11285,27 @@ label.setting:hover { background: rgb(var(--overlay-hi) / 2%); }
 }
 
 .sp-store:hover { color: var(--text); }
+
+/* V0.65 : le marquage, depuis le bord de touche. Deux listes et un verbe :
+   « X colle Y » se lit comme on le dirait à voix haute. */
+.lt-marking {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lt-marking select {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 11px;
+  max-width: 130px;
+  padding: 4px 6px;
+}
+
+.lt-marking-sep {
+  color: var(--text-dim);
+  font-size: 10.5px;
+}
