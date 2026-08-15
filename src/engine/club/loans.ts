@@ -72,6 +72,23 @@ export interface LoanOffer {
   readonly wageShare: number;
   /** Ce que le club promet, en clair. */
   readonly pitch: string;
+  /** V0.64 — ce que le club d'accueil met sur la table pour le garder. */
+  readonly optionToBuy?: LoanOption;
+}
+
+/**
+ * L'option d'achat, V0.64.
+ *
+ * Elle change la nature du prêt. Un prêt sec est un investissement dans un
+ * joueur qu'on récupérera ; un prêt avec option obligatoire est une vente
+ * différée, et le club d'accueil paie l'attente. Entre les deux, l'option
+ * facultative laisse au club d'accueil le droit de juger sur pièces, et c'est
+ * pour cela qu'il en paie moins cher le principe.
+ */
+export interface LoanOption {
+  readonly fee: number;
+  /** Obligatoire : le joueur est vendu quoi qu'il arrive à la fin du prêt. */
+  readonly mandatory: boolean;
 }
 
 /**
@@ -88,6 +105,8 @@ export function loanOffersFor(input: {
   readonly clubs: readonly Club[];
   readonly ownClubId: ClubId;
   readonly rng: Rng;
+  /** V0.64 — valeur marchande du joueur, base de l'option d'achat éventuelle. */
+  readonly optionValue?: number;
 }): readonly LoanOffer[] {
   const candidates = input.clubs
     .filter(c => c.id !== input.ownClubId)
@@ -109,6 +128,19 @@ export function loanOffersFor(input: {
     const playingTime = Math.round((0.45 + modesty * 0.4) * 100) / 100;
     const wageShare = Math.round((0.65 - modesty * 0.35) * 100) / 100;
 
+    // Un club sur trois veut se garder la main sur la suite, et il le dit tout
+    // de suite : une option surgie en fin de saison serait une surprise, pas une
+    // décision. Le montant se cale sur la valeur du joueur, transmise par
+    // l'appelant pour que ce module reste sans dépendance vers la valorisation.
+    const wantsOption = input.optionValue !== undefined && input.rng.nextBool(0.34);
+    const mandatory = wantsOption && input.rng.nextBool(0.3);
+    const optionToBuy: LoanOption | undefined = wantsOption
+      ? {
+        fee: Math.round((input.optionValue! * (mandatory ? 0.85 : 1.15)) / 10_000) * 10_000,
+        mandatory,
+      }
+      : undefined;
+
     offers.push({
       clubId: club.id,
       clubName: club.name,
@@ -117,6 +149,7 @@ export function loanOffersFor(input: {
       pitch: playingTime >= 0.75
         ? `${club.name} en fera un titulaire et prend ${Math.round(wageShare * 100)} % du salaire.`
         : `${club.name} lui promet du temps de jeu régulier et prend ${Math.round(wageShare * 100)} % du salaire.`,
+      ...(optionToBuy ? { optionToBuy } : {}),
     });
   }
   return offers.sort((a, b) => b.playingTime - a.playingTime);
@@ -134,6 +167,10 @@ export interface ActiveLoan {
   readonly season: number;
   readonly playingTime: number;
   readonly wageShare: number;
+  /** V0.64 — option d'achat consentie au club d'accueil. */
+  readonly optionToBuy?: LoanOption;
+  /** V0.64 — journée du rappel anticipé, quand il a eu lieu. */
+  readonly recalledAtRound?: number;
 }
 
 /**
@@ -190,6 +227,108 @@ export function loanReport(loan: ActiveLoan, minutes: number): string {
     return `${loan.playerName} revient de ${loan.clubName} après ${matchs} matchs disputés.`;
   }
   return `${loan.playerName} n'a joué que ${matchs} match${matchs > 1 ? 's' : ''} à ${loan.clubName}. Le prêt n'a pas tenu ses promesses.`;
+}
+
+// =============================================================================
+// Le rappel anticipé — V0.64
+// =============================================================================
+
+/** Nombre de valides à un poste en dessous duquel le club est en crise. */
+export const RECALL_CRISIS_THRESHOLD = 2;
+
+export type RecallVerdict =
+  | { readonly allowed: true; readonly reason: string }
+  | { readonly allowed: false; readonly reason: string };
+
+/**
+ * Peut-on faire revenir un joueur prêté avant la fin de la saison ?
+ *
+ * Pas librement, et c'est le point. Un rappel libre viderait le prêt de son
+ * arbitrage : on prêterait tout le monde en août pour rapatrier qui l'on veut à
+ * la première blessure, sans jamais payer le prix du prêt, qui est de se priver
+ * d'un joueur pour une saison. Le rappel n'existe donc que dans le cas qui l'a
+ * fait entrer dans les usages : la crise de blessures à un poste.
+ *
+ * Le club d'accueil, lui, perd un joueur en cours d'exercice : il garde sa part
+ * de salaire déjà versée et l'option d'achat tombe.
+ */
+export function canRecall(input: {
+  readonly loan: ActiveLoan;
+  /** Joueurs valides du club prêteur capables de tenir le poste concerné. */
+  readonly healthyCoverAtPosition: number;
+  readonly round: number;
+  readonly totalRounds: number;
+}): RecallVerdict {
+  if (input.loan.recalledAtRound !== undefined) {
+    return { allowed: false, reason: 'Ce joueur est déjà revenu.' };
+  }
+  if (input.round >= input.totalRounds) {
+    return { allowed: false, reason: 'La saison est trop avancée : il rentrera à son terme.' };
+  }
+  if (input.healthyCoverAtPosition >= RECALL_CRISIS_THRESHOLD) {
+    return {
+      allowed: false,
+      reason: 'Le poste est encore couvert : le club d\'accueil refusera de le libérer.',
+    };
+  }
+  return {
+    allowed: true,
+    reason: `Crise de blessures au poste : ${input.loan.clubName} accepte de le rendre.`,
+  };
+}
+
+export function recallLoan(loan: ActiveLoan, round: number): ActiveLoan {
+  const { optionToBuy: _dropped, ...rest } = loan;
+  return { ...rest, recalledAtRound: round };
+}
+
+// =============================================================================
+// L'option d'achat au retour — V0.64
+// =============================================================================
+
+export type LoanOptionOutcome =
+  | { readonly kind: 'AUCUNE' }
+  | { readonly kind: 'LEVEE'; readonly fee: number; readonly reason: string }
+  | { readonly kind: 'ABANDONNEE'; readonly reason: string };
+
+/**
+ * Le club d'accueil lève-t-il son option ?
+ *
+ * Obligatoire, la question ne se pose pas. Facultative, il juge sur ce qu'il a
+ * vu : un joueur qui a joué la saison entière est acheté, un joueur qui a passé
+ * l'année à l'infirmerie ne l'est pas. On lit les minutes réelles et non la
+ * promesse initiale, sinon l'option serait décidée avant le prêt, ce qui lui
+ * retirerait tout son sens.
+ */
+export function resolveLoanOption(input: {
+  readonly loan: ActiveLoan;
+  readonly minutesPlayed: number;
+  readonly roundsPlayed: number;
+}): LoanOptionOutcome {
+  const option = input.loan.optionToBuy;
+  if (!option || input.loan.recalledAtRound !== undefined) return { kind: 'AUCUNE' };
+
+  if (option.mandatory) {
+    return {
+      kind: 'LEVEE',
+      fee: option.fee,
+      reason: `${input.loan.clubName} était engagé : l'option était obligatoire.`,
+    };
+  }
+
+  const expected = Math.max(1, input.roundsPlayed * input.loan.playingTime * 72);
+  const ratio = input.minutesPlayed / expected;
+  if (ratio >= 0.7) {
+    return {
+      kind: 'LEVEE',
+      fee: option.fee,
+      reason: `${input.loan.clubName} a vu ce qu'il voulait voir et lève son option.`,
+    };
+  }
+  return {
+    kind: 'ABANDONNEE',
+    reason: `${input.loan.clubName} ne lève pas son option : il ne l'a pas assez vu jouer.`,
+  };
 }
 
 /**

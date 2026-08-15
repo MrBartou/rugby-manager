@@ -20,6 +20,9 @@ import {
   loanOffersFor,
   loanReport,
   loanTradeoff,
+  canRecall,
+  recallLoan,
+  resolveLoanOption,
   type ActiveLoan,
 } from '../../src/engine/club/loans.js';
 import { createRng } from '../../src/engine/rng.js';
@@ -207,5 +210,95 @@ describe('la part de salaire prise par le club d\'accueil', () => {
 
   it('et ne divise jamais par zéro journée', () => {
     expect(loanWageReliefPerRound([pret('p1', 0.5)], salaireDe, 0)).toBe(0);
+  });
+});
+
+// =============================================================================
+// V0.64 — l'option d'achat et le rappel anticipé
+// =============================================================================
+
+describe('l\'option d\'achat', () => {
+  const pret = (over: Partial<ActiveLoan> = {}): ActiveLoan => ({
+    playerId: 'p1' as PlayerId, playerName: 'Dupont',
+    clubId: 'c2' as ClubId, clubName: 'Vannes',
+    season: 2026, playingTime: 0.8, wageShare: 0.5,
+    ...over,
+  });
+
+  it('un club d\'accueil sur trois en demande une', () => {
+    const clubs = [club('a', 40), club('b', 45), club('c', 50)];
+    const avecOption = ['s1', 's2', 's3', 's4', 's5', 's6'].flatMap(seed => loanOffersFor({
+      player: jeune(), clubs, ownClubId: 'c1' as ClubId,
+      rng: createRng(seed), optionValue: 1_000_000,
+    })).filter(o => o.optionToBuy !== undefined);
+    expect(avecOption.length).toBeGreaterThan(0);
+    for (const o of avecOption) expect(o.optionToBuy!.fee).toBeGreaterThan(0);
+  });
+
+  it('une option obligatoire se paie moins cher qu\'une option laissée au choix', () => {
+    const clubs = [club('a', 40), club('b', 45), club('c', 50)];
+    const toutes = ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8'].flatMap(seed => loanOffersFor({
+      player: jeune(), clubs, ownClubId: 'c1' as ClubId,
+      rng: createRng(seed), optionValue: 1_000_000,
+    })).map(o => o.optionToBuy).filter((o): o is NonNullable<typeof o> => o !== undefined);
+    const obligatoires = toutes.filter(o => o.mandatory);
+    const facultatives = toutes.filter(o => !o.mandatory);
+    if (obligatoires.length > 0 && facultatives.length > 0) {
+      expect(obligatoires[0]!.fee).toBeLessThan(facultatives[0]!.fee);
+    }
+  });
+
+  it('sans valeur transmise, aucune option ne peut être chiffrée', () => {
+    const sansValeur = loanOffersFor({
+      player: jeune(), clubs: [club('a', 40), club('b', 45), club('c', 50)],
+      ownClubId: 'c1' as ClubId, rng: createRng('option'),
+    });
+    expect(sansValeur.every(o => o.optionToBuy === undefined)).toBe(true);
+  });
+
+  it('une option obligatoire se lève quoi qu\'il arrive', () => {
+    const res = resolveLoanOption({
+      loan: pret({ optionToBuy: { fee: 900_000, mandatory: true } }),
+      minutesPlayed: 0, roundsPlayed: 26,
+    });
+    expect(res.kind).toBe('LEVEE');
+  });
+
+  it('une option facultative se juge sur les minutes réelles', () => {
+    const loan = pret({ optionToBuy: { fee: 900_000, mandatory: false } });
+    const beaucoup = resolveLoanOption({ loan, minutesPlayed: 26 * 0.8 * 72, roundsPlayed: 26 });
+    const blesse = resolveLoanOption({ loan, minutesPlayed: 300, roundsPlayed: 26 });
+    expect(beaucoup.kind).toBe('LEVEE');
+    expect(blesse.kind).toBe('ABANDONNEE');
+  });
+
+  it('un rappel anticipé fait tomber l\'option', () => {
+    const loan = recallLoan(pret({ optionToBuy: { fee: 900_000, mandatory: true } }), 12);
+    expect(loan.optionToBuy).toBeUndefined();
+    expect(resolveLoanOption({ loan, minutesPlayed: 2000, roundsPlayed: 26 }).kind).toBe('AUCUNE');
+  });
+});
+
+describe('le rappel anticipé', () => {
+  const pret = (over: Partial<ActiveLoan> = {}): ActiveLoan => ({
+    playerId: 'p1' as PlayerId, playerName: 'Dupont',
+    clubId: 'c2' as ClubId, clubName: 'Vannes',
+    season: 2026, playingTime: 0.8, wageShare: 0.5,
+    ...over,
+  });
+
+  it('ne s\'obtient qu\'en crise de blessures', () => {
+    const base = { loan: pret(), round: 10, totalRounds: 26 };
+    expect(canRecall({ ...base, healthyCoverAtPosition: 3 }).allowed).toBe(false);
+    expect(canRecall({ ...base, healthyCoverAtPosition: 1 }).allowed).toBe(true);
+  });
+
+  it('ne se demande pas deux fois, ni en fin de saison', () => {
+    expect(canRecall({
+      loan: recallLoan(pret(), 8), healthyCoverAtPosition: 0, round: 12, totalRounds: 26,
+    }).allowed).toBe(false);
+    expect(canRecall({
+      loan: pret(), healthyCoverAtPosition: 0, round: 26, totalRounds: 26,
+    }).allowed).toBe(false);
   });
 });
