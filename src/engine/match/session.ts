@@ -22,6 +22,13 @@ import { resolveTalk, situationFor, type DressingRoom, type TalkTone } from './t
 import type { Player, PlayerId, Position } from '../types.js';
 import { simulateScrum, computeScrumDominanceShift, type ScrumInput } from './scrum.js';
 import { simulateLineout, type LineoutInput } from './lineout.js';
+import {
+  callForSituation,
+  readLevel,
+  recordCall,
+  type CallUsage,
+  type Playbook,
+} from './playbook.js';
 import { simulateRuck, type RuckInput } from './ruck.js';
 import { simulateOpenPlay, type OpenPlayInput } from './openplay.js';
 import { simulateGoalLine, type GoalLineInput } from './goal-line.js';
@@ -236,6 +243,19 @@ interface SideRuntime {
   baseTacticalBonus: number;
   /** V0.8 — philosophie de touche pour ce side (undef si pas définie). */
   readonly lineoutPhilosophy?: import('./types.js').LineoutPhilosophy;
+  /**
+   * V0.65 — le carnet de touche de ce camp, ce qu'il a déjà joué cette saison,
+   * et ce qu'il a appelé dans ce match.
+   *
+   * Le compteur de saison arrive de l'extérieur et n'est jamais modifié ici :
+   * le moteur reste sans mémoire d'un match à l'autre. Ce qu'il produit,
+   * `matchCalls`, remonte dans le résultat pour que la saison l'y ajoute.
+   */
+  readonly playbook?: Playbook;
+  readonly seasonCalls: CallUsage;
+  matchCalls: CallUsage;
+  /** Qualité d'analyse : sa capacité à lire les habitudes d'en face. */
+  readonly analysis: number;
   /** V0.32 — effets du plan de match, injectés dans chaque sous-système. */
   tactics: TacticalModifiers;
   /**
@@ -368,6 +388,13 @@ export interface MatchSessionOptions {
 // =============================================================================
 // Helpers
 // =============================================================================
+
+/** Le cumul saison et ce que ce match a déjà montré, additionnés. */
+function mergeUsage(season: CallUsage, match: CallUsage): CallUsage {
+  const out: Record<string, number> = { ...season };
+  for (const [id, n] of Object.entries(match)) out[id] = (out[id] ?? 0) + n;
+  return out;
+}
 
 function clampField(x: number): number {
   if (x < -50) return -50;
@@ -609,6 +636,8 @@ export function createMatchSession(
     bonus: number,
     initialFatigue: number,
     philosophy: import('./types.js').LineoutPhilosophy | undefined,
+    weekly: import('./types.js').HomeWeeklyModifiers | undefined,
+    seasonCalls: CallUsage | undefined,
   ): SideRuntime {
     const extracted = extractSidePlayers(decisions.squad, input.playersById);
     const tactics = resolveTactics(decisions.tacticalPlan);
@@ -629,13 +658,23 @@ export function createMatchSession(
       tacticalBonusRemaining: 0,
       tactics,
       ...(effectivePhilosophy ? { lineoutPhilosophy: effectivePhilosophy } : {}),
+      ...(weekly?.playbook ? { playbook: weekly.playbook } : {}),
+      seasonCalls: seasonCalls ?? {},
+      matchCalls: {},
+      analysis: Math.max(0, Math.min(1, weekly?.analysis ?? 0)),
       ...(captain ? { captain } : {}),
       captainOnField: captain !== undefined,
     };
   }
 
-  const home: SideRuntime = buildSide(input.home, homeBonus, homeInitialFatigue, homeWeekly?.lineoutPhilosophy);
-  const away: SideRuntime = buildSide(input.away, awayBonus, awayInitialFatigue, awayWeekly?.lineoutPhilosophy);
+  const home: SideRuntime = buildSide(
+    input.home, homeBonus, homeInitialFatigue, homeWeekly?.lineoutPhilosophy,
+    homeWeekly, input.homeCallUsage,
+  );
+  const away: SideRuntime = buildSide(
+    input.away, awayBonus, awayInitialFatigue, awayWeekly?.lineoutPhilosophy,
+    awayWeekly, input.awayCallUsage,
+  );
   // V0.9 — côté contrôlé par le joueur (pour live moments + décisions)
   const playerSide: 'HOME' | 'AWAY' = input.playerSide ?? 'HOME';
   const playerRuntime = playerSide === 'HOME' ? home : away;
@@ -1011,6 +1050,27 @@ export function createMatchSession(
         return outcome;
       }
       case 'LINEOUT': {
+        /*
+         * V0.65 — la combinaison se choisit ici, sur la position du ballon.
+         *
+         * Le manager dessine le carnet, il n'appelle pas chaque touche : ce
+         * serait quatorze fenêtres par match. Et la lecture se calcule sur le
+         * cumul saison **plus** ce que ce match a déjà montré : une équipe qui
+         * répète la même chose pendant quatre-vingts minutes finit lue avant le
+         * coup de sifflet final, pas la semaine suivante.
+         */
+        const call = att.playbook
+          ? callForSituation({ playbook: att.playbook, fieldPosition: sim.fieldPosition + 50 })
+          : undefined;
+        const read = call
+          ? readLevel({
+            usage: mergeUsage(att.seasonCalls, att.matchCalls),
+            callId: call.id,
+            opponentPreparation: def.analysis,
+          })
+          : 0;
+        if (call) att.matchCalls = recordCall(att.matchCalls, call.id);
+
         const inp: LineoutInput = {
           attackPack: onFieldPack(att.squad),
           defensePack: onFieldPack(def.squad),
@@ -1021,6 +1081,7 @@ export function createMatchSession(
           attackBonus: att.tactics.lineoutBonus - meteo.lineoutMalus,
           defenseBonus: def.tactics.lineoutBonus,
           ...(att.lineoutPhilosophy ? { philosophy: att.lineoutPhilosophy } : {}),
+          ...(call ? { call, read } : {}),
         };
         return simulateLineout(inp, rng);
       }
@@ -1629,6 +1690,10 @@ export function createMatchSession(
         awaySubstitutions: away.squad.substitutions,
         uncontestedScrums: scrumsUncontested(home.squad) || scrumsUncontested(away.squad),
         cardsIssued: matchCards,
+        // V0.65 — ce que chaque camp a appelé en touche. La saison les cumule :
+        // c'est ce cumul qui finit par se faire lire.
+        homeLineoutCalls: home.matchCalls,
+        awayLineoutCalls: away.matchCalls,
       };
     },
   };
