@@ -53,6 +53,11 @@ import {
   type FinancialMovement,
 } from '../club/finances.js';
 import {
+  matchdayBonusPayout,
+  salaryForSeason,
+  type MatchdayParticipation,
+} from '../club/contract-clauses.js';
+import {
   buildContractDecision,
   resolveContractDecision as resolveContractDecisionPure,
   type ContractDecision,
@@ -955,6 +960,38 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
     }
 
     seasonPlayerStats = next;
+    payMatchdayBonuses(result, starterSet);
+  }
+
+  /**
+   * V0.64 — les primes de match et d'essai, débitées le soir même.
+   *
+   * Ici et pas ailleurs : c'est le seul endroit du moteur qui sache à la fois
+   * qui est entré en jeu et qui a marqué, pour le club dirigé. Les clubs gérés
+   * par la machine ne signent pas de primes, leur facture vaudrait zéro.
+   */
+  function payMatchdayBonuses(result: MatchResult, starterSet: ReadonlySet<PlayerId>): void {
+    if (financesByClub.size === 0) return;
+    const participation = new Map<PlayerId, MatchdayParticipation>();
+    for (const id of starterSet) {
+      participation.set(id, { played: true, tries: result.individualStats.get(id)?.tries ?? 0 });
+    }
+    for (const [id, stat] of result.individualStats.entries()) {
+      if (participation.has(id)) continue;
+      if (stat.minutesPlayed <= 0 && stat.tries <= 0) continue;
+      participation.set(id, { played: stat.minutesPlayed > 0, tries: stat.tries });
+    }
+
+    const { total, lines } = matchdayBonusPayout(playerClubRoster, participation);
+    if (total <= 0) return;
+    applyClubMovement(opts.playerClubId, {
+      kind: 'BONUS',
+      amount: -total,
+      round: currentRound,
+      note: lines.length === 1
+        ? `Prime de match : ${lines[0]!.playerName}`
+        : `Primes de match (${lines.length} joueurs)`,
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -1398,7 +1435,7 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
       fee: terms.fee,
       annualSalary: terms.annualSalary,
       balance: financesByClub.get(opts.playerClubId)?.balance ?? 0,
-      currentPayroll: computeAnnualPayroll(playerClubRoster),
+      currentPayroll: computeAnnualPayroll(playerClubRoster, opts.currentSeason),
       annualBudget: club?.annualBudget ?? 0,
     });
   }
@@ -1407,7 +1444,7 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
     const finances = financesByClub.get(opts.playerClubId);
     const club = clubsById.get(opts.playerClubId);
     const balance = finances?.balance ?? 0;
-    const payrollHeadroom = Math.max(0, (club?.annualBudget ?? 0) - computeAnnualPayroll(playerClubRoster));
+    const payrollHeadroom = Math.max(0, (club?.annualBudget ?? 0) - computeAnnualPayroll(playerClubRoster, opts.currentSeason));
 
     const familiarity = scouting.knowledge.get(player.id)?.familiarity ?? 0;
     const valueRange = estimateValue(
@@ -1785,13 +1822,16 @@ export function createSeasonSession(opts: SeasonSessionOptions): SeasonSession {
     if (round <= calendar.totalRounds) {
       for (const clubId of financesByClub.keys()) {
         const roster = opts.rosterByClub(clubId);
-        const payroll = computeRoundPayroll(roster, calendar.totalRounds);
+        const payroll = computeRoundPayroll(roster, opts.currentSeason, calendar.totalRounds);
         // Les prêts allègent la feuille de paie de celui qui prête, et de lui
         // seul : ce sont ses joueurs qui sont partis.
         const relief = clubId === opts.playerClubId
           ? loanWageReliefPerRound(
             opts.activeLoans?.() ?? [],
-            (playerId) => playerClubRoster.find(p => p.id === playerId)?.contract.annualSalary,
+            (playerId) => {
+              const contract = playerClubRoster.find(p => p.id === playerId)?.contract;
+              return contract ? salaryForSeason(contract, opts.currentSeason) : undefined;
+            },
             calendar.totalRounds,
           )
           : 0;

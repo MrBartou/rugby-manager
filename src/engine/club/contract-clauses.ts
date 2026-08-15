@@ -26,7 +26,7 @@
  * ou tout garantir et dormir tranquille.
  */
 
-import type { Contract, Player } from '../types.js';
+import type { Contract, Player, PlayerId } from '../types.js';
 
 // =============================================================================
 // Le contenu d'une clause
@@ -113,6 +113,48 @@ export function bonusPayout(contract: Contract, earnings: BonusEarnings): number
     + (b.perTry ?? 0) * Math.max(0, earnings.tries)
     + (b.perCap ?? 0) * Math.max(0, earnings.caps),
   );
+}
+
+/** Ce qu'un joueur a fait dans le match qu'on vient de jouer. */
+export interface MatchdayParticipation {
+  readonly played: boolean;
+  readonly tries: number;
+}
+
+export interface MatchdayBonusLine {
+  readonly playerId: PlayerId;
+  readonly playerName: string;
+  readonly amount: number;
+}
+
+/**
+ * Les primes dues au soir d'un match.
+ *
+ * On les paie journée par journée, et non en une fois à la clôture : une prime
+ * qui tombe six mois après le match n'apprend rien au manager sur ce qu'elle lui
+ * coûte, et le budget qu'il tenait toute la saison se serait effondré d'un coup
+ * au mois de juin. Payée le jour même, elle se lit dans le bilan à côté de la
+ * recette du match qu'elle a accompagné.
+ */
+export function matchdayBonusPayout(
+  roster: readonly Player[],
+  participation: ReadonlyMap<PlayerId, MatchdayParticipation>,
+): { readonly total: number; readonly lines: readonly MatchdayBonusLine[] } {
+  const lines: MatchdayBonusLine[] = [];
+  let total = 0;
+  for (const p of roster) {
+    const part = participation.get(p.id);
+    if (!part) continue;
+    const amount = bonusPayout(p.contract, {
+      matches: part.played ? 1 : 0,
+      tries: part.tries,
+      caps: 0,
+    });
+    if (amount <= 0) continue;
+    total += amount;
+    lines.push({ playerId: p.id, playerName: p.lastName, amount });
+  }
+  return { total, lines };
 }
 
 /**
