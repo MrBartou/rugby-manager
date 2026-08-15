@@ -272,23 +272,25 @@ plate (salaire + durée) et l'« agent » n'est qu'un expéditeur de mail.
 
 ---
 
-## V0.65 — Le playbook : la touche se dessine
+## V0.65 — Le playbook : la touche se dessine ✅ *livrée*
 
 **Objectif : différenciation pilier 1 — le fantasme du fan de rugby qu'aucun jeu
 n'a servi.** Aujourd'hui les phases arrêtées sont un bonus global, pas un playbook.
 
-- [ ] **Éditeur de combinaisons de touche** : 4-5 combinaisons dessinées et nommées
-      par le joueur — alignement (5/7/réduit), sauteur désigné, option (maul / vers
-      l'ouvreur / peel)
-- [ ] **Les combinaisons se scoutent** : une combinaison surjouée finit lue et
-      contrée ; le dossier d'avant-match adverse signale « ils connaissent votre
-      fond de touche ». Crée une méta par saison, donne un usage offensif au scouting
-- [ ] **Instructions individuelles** au-delà des 19 rôles : marquage d'un joueur
-      adverse, consignes au pied (« tape derrière leur ailier monté »)
-- [ ] **Plan modifiable en cours de match** hors live moments (occupation / ligne
-      défensive / cibles, à tout moment depuis le bord de touche)
-- [ ] **Plans sauvegardés A/B** réutilisables d'un match à l'autre (aujourd'hui la
-      tactique n'existe que dans le tunnel d'avant-match)
+- [x] **Éditeur de combinaisons de touche** : trois à cinq combinaisons nommées,
+      avec alignement (sept / cinq / réduite), créneau de sauteur, option (maul,
+      ouvreur, peel) et sauteur désigné (`match/playbook.ts`).
+- [x] **Les combinaisons se scoutent** : au-delà d'un tiers d'usage, face à un
+      adversaire qui prépare, la combinaison est lue, la conquête chute et le
+      maul s'étouffe. Le dossier d'avant-match le dit avant le coup d'envoi, et
+      le scout principal trouve là son premier usage offensif.
+- [x] **Instructions individuelles** (`match/instructions.ts`) : marquage d'un
+      adversaire, consigne au pied jugée sur la ligne défensive d'en face.
+- [x] **Plan modifiable en cours de match** : acquis depuis la V0.33 pour
+      l'occupation et la défense ; la V0.65 y ajoute les consignes individuelles,
+      qui étaient la part manquante (« cibles »).
+- [x] **Plans sauvegardés A/B** : deux plans nommés, rappelés d'un clic et
+      conservés d'un match à l'autre.
 
 ---
 
