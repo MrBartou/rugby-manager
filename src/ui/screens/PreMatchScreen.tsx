@@ -38,6 +38,16 @@ import {
   SET_PIECE_LABEL,
 } from '../../engine/match/tactics.js';
 import { OpponentDossier } from '../components/OpponentDossier.js';
+import type { SavedPlan } from '../../engine/match/tactics.js';
+import {
+  MAX_CALLS,
+  MIN_CALLS,
+  READ_MIN_SAMPLE,
+  validatePlaybook,
+  type CallUsage,
+  type LineoutCall,
+  type Playbook,
+} from '../../engine/match/playbook.js';
 import { LineupPitch, type LineupSlot } from '../components/LineupPitch.js';
 import { CROWD_LABEL, crowdHint, type CrowdLevel } from '../../engine/match/crowd.js';
 import { captainAuthority, suggestCaptain } from '../../engine/match/captain.js';
@@ -53,6 +63,13 @@ import {
 import { weekForecast } from '../../engine/club/training-week.js';
 import type { OpponentReport } from '../../engine/club/opponent-report.js';
 export type { WeekPlan };
+
+type PlaybookEditorProps = {
+  readonly playbook: Playbook;
+  readonly usage: CallUsage;
+  readonly forwards: readonly Player[];
+  readonly onChange: (playbook: Playbook) => void;
+};
 
 interface Props {
   readonly homeClubName: string;
@@ -70,6 +87,28 @@ interface Props {
    * manager ne survivait pas à la rencontre. Il est désormais porté par le club.
    */
   readonly currentCaptainId?: string;
+  /**
+   * V0.65 : le carnet de touche, et ce qu'il a déjà servi cette saison.
+   *
+   * Il se dessine ici parce que c'est ici qu'on prépare la rencontre, et parce
+   * que la part d'usage de chaque combinaison n'a de sens qu'à côté du bouton
+   * qui permet d'en changer.
+   */
+  readonly playbook?: {
+    readonly value: Playbook;
+    readonly usage: CallUsage;
+    readonly onChange: (playbook: Playbook) => void;
+  };
+  /**
+   * V0.65 : les plans mis de côté, rappelables d'un match à l'autre.
+   *
+   * La tactique ne vivait que dans ce tunnel : on la refaisait curseur par
+   * curseur chaque semaine, ce qui poussait à ne plus y toucher.
+   */
+  readonly savedPlans?: {
+    readonly value: readonly SavedPlan[];
+    readonly onSave: (plans: readonly SavedPlan[]) => void;
+  };
   /** V0.51 — graphe de relations du club, pour la cohésion du XV aligné. */
   readonly relations?: import('../../engine/human/relationships.js').RelationsState;
   /**
@@ -192,12 +231,28 @@ export function PreMatchScreen({
   opponentScouting,
   medicalQuality,
   rivalry,
+  playbook,
+  savedPlans,
 }: Props) {
+  /**
+   * V0.65 : l'écran se lit en trois onglets.
+   *
+   * Il empilait six panneaux et l'affiche : on scrollait trois écrans avant
+   * d'atteindre « Lancer le match », et la composition, qui est le travail
+   * même de cette page, arrivait en quatrième position. On ouvre donc sur elle.
+   */
+  const [tab, setTab] = useState<'COMPO' | 'PLAN' | 'ADVERSAIRE'>('COMPO');
   const [starters, setStarters] = useState<readonly { playerId: string; position: Position }[]>(initialLineup.starters);
   const [subs, setSubs] = useState<readonly string[]>(initialLineup.substitutes);
   const [load, setLoad] = useState<TrainingLoad>('MEDIUM');
   const [focus, setFocus] = useState<TacticalFocus>('MIXED');
-  const [lineoutPhilo, setLineoutPhilo] = useState<'MAUL_LOURD' | 'SAUT_RAPIDE' | 'SAUT_LONG'>('SAUT_RAPIDE');
+  /*
+   * V0.65 — la philosophie de touche n'est plus réglable ici : le carnet de
+   * combinaisons la remplace, et laisser les deux aurait donné deux réglages
+   * pour la même chose, dont un que le moteur n'aurait plus jamais lu. Elle
+   * reste transmise en repli, pour une sauvegarde sans carnet.
+   */
+  const lineoutPhilo = 'SAUT_RAPIDE' as const;
   // V0.32 — plan de match.
   const [occupation, setOccupation] = useState<PreMatchTacticalPlan['occupation']>('MEDIANE');
   const [defLine, setDefLine] = useState<PreMatchTacticalPlan['defensiveLine']>('RIDEAU');
@@ -418,287 +473,593 @@ export function PreMatchScreen({
         </p>
       </div>
 
+      {/* V0.65 : la page était un rouleau de six panneaux, l'action utile tout
+          en bas. Elle passe en onglets, avec la barre du marché et de la
+          carrière : trois écrans d'une hauteur chacun, et le bouton toujours
+          sous la main. */}
+      <div className="market-tabs pre-match-tabs" role="tablist">
+        {([
+          ['COMPO', 'Composition'],
+          ['PLAN', 'Plan de match'],
+          ['ADVERSAIRE', opponentReport ? 'Adversaire' : 'Adversaire (inconnu)'],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={tab === key}
+            className={`market-tab ${tab === key ? 'active' : ''}`}
+            onClick={() => setTab(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+
       <div className="pre-match-grid">
-        {/* ---- Dossier adversaire (V0.36) --------------------------------- */}
-        {opponentReport && (
-          <OpponentDossier
-            report={opponentReport}
-            {...(opponentScouting ? { scouting: opponentScouting } : {})}
-          />
-        )}
-
-        <div className="dashboard-panel">
-          {rivalry && <div className="rivalry-banner">{rivalry}</div>}
-          <div className="panel-tag">Préparation de la semaine</div>
-          <div className="prep-row">
-            <div className="prep-label">Charge d'entraînement</div>
-            <div className="seg-btn">
-              {(['LIGHT', 'MEDIUM', 'HARD'] as TrainingLoad[]).map(l => (
-                <button
-                  key={l}
-                  type="button"
-                  className={l === load ? 'active' : ''}
-                  onClick={() => setLoad(l)}
-                >
-                  {l === 'LIGHT' ? 'Légère' : l === 'MEDIUM' ? 'Modérée' : 'Forte'}
-                </button>
-              ))}
-            </div>
-            {/* V0.44 — le pronostic est annoncé avant le choix. Charger était
-                gratuit tant que le risque restait invisible ; le montrer est ce
-                qui transforme un curseur de bonus en arbitrage. */}
-            <div className="prep-hint">
-              {weekForecast(load, roster.filter(p => !p.retired && !p.freeAgent).length, medicalQuality)}
-            </div>
-          </div>
-
-          <div className="prep-row">
-            <div className="prep-label">Focus tactique</div>
-            <div className="seg-btn">
-              {(['PACK', 'MIXED', 'BACKS'] as TacticalFocus[]).map(f => (
-                <button
-                  key={f}
-                  type="button"
-                  className={f === focus ? 'active' : ''}
-                  onClick={() => setFocus(f)}
-                >
-                  {f === 'PACK' ? 'Avants' : f === 'MIXED' ? 'Mixte' : 'Arrières'}
-                </button>
-              ))}
-            </div>
-            <div className="prep-hint">
-              {focus === 'PACK' && 'Travail mêlée + maul pénétrant — bonus en mêlée et au ruck.'}
-              {focus === 'MIXED' && 'Approche équilibrée — bonus modeste partout.'}
-              {focus === 'BACKS' && 'Lancements de jeu déployés — bonus en jeu courant.'}
-            </div>
-          </div>
-
-          <div className="prep-row">
-            <div className="prep-label">Philosophie de touche</div>
-            <div className="seg-btn">
-              {(['MAUL_LOURD', 'SAUT_RAPIDE', 'SAUT_LONG'] as const).map(p => (
-                <button
-                  key={p}
-                  type="button"
-                  className={p === lineoutPhilo ? 'active' : ''}
-                  onClick={() => setLineoutPhilo(p)}
-                >
-                  {p === 'MAUL_LOURD' ? 'Maul lourd' : p === 'SAUT_RAPIDE' ? 'Saut rapide' : 'Saut long'}
-                </button>
-              ))}
-            </div>
-            <div className="prep-hint">
-              {lineoutPhilo === 'MAUL_LOURD' && 'Travail du maul pénétrant — risque de contre, mais avancée constante quand ça passe.'}
-              {lineoutPhilo === 'SAUT_RAPIDE' && 'Lancers courts et redistribution rapide — peu de mauls mais peu de pertes.'}
-              {lineoutPhilo === 'SAUT_LONG' && 'Lancers longs sur 7m — risqué, mais ouvre des espaces.'}
-            </div>
-          </div>
-        </div>
-
-        {/* ---- Plan de match (V0.32) ---------------------------------------- */}
-        <div className="dashboard-panel">
-          <div className="panel-tag">Plan de match</div>
-
-          <div className="prep-row">
-            <div className="prep-label">Occupation du terrain</div>
-            <div className="seg-btn">
-              {(['HAUTE', 'MEDIANE', 'BASSE'] as const).map(o => (
-                <button
-                  key={o}
-                  type="button"
-                  className={o === occupation ? 'active' : ''}
-                  onClick={() => setOccupation(o)}
-                >
-                  {OCCUPATION_LABEL[o]}
-                </button>
-              ))}
-            </div>
-            <div className="prep-hint">{OCCUPATION_HINT[occupation]}</div>
-          </div>
-
-          <div className="prep-row">
-            <div className="prep-label">Ligne défensive</div>
-            <div className="seg-btn">
-              {(['MONTANTE', 'RIDEAU', 'STAND_OFF'] as const).map(d => (
-                <button
-                  key={d}
-                  type="button"
-                  className={d === defLine ? 'active' : ''}
-                  onClick={() => setDefLine(d)}
-                >
-                  {DEFENSIVE_LINE_LABEL[d]}
-                </button>
-              ))}
-            </div>
-            <div className="prep-hint">{DEFENSIVE_LINE_HINT[defLine]}</div>
-          </div>
-
-          <div className="prep-row">
-            <div className="prep-label">Travail des phases arrêtées</div>
-            <div className="seg-btn multi">
-              {(['MELEE', 'TOUCHE', 'MAUL'] as const).map(f => (
-                <button
-                  key={f}
-                  type="button"
-                  className={setPieces.includes(f) ? 'active' : ''}
-                  onClick={() => toggleSetPiece(f)}
-                >
-                  {SET_PIECE_LABEL[f]}
-                </button>
-              ))}
-            </div>
-            <div className="prep-hint">
-              {setPieces.length === 0
-                ? 'Aucune spécialisation — rien à gagner, rien à perdre en jeu courant.'
-                : `${setPieces.length} axe${setPieces.length > 1 ? 's' : ''} travaillé${setPieces.length > 1 ? 's' : ''} : conquête renforcée, jeu courant affaibli d'autant.`}
-            </div>
-          </div>
-        </div>
-
-        <div className="dashboard-panel panel-wide">
-          <div className="panel-tag">Composition</div>
-          {/* V0.57 — quinze listes déroulantes sont devenues une feuille de
-              match. Le XV se compose là où on le regarde. */}
-          <LineupPitch
-            starters={starters}
-            substitutes={subs}
-            byId={byId}
-            selectable={availableForBench()}
-            captainId={captainId}
-            kickerId={kickerId}
-            {...(currentRound !== undefined ? { currentRound } : {})}
-            clubId={isHome ? homeClubId : awayClubId}
-            onAssignStarter={setStarterAt}
-            onAssignSub={setSubAt}
-            renderSlotExtra={(slot: LineupSlot) => {
-              // V0.34 — le poste dit où il joue, le rôle dit comment.
-              const options = rolesForPosition(slot.position);
-              const current = byId.get(slot.playerId);
-              if (options.length === 0 || !current) return null;
-              const chosen = roles[slot.playerId] ?? bestRoleFor({ ...current, position: slot.position });
-              const def = chosen ? roleById(chosen) : undefined;
-              return (
-                <div className="lp-role-row">
-                  <span className="lp-role-label">Rôle</span>
-                  <select
-                    className="lp-role"
-                    value={chosen ?? ''}
-                    onChange={e => setRoleFor(slot.playerId, e.target.value as RoleId)}
-                  >
-                    {options.map(r => (
-                      <option key={r.id} value={r.id}>{r.label}</option>
-                    ))}
-                  </select>
-                  {def && <span className="lp-role-hint">{def.description}</span>}
-                </div>
-              );
-            }}
-          />
-          <div className="lineup-stat">
-            Niveau moyen XV titulaire : <strong>{avgStarter}</strong>
-          </div>
-          <div className={`lineup-stat ${feuilleJiffStats.ratio < 0.5 ? 'jiff-warning' : ''}`}>
-            JIFF feuille : <strong>{feuilleJiffStats.jiffCount}/{feuilleJiffStats.total}</strong>
-            {feuilleJiffStats.ratio < 0.5 && ' ⚠ sous le seuil légal (50%)'}
-          </div>
-          {/* V0.51 — l'état du groupe, qui pèse désormais sur le terrain. On
-              qualifie sans chiffrer : le manager doit le sentir, pas le lire. */}
-          <div className={`lineup-stat ${xvMorale.mood < 48 || xvMorale.cohesion <= -25 ? 'jiff-warning' : ''}`}>
-            Vestiaire : {moraleHint(xvMorale)}
-          </div>
-          {/* V0.52 — l'arbitre du jour, et ce qu'on sait de lui. */}
-          {referee && (
+        {tab === 'COMPO' && (<>
+          <div className="dashboard-panel panel-wide">
+            <div className="panel-tag">Composition</div>
+            {/* V0.57 — quinze listes déroulantes sont devenues une feuille de
+                match. Le XV se compose là où on le regarde. */}
+            <LineupPitch
+              starters={starters}
+              substitutes={subs}
+              byId={byId}
+              selectable={availableForBench()}
+              captainId={captainId}
+              kickerId={kickerId}
+              {...(currentRound !== undefined ? { currentRound } : {})}
+              clubId={isHome ? homeClubId : awayClubId}
+              onAssignStarter={setStarterAt}
+              onAssignSub={setSubAt}
+              renderSlotExtra={(slot: LineupSlot) => {
+                // V0.34 — le poste dit où il joue, le rôle dit comment.
+                const options = rolesForPosition(slot.position);
+                const current = byId.get(slot.playerId);
+                if (options.length === 0 || !current) return null;
+                const chosen = roles[slot.playerId] ?? bestRoleFor({ ...current, position: slot.position });
+                const def = chosen ? roleById(chosen) : undefined;
+                return (
+                  <div className="lp-role-row">
+                    <span className="lp-role-label">Rôle</span>
+                    <select
+                      className="lp-role"
+                      value={chosen ?? ''}
+                      onChange={e => setRoleFor(slot.playerId, e.target.value as RoleId)}
+                    >
+                      {options.map(r => (
+                        <option key={r.id} value={r.id}>{r.label}</option>
+                      ))}
+                    </select>
+                    {def && <span className="lp-role-hint">{def.description}</span>}
+                  </div>
+                );
+              }}
+            />
             <div className="lineup-stat">
-              Arbitre : <strong>{referee.name}</strong> — {referee.reputation}
+              Niveau moyen XV titulaire : <strong>{avgStarter}</strong>
             </div>
-          )}
-          {/* V0.58 — le public, qui pèse enfin sur la rencontre. */}
-          {crowd && (
-            <div className={`lineup-stat ${crowd.level === 'PEU' ? 'jiff-warning' : ''}`}>
-              {CROWD_LABEL[crowd.level]} — {crowdHint(crowd.level, crowd.attendance, crowd.capacity)}
+            <div className={`lineup-stat ${feuilleJiffStats.ratio < 0.5 ? 'jiff-warning' : ''}`}>
+              JIFF feuille : <strong>{feuilleJiffStats.jiffCount}/{feuilleJiffStats.total}</strong>
+              {feuilleJiffStats.ratio < 0.5 && ' ⚠ sous le seuil légal (50%)'}
             </div>
-          )}
-          {/* V0.51 — la météo, annoncée avec ce qu'elle implique. */}
-          {conditions && (
-            <div className={`lineup-stat ${conditions.weather !== 'SEC' ? 'weather-warning' : ''}`}>
-              {WEATHER_LABEL[conditions.weather]} — {weatherHint(conditions.weather, conditions.fieldCondition)}
+            {/* V0.51 — l'état du groupe, qui pèse désormais sur le terrain. On
+                qualifie sans chiffrer : le manager doit le sentir, pas le lire. */}
+            <div className={`lineup-stat ${xvMorale.mood < 48 || xvMorale.cohesion <= -25 ? 'jiff-warning' : ''}`}>
+              Vestiaire : {moraleHint(xvMorale)}
             </div>
-          )}
-          {/* V0.52 — la consigne au sol : un vrai arbitrage, que l'arbitre du
-              jour rend plus ou moins coûteux. Le staff recommande, on tranche. */}
-          <div className="discipline-choice">
-            <span className="dc-title">Consigne au sol</span>
-            <div className="dc-options">
-              {(['CONTEST_TOTAL', 'EQUILIBRE', 'PAS_DE_CONTEST'] as const).map(pol => (
-                <button
-                  key={pol}
-                  type="button"
-                  className={`dc-option ${discipline === pol ? 'active' : ''}`}
-                  onClick={() => setDiscipline(pol)}
-                  title={POLICY_HINT[pol]}
-                >
-                  {POLICY_LABEL[pol]}
-                  {referee && recommendedPolicy(referee) === pol && (
-                    <span className="dc-reco">conseillé</span>
-                  )}
-                </button>
-              ))}
+            {/* V0.52 — l'arbitre du jour, et ce qu'on sait de lui. */}
+            {referee && (
+              <div className="lineup-stat">
+                Arbitre : <strong>{referee.name}</strong> — {referee.reputation}
+              </div>
+            )}
+            {/* V0.58 — le public, qui pèse enfin sur la rencontre. */}
+            {crowd && (
+              <div className={`lineup-stat ${crowd.level === 'PEU' ? 'jiff-warning' : ''}`}>
+                {CROWD_LABEL[crowd.level]} — {crowdHint(crowd.level, crowd.attendance, crowd.capacity)}
+              </div>
+            )}
+            {/* V0.51 — la météo, annoncée avec ce qu'elle implique. */}
+            {conditions && (
+              <div className={`lineup-stat ${conditions.weather !== 'SEC' ? 'weather-warning' : ''}`}>
+                {WEATHER_LABEL[conditions.weather]} — {weatherHint(conditions.weather, conditions.fieldCondition)}
+              </div>
+            )}
+            {/* V0.52 — la consigne au sol : un vrai arbitrage, que l'arbitre du
+                jour rend plus ou moins coûteux. Le staff recommande, on tranche. */}
+            <div className="discipline-choice">
+              <span className="dc-title">Consigne au sol</span>
+              <div className="dc-options">
+                {(['CONTEST_TOTAL', 'EQUILIBRE', 'PAS_DE_CONTEST'] as const).map(pol => (
+                  <button
+                    key={pol}
+                    type="button"
+                    className={`dc-option ${discipline === pol ? 'active' : ''}`}
+                    onClick={() => setDiscipline(pol)}
+                    title={POLICY_HINT[pol]}
+                  >
+                    {POLICY_LABEL[pol]}
+                    {referee && recommendedPolicy(referee) === pol && (
+                      <span className="dc-reco">conseillé</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+              <span className="dc-hint">{POLICY_HINT[discipline]}</span>
             </div>
-            <span className="dc-hint">{POLICY_HINT[discipline]}</span>
           </div>
-        </div>
-
-        <div className="dashboard-panel">
-          <div className="panel-tag">Capitaine et buteur</div>
-          <ul className="lineup-list">
-            <li>
-              <span className="lp-pos">Capitaine</span>
-              {/* V0.50 — l'autorité s'affiche : le brassard se donne à un meneur
-                  d'hommes, et rien dans la liste ne le disait. */}
-              <select value={captainId} onChange={e => setCaptainId(e.target.value)}>
-                {[...starters]
-                  .sort((a, b) =>
-                    (byId.get(b.playerId) ? captainAuthority(byId.get(b.playerId)!) : 0)
-                    - (byId.get(a.playerId) ? captainAuthority(byId.get(a.playerId)!) : 0))
-                  .map(s => {
+          <div className="dashboard-panel">
+            <div className="panel-tag">Capitaine et buteur</div>
+            <ul className="lineup-list">
+              <li>
+                <span className="lp-pos">Capitaine</span>
+                {/* V0.50 — l'autorité s'affiche : le brassard se donne à un meneur
+                    d'hommes, et rien dans la liste ne le disait. */}
+                <select value={captainId} onChange={e => setCaptainId(e.target.value)}>
+                  {[...starters]
+                    .sort((a, b) =>
+                      (byId.get(b.playerId) ? captainAuthority(byId.get(b.playerId)!) : 0)
+                      - (byId.get(a.playerId) ? captainAuthority(byId.get(a.playerId)!) : 0))
+                    .map(s => {
+                      const p = byId.get(s.playerId);
+                      if (!p) return null;
+                      return (
+                        <option key={s.playerId} value={s.playerId}>
+                          {p.firstName} {p.lastName} • {POSITION_LABEL[s.position]} • autorité {captainAuthority(p)}
+                        </option>
+                      );
+                    })}
+                </select>
+              </li>
+              <li>
+                <span className="lp-pos">Buteur</span>
+                <select value={kickerId} onChange={e => setKickerId(e.target.value)}>
+                  {starters.map(s => {
                     const p = byId.get(s.playerId);
                     if (!p) return null;
                     return (
                       <option key={s.playerId} value={s.playerId}>
-                        {p.firstName} {p.lastName} • {POSITION_LABEL[s.position]} • autorité {captainAuthority(p)}
+                        {p.firstName} {p.lastName} • pied placé {p.technical.jeuAuPiedPlace}
                       </option>
                     );
                   })}
-              </select>
-            </li>
-            <li>
-              <span className="lp-pos">Buteur</span>
-              <select value={kickerId} onChange={e => setKickerId(e.target.value)}>
-                {starters.map(s => {
-                  const p = byId.get(s.playerId);
-                  if (!p) return null;
+                </select>
+              </li>
+            </ul>
+            <div className="lineup-stat">
+              Le capitaine porte le brassard ; le buteur tente les pénalités et transformations.
+            </div>
+          </div>
+        </>)}
+
+        {tab === 'PLAN' && (<>
+          <div className="dashboard-panel">
+            {rivalry && <div className="rivalry-banner">{rivalry}</div>}
+            <div className="panel-tag">Préparation de la semaine</div>
+            <div className="prep-row">
+              <div className="prep-label">Charge d'entraînement</div>
+              <div className="seg-btn">
+                {(['LIGHT', 'MEDIUM', 'HARD'] as TrainingLoad[]).map(l => (
+                  <button
+                    key={l}
+                    type="button"
+                    className={l === load ? 'active' : ''}
+                    onClick={() => setLoad(l)}
+                  >
+                    {l === 'LIGHT' ? 'Légère' : l === 'MEDIUM' ? 'Modérée' : 'Forte'}
+                  </button>
+                ))}
+              </div>
+              {/* V0.44 — le pronostic est annoncé avant le choix. Charger était
+                  gratuit tant que le risque restait invisible ; le montrer est ce
+                  qui transforme un curseur de bonus en arbitrage. */}
+              <div className="prep-hint">
+                {weekForecast(load, roster.filter(p => !p.retired && !p.freeAgent).length, medicalQuality)}
+              </div>
+            </div>
+
+            <div className="prep-row">
+              <div className="prep-label">Focus tactique</div>
+              <div className="seg-btn">
+                {(['PACK', 'MIXED', 'BACKS'] as TacticalFocus[]).map(f => (
+                  <button
+                    key={f}
+                    type="button"
+                    className={f === focus ? 'active' : ''}
+                    onClick={() => setFocus(f)}
+                  >
+                    {f === 'PACK' ? 'Avants' : f === 'MIXED' ? 'Mixte' : 'Arrières'}
+                  </button>
+                ))}
+              </div>
+              <div className="prep-hint">
+                {focus === 'PACK' && 'Travail mêlée + maul pénétrant — bonus en mêlée et au ruck.'}
+                {focus === 'MIXED' && 'Approche équilibrée — bonus modeste partout.'}
+                {focus === 'BACKS' && 'Lancements de jeu déployés — bonus en jeu courant.'}
+              </div>
+            </div>
+
+          </div>
+          {/* ---- Plan de match (V0.32) ---------------------------------------- */}
+          <div className="dashboard-panel">
+            <div className="panel-tag">Plan de match</div>
+
+            {/* V0.65 — les plans enregistrés. Rappeler un plan doit coûter un
+                clic : c'est le seul moyen pour que le manager en change vraiment
+                d'un adversaire à l'autre. */}
+            {savedPlans && (
+              <div className="saved-plans">
+                {savedPlans.value.map(sp => {
+                  const courant = sp.plan.occupation === occupation
+                    && sp.plan.defensiveLine === defLine
+                    && sp.discipline === discipline;
                   return (
-                    <option key={s.playerId} value={s.playerId}>
-                      {p.firstName} {p.lastName} • pied placé {p.technical.jeuAuPiedPlace}
-                    </option>
+                    <div key={sp.id} className={`saved-plan ${courant ? 'active' : ''}`}>
+                      <button
+                        type="button"
+                        className="sp-recall"
+                        onClick={() => {
+                          setOccupation(sp.plan.occupation);
+                          setDefLine(sp.plan.defensiveLine);
+                          setSetPieces(sp.plan.setPiecesFocus.filter(
+                            (f): f is 'MELEE' | 'TOUCHE' | 'MAUL' => f !== 'NONE',
+                          ));
+                          setDiscipline(sp.discipline);
+                        }}
+                      >
+                        {sp.name}
+                      </button>
+                      <button
+                        type="button"
+                        className="sp-store"
+                        title="Enregistrer les réglages actuels dans ce plan"
+                        onClick={() => savedPlans.onSave(savedPlans.value.map(other => (
+                          other.id === sp.id
+                            ? {
+                              ...other,
+                              plan: {
+                                occupation,
+                                defensiveLine: defLine,
+                                setPiecesFocus: setPieces.length > 0 ? setPieces : ['NONE'],
+                              },
+                              discipline,
+                            }
+                            : other
+                        )))}
+                      >
+                        mémoriser
+                      </button>
+                    </div>
                   );
                 })}
-              </select>
-            </li>
-          </ul>
-          <div className="lineup-stat">
-            Le capitaine porte le brassard ; le buteur tente les pénalités et transformations.
+              </div>
+            )}
+
+            <div className="prep-row">
+              <div className="prep-label">Occupation du terrain</div>
+              <div className="seg-btn">
+                {(['HAUTE', 'MEDIANE', 'BASSE'] as const).map(o => (
+                  <button
+                    key={o}
+                    type="button"
+                    className={o === occupation ? 'active' : ''}
+                    onClick={() => setOccupation(o)}
+                  >
+                    {OCCUPATION_LABEL[o]}
+                  </button>
+                ))}
+              </div>
+              <div className="prep-hint">{OCCUPATION_HINT[occupation]}</div>
+            </div>
+
+            <div className="prep-row">
+              <div className="prep-label">Ligne défensive</div>
+              <div className="seg-btn">
+                {(['MONTANTE', 'RIDEAU', 'STAND_OFF'] as const).map(d => (
+                  <button
+                    key={d}
+                    type="button"
+                    className={d === defLine ? 'active' : ''}
+                    onClick={() => setDefLine(d)}
+                  >
+                    {DEFENSIVE_LINE_LABEL[d]}
+                  </button>
+                ))}
+              </div>
+              <div className="prep-hint">{DEFENSIVE_LINE_HINT[defLine]}</div>
+            </div>
+
+            <div className="prep-row">
+              <div className="prep-label">Travail des phases arrêtées</div>
+              <div className="seg-btn multi">
+                {(['MELEE', 'TOUCHE', 'MAUL'] as const).map(f => (
+                  <button
+                    key={f}
+                    type="button"
+                    className={setPieces.includes(f) ? 'active' : ''}
+                    onClick={() => toggleSetPiece(f)}
+                  >
+                    {SET_PIECE_LABEL[f]}
+                  </button>
+                ))}
+              </div>
+              <div className="prep-hint">
+                {setPieces.length === 0
+                  ? 'Aucune spécialisation — rien à gagner, rien à perdre en jeu courant.'
+                  : `${setPieces.length} axe${setPieces.length > 1 ? 's' : ''} travaillé${setPieces.length > 1 ? 's' : ''} : conquête renforcée, jeu courant affaibli d'autant.`}
+              </div>
+            </div>
           </div>
-        </div>
+          {/* V0.65 — le carnet remplace la philosophie de touche, qui ne proposait
+              qu'un mot pour toute la saison. Elle reste le repli des clubs gérés
+              par la machine, où personne ne dessine rien.
+
+              Il occupe toute la largeur : posé dans la colonne de la préparation,
+              il tombait à 360 pixels, ses trois groupes de boutons se dépliaient
+              l'un sous l'autre et trois combinaisons faisaient un mur qui
+              repoussait la composition hors de l'écran. C'est exactement la faute
+              que la V0.62.1 a corrigée sur l'écran d'entraînement. */}
+          {playbook && (
+            <PlaybookEditor
+              playbook={playbook.value}
+              usage={playbook.usage}
+              forwards={starters
+                .map(s => byId.get(s.playerId))
+                .filter((p): p is Player => p !== undefined)
+                .slice(0, 8)}
+              onChange={playbook.onChange}
+            />
+          )}
+        </>)}
+
+        {tab === 'ADVERSAIRE' && (<>
+          {/* ---- Dossier adversaire (V0.36) --------------------------------- */}
+          {opponentReport && (
+            <OpponentDossier
+              report={opponentReport}
+              {...(opponentScouting ? { scouting: opponentScouting } : {})}
+            />
+          )}
+
+          {!opponentReport && (
+            <div className="dashboard-panel">
+              <div className="panel-tag">Adversaire</div>
+              <p className="prep-hint">
+                Aucun renseignement sur cette équipe. Un scout envoyé sur elle remplirait
+                ce dossier avant la prochaine confrontation.
+              </p>
+            </div>
+          )}
+        </>)}
 
       </div>
 
+      {/* V0.65 : la barre colle en bas de l'écran, et porte l'état du XV.
+          Elle vivait sous six panneaux : pour savoir où en était sa feuille, il
+          fallait remonter, et pour lancer le match, redescendre. */}
       <div className="pre-match-actions">
-        <button onClick={onBack} type="button">Annuler</button>
-        <button className="primary" onClick={goPlay} type="button">
-          Lancer le match →
-        </button>
+        <div className="pma-state">
+          <span className="pma-stat">
+            Niveau XV <strong>{avgStarter}</strong>
+          </span>
+          <span className={`pma-stat ${feuilleJiffStats.ratio < 0.5 ? 'warn' : ''}`}>
+            JIFF <strong>{feuilleJiffStats.jiffCount}/{feuilleJiffStats.total}</strong>
+          </span>
+          {conditions && (
+            <span className={`pma-stat ${conditions.weather !== 'SEC' ? 'warn' : ''}`}>
+              {WEATHER_LABEL[conditions.weather]}
+            </span>
+          )}
+        </div>
+        <div className="pma-buttons">
+          <button onClick={onBack} type="button">Annuler</button>
+          <button className="primary" onClick={goPlay} type="button">
+            Lancer le match →
+          </button>
+        </div>
       </div>
     </section>
+  );
+}
+
+
+/**
+ * L'éditeur de carnet : V0.65.
+ *
+ * Un tableau, une ligne par combinaison, comme l'écran d'entraînement depuis la
+ * V0.62.1. La première version empilait trois groupes de boutons segmentés par
+ * combinaison dans la colonne étroite de la préparation : quinze contrôles
+ * dépliés en permanence, et la composition repoussée hors de l'écran.
+ *
+ * Les listes déroulantes remplacent les boutons segmentés pour la même raison
+ * qu'à l'entraînement : trois choix sur trois axes tiennent dans une ligne de
+ * tableau, pas dans neuf boutons.
+ *
+ * La **part d'usage** reste affichée sur chaque ligne : c'est la seule
+ * information qui rende le mécanisme de lecture jouable. Sans elle, le manager
+ * se ferait contrer sans jamais comprendre qu'il se répète.
+ */
+function PlaybookEditor({ playbook, usage, forwards, onChange }: PlaybookEditorProps) {
+  const total = Object.values(usage).reduce((sum, n) => sum + n, 0);
+  const verdict = validatePlaybook(playbook);
+
+  const patch = (id: string, change: Partial<LineoutCall>): void => {
+    onChange({
+      ...playbook,
+      calls: playbook.calls.map(c => (c.id === id ? { ...c, ...change } : c)),
+    });
+  };
+
+  /** Désigner un sauteur, ou revenir au « mieux placé » en retirant le champ. */
+  const setJumper = (call: LineoutCall, playerId: string): void => {
+    const { jumperId: _ancien, ...sansSauteur } = call;
+    const suivant: LineoutCall = playerId === ''
+      ? sansSauteur
+      : { ...sansSauteur, jumperId: playerId as PlayerId };
+    onChange({
+      ...playbook,
+      calls: playbook.calls.map(c => (c.id === call.id ? suivant : c)),
+    });
+  };
+
+  const ajouter = (): void => {
+    if (playbook.calls.length >= MAX_CALLS) return;
+    const id = `c${playbook.calls.length}_${playbook.calls.map(c => c.id).join('').length}`;
+    onChange({
+      ...playbook,
+      calls: [...playbook.calls, {
+        id, name: `Combinaison ${playbook.calls.length + 1}`,
+        alignment: 'CINQ', jumper: 'MILIEU', option: 'OUVREUR',
+      }],
+    });
+  };
+
+  const retirer = (id: string): void => {
+    if (playbook.calls.length <= MIN_CALLS) return;
+    const { defaultCallId, ...reste } = playbook;
+    const calls = playbook.calls.filter(c => c.id !== id);
+    // Retirer la combinaison par défaut laisse le carnet sans défaut plutôt que
+    // d'en désigner une au hasard : le moteur retombera sur la première, et le
+    // manager verra qu'aucune n'est cochée.
+    onChange(defaultCallId === id ? { ...reste, calls } : { ...playbook, calls });
+  };
+
+  return (
+    <div className="dashboard-panel panel-wide">
+      <div className="panel-tag">Carnet de touche</div>
+      <p className="prep-hint playbook-intro">
+        Chaque combinaison a son domaine : la réduite pour sortir de ses vingt-deux,
+        le maul près de leur ligne, le peel contre une défense qui monte. Celle que
+        vous jouez plus d'une fois sur trois finit lue, et contrée.
+      </p>
+
+      <div className="training-scroll playbook-scroll">
+        {/* `training-table` porte l'habillage de tableau déjà éprouvé (en-tête
+            collant, lignes, survol). On n'ajoute ici que les largeurs propres au
+            carnet : recopier cinquante lignes de style aurait fait deux
+            habillages à maintenir pour un seul objet. */}
+        <table className="training-table playbook-table">
+          <thead>
+            <tr>
+              <th className="col-name">Combinaison</th>
+              <th className="col-choice">Alignement</th>
+              <th className="col-choice">Sauteur</th>
+              <th className="col-choice">Option</th>
+              <th className="col-choice">Sauteur désigné</th>
+              <th className="col-share">Usage</th>
+              <th className="col-flag">Défaut</th>
+              <th className="col-flag" aria-label="Retirer" />
+            </tr>
+          </thead>
+          <tbody>
+            {playbook.calls.map(call => {
+              const share = total > 0 ? (usage[call.id] ?? 0) / total : 0;
+              const lue = total >= READ_MIN_SAMPLE && share > 0.34;
+              return (
+                <tr key={call.id} className={lue ? 'over-used' : ''}>
+                  <td className="col-name">
+                    <input
+                      className="pc-name"
+                      value={call.name}
+                      aria-label="Nom de la combinaison"
+                      onChange={e => patch(call.id, { name: e.target.value })}
+                    />
+                  </td>
+                  <td className="col-choice">
+                    <select
+                      className="focus-select"
+                      aria-label={`Alignement de ${call.name}`}
+                      value={call.alignment}
+                      onChange={e => patch(call.id, { alignment: e.target.value as LineoutCall['alignment'] })}
+                    >
+                      <option value="SEPT">Sept</option>
+                      <option value="CINQ">Cinq</option>
+                      <option value="REDUITE">Réduite</option>
+                    </select>
+                  </td>
+                  <td className="col-choice">
+                    <select
+                      className="focus-select"
+                      aria-label={`Créneau de saut de ${call.name}`}
+                      value={call.jumper}
+                      onChange={e => patch(call.id, { jumper: e.target.value as LineoutCall['jumper'] })}
+                    >
+                      <option value="DEVANT">Devant</option>
+                      <option value="MILIEU">Milieu</option>
+                      <option value="FOND">Fond</option>
+                    </select>
+                  </td>
+                  <td className="col-choice">
+                    <select
+                      className="focus-select"
+                      aria-label={`Option de ${call.name}`}
+                      value={call.option}
+                      onChange={e => patch(call.id, { option: e.target.value as LineoutCall['option'] })}
+                    >
+                      <option value="MAUL">Maul</option>
+                      <option value="OUVREUR">Ouvreur</option>
+                      <option value="PEEL">Peel</option>
+                    </select>
+                  </td>
+                  <td className="col-choice">
+                    <select
+                      className="focus-select"
+                      aria-label={`Sauteur désigné pour ${call.name}`}
+                      value={(call.jumperId as string | undefined) ?? ''}
+                      onChange={e => setJumper(call, e.target.value)}
+                    >
+                      <option value="">le mieux placé</option>
+                      {forwards.map(p => (
+                        <option key={p.id as string} value={p.id as string}>{p.lastName}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className={`col-share mono ${lue ? 'over' : ''}`}>
+                    {total === 0 ? '—' : `${Math.round(share * 100)} %`}
+                  </td>
+                  <td className="col-flag">
+                    <button
+                      type="button"
+                      className={`pc-default ${playbook.defaultCallId === call.id ? 'active' : ''}`}
+                      aria-pressed={playbook.defaultCallId === call.id}
+                      title="Combinaison appelée par défaut au milieu du terrain"
+                      onClick={() => onChange({ ...playbook, defaultCallId: call.id })}
+                    >
+                      ●
+                    </button>
+                  </td>
+                  <td className="col-flag">
+                    <button
+                      type="button"
+                      className="pc-remove"
+                      disabled={playbook.calls.length <= MIN_CALLS}
+                      aria-label={`Retirer ${call.name}`}
+                      onClick={() => retirer(call.id)}
+                    >
+                      ×
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="playbook-actions">
+        <button
+          type="button"
+          className="secondary"
+          disabled={playbook.calls.length >= MAX_CALLS}
+          onClick={ajouter}
+        >
+          Ajouter une combinaison
+        </button>
+        {!verdict.ok && <span className="playbook-warning">{verdict.reason}</span>}
+      </div>
+    </div>
   );
 }

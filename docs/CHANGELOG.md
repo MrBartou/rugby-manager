@@ -2,6 +2,107 @@
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/). Versions sémantiques.
 
+## [V0.65] : Le playbook, la touche se dessine
+
+Depuis la V0.8, la touche se réglait par un mot : « maul lourd », « saut
+rapide », « saut long ». Un choix pour toute la saison, le même lancement répété
+quatre-vingts minutes durant, et aucune façon de dire à qui l'on veut lancer.
+C'est le contraire de ce qu'est une touche dans ce sport, où l'on dessine des
+combinaisons, on les nomme, on les répète, et on les garde pour le moment où
+elles feront mal.
+
+Cette version donne au manager ce carnet, et surtout ce qui le rend vivant :
+l'adversaire finit par le lire.
+
+### Ajouté
+
+- **Le carnet de touche** (`match/playbook.ts`). Trois à cinq combinaisons
+  nommées par le manager, avec trois décisions chacune : l'alignement (sept,
+  cinq, réduite), le créneau du sauteur (devant, milieu, fond) et l'option
+  (maul, ballon vers l'ouvreur, peel). Un sauteur peut être désigné nommément.
+- **La combinaison s'appelle sur la position du ballon.** Dans ses vingt-deux on
+  sort, dans les vingt-deux adverses on va chercher l'essai, entre les deux on
+  joue celle que le manager a désignée par défaut.
+- **La lecture par l'adversaire.** Une combinaison jouée plus d'une fois sur
+  trois, face à un club qui travaille ses adversaires, finit lue : la conquête
+  chute, le maul s'étouffe, et le compte rendu de phase le dit en clair plutôt
+  que dans un tableau.
+- **L'avertissement du dossier d'avant-match** : « ils connaissent votre fond de
+  touche », avec le nom de la combinaison et sa part d'usage. C'est le premier
+  usage offensif du scout principal, recruté depuis la V0.44 sans peser sur
+  autre chose que le recrutement.
+- **Les consignes individuelles** (`match/instructions.ts`) : marquer un
+  adversaire précis, et la consigne au pied. Toutes deux se donnent avant le
+  match comme depuis le bord de touche.
+- **Les plans A et B**, nommés, rappelés d'un clic et conservés d'un match à
+  l'autre. La tactique ne vivait que dans le tunnel d'avant-match, refaite
+  curseur par curseur chaque semaine.
+
+### Modifié
+
+- **La philosophie de touche disparaît de l'écran d'avant-match.** Le carnet la
+  remplace, et laisser les deux aurait donné deux réglages pour la même chose,
+  dont un que le moteur n'aurait plus jamais lu. Elle reste le repli des clubs
+  gérés par la machine et des sauvegardes antérieures.
+- **La masse de la touche tient compte du sauteur désigné** : s'il est sur le
+  terrain, c'est lui qui saute au lieu d'être dilué dans la moyenne du paquet ;
+  s'il est sorti, la combinaison a été dessinée autour d'un absent, et cela se
+  paie.
+- **L'écran d'avant-match passe en trois onglets** : composition, plan de match,
+  adversaire. Il empilait six panneaux et son affiche, soit trois écrans de
+  défilement, avec la composition, qui est le travail même de cette page, en
+  quatrième position et le bouton « Lancer le match » tout en bas. La barre d'onglets est
+  celle du marché et de la carrière : c'est la même navigation, elle ne doit pas
+  avoir trois apparences.
+- **La barre d'action colle en bas de la fenêtre** et porte l'état du XV :
+  niveau moyen, quota JIFF, météo, en jaune dès que l'un sort des clous. Il
+  fallait auparavant remonter pour vérifier sa feuille et redescendre pour
+  lancer le match.
+- **Le carnet de touche est un tableau**, une ligne par combinaison, dans un
+  panneau pleine largeur, avec l'habillage de tableau de l'écran
+  d'entraînement.
+
+### Notes de modélisation
+
+- **Une combinaison n'a pas de valeur en soi, elle en a une contre ce que
+  l'adversaire attend.** C'est ce seul mécanisme qui transforme un menu en
+  playbook : sans lui, on trouverait la meilleure ligne en trois matchs et on ne
+  toucherait plus jamais au carnet.
+- **La lecture est le produit d'une répétition et d'un travail.** Ni l'une ni
+  l'autre ne suffit : une équipe qui ne prépare rien ne lit rien même face à une
+  combinaison rabâchée, et une équipe très préparée ne lit rien non plus si l'on
+  varie. Multiplier les deux, plutôt que les additionner, est ce qui rend le
+  carnet de trois combinaisons utile.
+- **Six touches avant de conclure quoi que ce soit.** Sans ce seuil, la première
+  touche de la saison affichait cent pour cent d'usage et se trouvait « lue »
+  d'entrée : le mécanisme aurait puni le manager avant qu'il ait pu répéter quoi
+  que ce soit.
+- **Cinq combinaisons au plus, trois au moins.** Au-delà, le groupe ne les
+  répète plus assez ; en dessous, on est lu quoi qu'on fasse, ce qui rend le
+  mécanisme injouable plutôt qu'intéressant.
+- **Le point neutre a été mesuré, pas supposé.** Les deux versions du module de
+  touche ont tourné côte à côte sur les mêmes trois mille graines : 0,7603 de
+  conquête des deux côtés, au dix-millième. La calibration a été rejouée
+  puisque le moteur de match a bougé, et rend 12/12.
+- **Marquer un homme distrait le sien.** Le prix payé par le marqueur est fixe
+  et indépendant de la cible : c'est lui qui empêche de marquer tout le monde.
+  Et le marquage ne peut jamais effacer un joueur, sinon la consigne serait
+  devenue la réponse à tout adversaire doté d'une vedette, c'est-à-dire à tous.
+- **La consigne au pied est le premier réglage jugé sur ce que fait
+  l'adversaire.** Taper derrière un ailier qui monte est le coup gagnant du
+  rugby moderne ; le même coup contre une défense reculée rend le ballon à
+  trente mètres de chez soi. C'est ce qui oblige à lire le dossier avant de
+  cocher.
+- **Deux plans enregistrés, pas dix.** A et B, comme sur un banc de touche :
+  celui qu'on a préparé et celui qu'on sort quand le premier ne marche pas. Une
+  bibliothèque de plans serait devenue une gestion de bibliothèque.
+- **La faute de la V0.62.1, refaite.** Le carnet a d'abord été posé dans la
+  colonne étroite de la préparation, où il tombait à 360 pixels : neuf boutons
+  segmentés par combinaison, dépliés en permanence, qui repoussaient la
+  composition hors de l'écran. Livré fonctionnel, jamais regardé. La leçon reste
+  la même qu'il y a trois versions : une grille qui accepte n'importe quel
+  arrivant se dérègle à chaque ajout, et un panneau se place, il ne tombe pas.
+
 ## [V0.64] : Le mercato mûrit
 
 Un contrat n'avait que deux chiffres, un salaire et une durée. Négocier revenait

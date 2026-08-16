@@ -22,6 +22,19 @@ import { resolveTalk, situationFor, type DressingRoom, type TalkTone } from './t
 import type { Player, PlayerId, Position } from '../types.js';
 import { simulateScrum, computeScrumDominanceShift, type ScrumInput } from './scrum.js';
 import { simulateLineout, type LineoutInput } from './lineout.js';
+import {
+  NO_INSTRUCTIONS,
+  kickingEffect,
+  markingEffect,
+  type IndividualInstructions,
+} from './instructions.js';
+import {
+  callForSituation,
+  readLevel,
+  recordCall,
+  type CallUsage,
+  type Playbook,
+} from './playbook.js';
 import { simulateRuck, type RuckInput } from './ruck.js';
 import { simulateOpenPlay, type OpenPlayInput } from './openplay.js';
 import { simulateGoalLine, type GoalLineInput } from './goal-line.js';
@@ -236,6 +249,19 @@ interface SideRuntime {
   baseTacticalBonus: number;
   /** V0.8 — philosophie de touche pour ce side (undef si pas définie). */
   readonly lineoutPhilosophy?: import('./types.js').LineoutPhilosophy;
+  /**
+   * V0.65 — le carnet de touche de ce camp, ce qu'il a déjà joué cette saison,
+   * et ce qu'il a appelé dans ce match.
+   *
+   * Le compteur de saison arrive de l'extérieur et n'est jamais modifié ici :
+   * le moteur reste sans mémoire d'un match à l'autre. Ce qu'il produit,
+   * `matchCalls`, remonte dans le résultat pour que la saison l'y ajoute.
+   */
+  readonly playbook?: Playbook;
+  readonly seasonCalls: CallUsage;
+  matchCalls: CallUsage;
+  /** Qualité d'analyse : sa capacité à lire les habitudes d'en face. */
+  readonly analysis: number;
   /** V0.32 — effets du plan de match, injectés dans chaque sous-système. */
   tactics: TacticalModifiers;
   /**
@@ -327,6 +353,12 @@ export interface MatchSession {
   substitute(offPlayerId: PlayerId, onPlayerId: PlayerId): SubstitutionOutcome;
   /** V0.33 — change le plan de match en cours de rencontre (mi-temps, urgence). */
   setTacticalPlan(plan: PreMatchTacticalPlan): void;
+  /**
+   * V0.65 — consignes individuelles, données avant le match ou depuis le bord
+   * de touche. Le marquage se décide souvent après avoir vu qui fait mal.
+   */
+  setInstructions(instructions: IndividualInstructions): void;
+  getInstructions(): IndividualInstructions;
   /** V0.33 — plan actuellement appliqué au côté du manager. */
   getTacticalPlan(): PreMatchTacticalPlan;
   /** Avance jusqu'à la prochaine décision ou la fin du match. No-op si awaiting-decision ou finished. */
@@ -368,6 +400,13 @@ export interface MatchSessionOptions {
 // =============================================================================
 // Helpers
 // =============================================================================
+
+/** Le cumul saison et ce que ce match a déjà montré, additionnés. */
+function mergeUsage(season: CallUsage, match: CallUsage): CallUsage {
+  const out: Record<string, number> = { ...season };
+  for (const [id, n] of Object.entries(match)) out[id] = (out[id] ?? 0) + n;
+  return out;
+}
 
 function clampField(x: number): number {
   if (x < -50) return -50;
@@ -604,11 +643,38 @@ export function createMatchSession(
   const awayBonus = awayWeekly?.tacticalBonus ?? 0;
   const homeInitialFatigue = Math.max(0, Math.min(40, homeWeekly?.initialFatigueDelta ?? 0));
   const awayInitialFatigue = Math.max(0, Math.min(40, awayWeekly?.initialFatigueDelta ?? 0));
+  /**
+   * Ce que le marquage retire de part et d'autre, recalculé à chaque phase.
+   *
+   * À chaque phase parce que les deux hommes peuvent sortir : une consigne
+   * donnée à la vingtième minute ne doit pas continuer d'agir quand celui qui
+   * devait l'appliquer est sur le banc.
+   */
+  function instructionEffects(): { readonly targetPenalty: number; readonly markerPenalty: number } {
+    const marking = playerInstructions.marking;
+    if (!marking) return { targetPenalty: 0, markerPenalty: 0 };
+    const marker = input.playersById.get(marking.markerId);
+    const target = input.playersById.get(marking.targetId);
+    const onField = (id: PlayerId): boolean =>
+      [...home.squad.slots, ...away.squad.slots].some(slot => slot.player.id === id);
+    if (!marker || !target || !onField(marking.markerId) || !onField(marking.targetId)) {
+      return { targetPenalty: 0, markerPenalty: 0 };
+    }
+    return markingEffect({
+      marker,
+      target,
+      markerDefence: marker.technical.plaquage,
+      targetAttack: (target.physical.vitesse + target.technical.visionDeJeu) / 2,
+    });
+  }
+
   function buildSide(
     decisions: typeof input.home,
     bonus: number,
     initialFatigue: number,
     philosophy: import('./types.js').LineoutPhilosophy | undefined,
+    weekly: import('./types.js').HomeWeeklyModifiers | undefined,
+    seasonCalls: CallUsage | undefined,
   ): SideRuntime {
     const extracted = extractSidePlayers(decisions.squad, input.playersById);
     const tactics = resolveTactics(decisions.tacticalPlan);
@@ -629,16 +695,35 @@ export function createMatchSession(
       tacticalBonusRemaining: 0,
       tactics,
       ...(effectivePhilosophy ? { lineoutPhilosophy: effectivePhilosophy } : {}),
+      ...(weekly?.playbook ? { playbook: weekly.playbook } : {}),
+      seasonCalls: seasonCalls ?? {},
+      matchCalls: {},
+      analysis: Math.max(0, Math.min(1, weekly?.analysis ?? 0)),
       ...(captain ? { captain } : {}),
       captainOnField: captain !== undefined,
     };
   }
 
-  const home: SideRuntime = buildSide(input.home, homeBonus, homeInitialFatigue, homeWeekly?.lineoutPhilosophy);
-  const away: SideRuntime = buildSide(input.away, awayBonus, awayInitialFatigue, awayWeekly?.lineoutPhilosophy);
+  const home: SideRuntime = buildSide(
+    input.home, homeBonus, homeInitialFatigue, homeWeekly?.lineoutPhilosophy,
+    homeWeekly, input.homeCallUsage,
+  );
+  const away: SideRuntime = buildSide(
+    input.away, awayBonus, awayInitialFatigue, awayWeekly?.lineoutPhilosophy,
+    awayWeekly, input.awayCallUsage,
+  );
   // V0.9 — côté contrôlé par le joueur (pour live moments + décisions)
   const playerSide: 'HOME' | 'AWAY' = input.playerSide ?? 'HOME';
   const playerRuntime = playerSide === 'HOME' ? home : away;
+  /**
+   * V0.65 — les consignes individuelles du côté manager.
+   *
+   * Elles se donnent avant le coup d'envoi comme depuis le bord de touche : le
+   * marquage d'un homme se décide souvent à la vingtième minute, quand on a vu
+   * qui fait mal.
+   */
+  let playerInstructions: IndividualInstructions = NO_INSTRUCTIONS;
+
   /** V0.33 — plan courant du côté manager, modifiable en cours de match. */
   let currentPlayerPlan: PreMatchTacticalPlan =
     (playerSide === 'HOME' ? input.home : input.away).tacticalPlan ?? NEUTRAL_PLAN;
@@ -1011,6 +1096,27 @@ export function createMatchSession(
         return outcome;
       }
       case 'LINEOUT': {
+        /*
+         * V0.65 — la combinaison se choisit ici, sur la position du ballon.
+         *
+         * Le manager dessine le carnet, il n'appelle pas chaque touche : ce
+         * serait quatorze fenêtres par match. Et la lecture se calcule sur le
+         * cumul saison **plus** ce que ce match a déjà montré : une équipe qui
+         * répète la même chose pendant quatre-vingts minutes finit lue avant le
+         * coup de sifflet final, pas la semaine suivante.
+         */
+        const call = att.playbook
+          ? callForSituation({ playbook: att.playbook, fieldPosition: sim.fieldPosition + 50 })
+          : undefined;
+        const read = call
+          ? readLevel({
+            usage: mergeUsage(att.seasonCalls, att.matchCalls),
+            callId: call.id,
+            opponentPreparation: def.analysis,
+          })
+          : 0;
+        if (call) att.matchCalls = recordCall(att.matchCalls, call.id);
+
         const inp: LineoutInput = {
           attackPack: onFieldPack(att.squad),
           defensePack: onFieldPack(def.squad),
@@ -1021,6 +1127,7 @@ export function createMatchSession(
           attackBonus: att.tactics.lineoutBonus - meteo.lineoutMalus,
           defenseBonus: def.tactics.lineoutBonus,
           ...(att.lineoutPhilosophy ? { philosophy: att.lineoutPhilosophy } : {}),
+          ...(call ? { call, read } : {}),
         };
         return simulateLineout(inp, rng);
       }
@@ -1047,6 +1154,21 @@ export function createMatchSession(
         return simulateRuck(inp, rng);
       }
       case 'OPEN_PLAY': {
+        /*
+         * V0.65 — les consignes individuelles, du seul côté du manager.
+         *
+         * Le marquage retire à l'attaque adverse ce que le marqueur lui prend,
+         * et retire à la nôtre ce qu'il ne fait plus. Les deux termes existent
+         * toujours ensemble : une consigne gratuite serait une consigne qu'on
+         * laisse cochée pour toujours.
+         */
+        const marquage = instructionEffects();
+        const attackIsPlayer = sim.attacker === playerSide;
+        const kick = kickingEffect(
+          playerInstructions.kicking,
+          (playerSide === 'HOME' ? input.away : input.home).tacticalPlan,
+        );
+
         const inp: OpenPlayInput = {
           attackBacks: onFieldBacks(att.squad),
           defenseBacks: onFieldBacks(def.squad),
@@ -1058,11 +1180,14 @@ export function createMatchSession(
           fatigueDefense: squadFatigue(def.squad),
           phaseInPossession: sim.phaseInPossession,
           attackTacticalBonus: att.tacticalBonus - att.tactics.openPlayMalus
-            + elan(sim.attacker).tacticalBonus + esprit(att).confidence,
+            + elan(sim.attacker).tacticalBonus + esprit(att).confidence
+            - (attackIsPlayer ? marquage.markerPenalty * 0.1 : marquage.targetPenalty * 0.1),
           defenseTacticalBonus: def.tacticalBonus - def.tactics.openPlayMalus
             + elan(sim.attacker === 'HOME' ? 'AWAY' : 'HOME').tacticalBonus
-            + esprit(def).confidence,
-          kickTendency: att.tactics.kickTendency * meteo.kickTendency,
+            + esprit(def).confidence
+            - (attackIsPlayer ? 0 : marquage.markerPenalty * 0.1),
+          kickTendency: att.tactics.kickTendency * meteo.kickTendency
+            * (attackIsPlayer ? kick.kickTendencyMul : 1),
           attackErrorRisk: att.tactics.ownErrorRisk
             * elan(sim.attacker).errorFactor * esprit(att).errorFactor
             * meteo.handlingFactor,
@@ -1536,6 +1661,14 @@ export function createMatchSession(
       return outcome;
     },
 
+    setInstructions(instructions: IndividualInstructions) {
+      playerInstructions = instructions;
+    },
+
+    getInstructions(): IndividualInstructions {
+      return playerInstructions;
+    },
+
     setTacticalPlan(plan: PreMatchTacticalPlan) {
       // Le plan de semaine garde la main sur la touche : c'est un choix plus fin
       // que le focus « maul », et le manager l'a arrêté avant le coup d'envoi.
@@ -1629,6 +1762,10 @@ export function createMatchSession(
         awaySubstitutions: away.squad.substitutions,
         uncontestedScrums: scrumsUncontested(home.squad) || scrumsUncontested(away.squad),
         cardsIssued: matchCards,
+        // V0.65 — ce que chaque camp a appelé en touche. La saison les cumule :
+        // c'est ce cumul qui finit par se faire lire.
+        homeLineoutCalls: home.matchCalls,
+        awayLineoutCalls: away.matchCalls,
       };
     },
   };

@@ -25,6 +25,8 @@ import {
 import { generateStaffForClub } from '../../engine/club/staff.js';
 import { formationFor, onFieldAt, type PitchActor } from '../pitch/phase-formation.js';
 import { TONE_LABEL, type TalkOutcome } from '../../engine/match/team-talk.js';
+import type { IndividualInstructions } from '../../engine/match/instructions.js';
+import type { Player, PlayerId } from '../../engine/types.js';
 
 interface Props {
   readonly setup: MatchSetup;
@@ -309,6 +311,54 @@ export function MatchScreen({
     setVersion(v => v + 1);
   };
 
+  /*
+   * V0.65 — les consignes individuelles depuis le bord de touche.
+   *
+   * Le marquage n'existe que si les deux hommes sont désignés : une consigne à
+   * moitié donnée ne doit rien produire du tout, ni effet ni malus, plutôt que
+   * de coûter le prix du marqueur sans gêner personne.
+   */
+  const liveInstructions = session.getInstructions();
+  const opponentsOnField: readonly Player[] = (() => {
+    const subs = session.getSubstitutions();
+    const minute = lastVisible?.state.minute ?? 0;
+    const side = setup.matchInput.playerSide === 'AWAY' ? setup.matchInput.home : setup.matchInput.away;
+    const sideSubs = setup.matchInput.playerSide === 'AWAY' ? subs.home : subs.away;
+    return onFieldAt(side.squad, sideSubs, minute)
+      .map(entry => setup.matchInput.playersById.get(entry.id))
+      .filter((p): p is Player => p !== undefined);
+  })();
+
+  const changeInstructions = (patch: Partial<IndividualInstructions>): void => {
+    session.setInstructions({ ...liveInstructions, ...patch });
+    setVersion(v => v + 1);
+  };
+
+  const setMarker = (markerId: string): void => {
+    const targetId = liveInstructions.marking?.targetId;
+    if (markerId === '' || targetId === undefined) {
+      const { marking: _drop, ...reste } = liveInstructions;
+      session.setInstructions(markerId === '' ? reste : {
+        ...reste,
+        ...(targetId !== undefined ? { marking: { markerId: markerId as PlayerId, targetId } } : {}),
+      });
+    } else {
+      session.setInstructions({ ...liveInstructions, marking: { markerId: markerId as PlayerId, targetId } });
+    }
+    setVersion(v => v + 1);
+  };
+
+  const setMarkTarget = (targetId: string): void => {
+    const markerId = liveInstructions.marking?.markerId;
+    const { marking: _drop, ...reste } = liveInstructions;
+    if (targetId === '' || markerId === undefined) {
+      session.setInstructions(reste);
+    } else {
+      session.setInstructions({ ...reste, marking: { markerId, targetId: targetId as PlayerId } });
+    }
+    setVersion(v => v + 1);
+  };
+
   return (
     <section
       className="match"
@@ -441,6 +491,63 @@ export function MatchScreen({
                         {DEFENSIVE_LINE_LABEL[d]}
                       </button>
                     ))}
+                  </div>
+                </div>
+
+                {/* V0.65 — les consignes individuelles. Elles se donnent en
+                    cours de match parce que c'est ainsi qu'elles se décident :
+                    on marque un homme quand on a vu qu'il fait mal. */}
+                <div className="lt-row">
+                  <span className="lt-label">Au pied</span>
+                  <div className="seg-btn">
+                    {(['AUCUNE', 'DERRIERE_AILIER', 'CHANDELLE'] as const).map(k => (
+                      <button
+                        key={k}
+                        type="button"
+                        className={k === (liveInstructions.kicking ?? 'AUCUNE') ? 'active' : ''}
+                        title={k === 'AUCUNE'
+                          ? 'On joue ce qui se présente'
+                          : k === 'DERRIERE_AILIER'
+                            ? 'Taper derrière leur ailier : paie s\'il monte, rend le ballon s\'il recule'
+                            : 'Chandelles sous leur arrière'}
+                        onClick={() => changeInstructions({ kicking: k })}
+                      >
+                        {k === 'AUCUNE' ? 'Libre' : k === 'DERRIERE_AILIER' ? 'Derrière' : 'Chandelle'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="lt-row">
+                  <span className="lt-label">Marquage</span>
+                  {/* Deux listes pleine largeur, l'une sous l'autre : le bord
+                      de touche fait moins de trois cents pixels, et une ligne
+                      « X colle Y » y débordait. */}
+                  <div className="lt-marking">
+                    <select
+                      className="focus-select"
+                      aria-label="Le joueur chargé du marquage"
+                      value={(liveInstructions.marking?.markerId as string | undefined) ?? ''}
+                      onChange={e => setMarker(e.target.value)}
+                    >
+                      <option value="">personne ne marque</option>
+                      {liveSquad.onField.map(s => (
+                        <option key={s.player.id as string} value={s.player.id as string}>
+                          {s.player.lastName}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="focus-select"
+                      aria-label="L'adversaire à marquer"
+                      value={(liveInstructions.marking?.targetId as string | undefined) ?? ''}
+                      onChange={e => setMarkTarget(e.target.value)}
+                    >
+                      <option value="">aucun adversaire</option>
+                      {opponentsOnField.map(p => (
+                        <option key={p.id as string} value={p.id as string}>{p.lastName}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </div>

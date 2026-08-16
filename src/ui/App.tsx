@@ -130,6 +130,10 @@ import {
 } from '../engine/club/loans.js';
 import { decayStandings } from '../engine/club/agents.js';
 import { canCover } from '../engine/match/bench.js';
+import { DEFAULT_PLAYBOOK, type CallUsage, type Playbook } from '../engine/match/playbook.js';
+import { DEFAULT_SAVED_PLANS, type SavedPlan } from '../engine/match/tactics.js';
+import { analysisQualityOf } from '../engine/club/staff.js';
+import type { HomeWeeklyModifiers } from '../engine/match/types.js';
 import { applyPreContracts } from '../engine/club/contract-talks.js';
 import {
   reactionSummary,
@@ -638,6 +642,19 @@ export function App() {
    */
   const loansRef = useRef<readonly ActiveLoan[]>([]);
   const [loanEpoch, setLoanEpoch] = useState(0);
+  /**
+   * V0.65 — le carnet de touche du club, et ce qu'il a joué cette saison.
+   *
+   * Le carnet se dessine à l'entraînement et traverse les matchs : c'est
+   * exactement ce qui permet de se faire lire. Le compteur, lui, se remet à
+   * zéro chaque saison, parce qu'une habitude d'il y a trois ans n'apprend rien
+   * à personne.
+   */
+  const playbookRef = useRef<Playbook>(DEFAULT_PLAYBOOK);
+  const lineoutUsageRef = useRef<CallUsage>({});
+  const [playbookEpoch, setPlaybookEpoch] = useState(0);
+  /** V0.65 — les deux plans de touche du banc, A et B. */
+  const savedPlansRef = useRef<readonly SavedPlan[]>(DEFAULT_SAVED_PLANS);
   /**
    * V0.55 — joueurs ménagés cette semaine.
    *
@@ -1214,6 +1231,12 @@ export function App() {
         ...(save.preContracts ? { preContracts: save.preContracts } : {}),
       },
     });
+    // V0.65 — le carnet et les habitudes qu'il a créées. Un carnet neuf au
+    // rechargement aurait rendu au manager une innocence qu'il n'avait plus.
+    playbookRef.current = save.playbook ?? DEFAULT_PLAYBOOK;
+    lineoutUsageRef.current = save.lineoutUsage ?? {};
+    savedPlansRef.current = save.savedPlans ?? DEFAULT_SAVED_PLANS;
+    setPlaybookEpoch(e => e + 1);
     aiMarketRef.current = save.aiMarket ?? [];
     winterMarketRef.current = save.winterMarketSeason ?? null;
     newsRef.current = save.news ? { items: save.news } : EMPTY_NEWS;
@@ -1391,6 +1414,9 @@ export function App() {
           agentStandings: seasonRef.current?.getAgentStandings() ?? {},
           transferLedger: seasonRef.current?.getTransferLedger() ?? [],
           preContracts: seasonRef.current?.getPreContracts() ?? [],
+          playbook: playbookRef.current,
+          lineoutUsage: lineoutUsageRef.current,
+          savedPlans: savedPlansRef.current,
           regulation: {
             sanctionedLastSeason: sanctionedLastSeasonRef.current,
             transferBan: transferBanRef.current,
@@ -3579,7 +3605,18 @@ export function App() {
     // V0.58 — l'effet du public passe désormais par la feuille de match, pas
     // par un bonus tactique replié ici. L'interface décrit l'affluence ; c'est
     // le moteur qui en tire l'avantage du terrain.
-    const modifiers = baseModifiers;
+    /*
+     * V0.65 — le carnet de touche et la qualité d'analyse rejoignent la feuille.
+     *
+     * L'analyse vient du scout principal : c'est le même homme qui décortique
+     * les adversaires, et cela donne enfin au poste un usage offensif, réclamé
+     * par la roadmap depuis que le scouting existe.
+     */
+    const modifiers: HomeWeeklyModifiers = {
+      ...baseModifiers,
+      playbook: playbookRef.current,
+      analysis: analysisQualityOf(seasonRef.current?.getStaff() ?? []),
+    };
 
     // V0.44 — la semaine laisse des traces au-delà du week-end. Jusqu'ici la
     // charge ne coûtait que quelques points de fatigue au coup d'envoi : « forte »
@@ -3642,8 +3679,8 @@ export function App() {
       ...input,
       playerSide: isHomeForPlayer ? 'HOME' : 'AWAY',
       ...(isHomeForPlayer
-        ? { homeWeeklyModifiers: modifiers }
-        : { awayWeeklyModifiers: modifiers }),
+        ? { homeWeeklyModifiers: modifiers, homeCallUsage: lineoutUsageRef.current }
+        : { awayWeeklyModifiers: modifiers, awayCallUsage: lineoutUsageRef.current }),
       // V0.51 — le graphe de relations n'est suivi que pour notre club : la
       // cohésion d'un adversaire vaut donc zéro, soit neutre. Le moral, lui,
       // est porté par les joueurs et pèse des deux côtés.
@@ -3703,6 +3740,16 @@ export function App() {
     const playerIsHome = matchInput.home.squad.clubId === playerClubId;
     const starters = playerIsHome ? matchInput.home.squad.starters : matchInput.away.squad.starters;
     const starterIds = starters.map(s => s.playerId);
+
+    // V0.65 — ce qu'on vient d'appeler en touche s'ajoute au cumul de la
+    // saison. C'est ce cumul, et lui seul, qui finit par se faire lire : le
+    // moteur ne garde rien d'un match à l'autre.
+    const appelees = playerIsHome ? result.homeLineoutCalls : result.awayLineoutCalls;
+    if (appelees) {
+      const cumul: Record<string, number> = { ...lineoutUsageRef.current };
+      for (const [id, n] of Object.entries(appelees)) cumul[id] = (cumul[id] ?? 0) + n;
+      lineoutUsageRef.current = cumul;
+    }
 
     // V0.13 — un match de coupe d'Europe ne fait pas avancer la journée de
     // championnat : il s'ajoute à la semaine et n'use que les joueurs alignés.
@@ -3964,6 +4011,13 @@ export function App() {
       form: recentResultsFor(club.id),
       ...(rankIndex >= 0 ? { rank: rankIndex + 1 } : { rank: undefined }),
       currentRound: state.currentRound,
+      // V0.65 — le dossier se retourne vers nous : ce que leur cellule vidéo a
+      // repéré de nos habitudes de touche. Leur qualité d'analyse se déduit de
+      // leur réputation, faute d'un encadrement modélisé pour les clubs gérés
+      // par la machine : un gros club prépare mieux ses adversaires.
+      ownPlaybook: playbookRef.current,
+      ownCallUsage: lineoutUsageRef.current,
+      opponentAnalysis: Math.max(0, Math.min(1, (club.reputation - 40) / 55)),
     });
   };
 
@@ -5378,6 +5432,24 @@ export function App() {
           roster={listRoster(screen.ctx.playerClubId)}
           medicalQuality={Math.min(100,
             (seasonState?.coaching.physique ?? 50) + medicalBonus(facilitiesRef.current))}
+          savedPlans={{
+            value: playbookEpoch >= 0 ? savedPlansRef.current : savedPlansRef.current,
+            onSave: (plans) => {
+              savedPlansRef.current = plans;
+              setPlaybookEpoch(e => e + 1);
+              notify('Plan enregistré.', 'success');
+            },
+          }}
+          playbook={{
+            // `playbookEpoch` force la relecture : le carnet vit dans une ref,
+            // et une ref ne redessine rien toute seule.
+            value: playbookEpoch >= 0 ? playbookRef.current : playbookRef.current,
+            usage: lineoutUsageRef.current,
+            onChange: (next) => {
+              playbookRef.current = next;
+              setPlaybookEpoch(e => e + 1);
+            },
+          }}
           {...(() => {
             const opponentId = (screen.ctx.playerIsHome
               ? screen.ctx.awayClubId : screen.ctx.homeClubId) as ClubId;

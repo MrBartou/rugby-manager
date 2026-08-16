@@ -2212,17 +2212,58 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
    33. PreMatch — actions
    ============================================================================ */
 
+/* V0.65 : la barre d'action colle en bas de la fenêtre et porte l'état du XV.
+   Posée sous six panneaux, elle obligeait à remonter pour vérifier sa feuille
+   et à redescendre pour lancer le match. */
 .pre-match-actions {
   display: flex;
   gap: var(--sp-3);
   flex-wrap: wrap;
-  padding: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
   background: var(--bg-1);
   border: 1px solid var(--border);
   border-radius: var(--radius-3);
   margin-top: var(--sp-2);
   align-items: center;
+  position: sticky;
+  bottom: var(--sp-3);
+  z-index: 5;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 28%);
 }
+
+.pma-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+  align-items: baseline;
+}
+
+.pma-stat {
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pma-stat strong {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  margin-left: 4px;
+}
+
+.pma-stat.warn,
+.pma-stat.warn strong { color: var(--yellow); }
+
+.pma-buttons {
+  display: flex;
+  gap: var(--sp-3);
+  margin-left: auto;
+}
+
+/* Les onglets reprennent la barre du marché et de la carrière : c'est la même
+   navigation interne, elle ne doit pas avoir deux apparences. */
+.pre-match-tabs { margin-bottom: calc(var(--sp-4) * -1 + var(--sp-2)); }
 
 /* ============================================================================
    35. HumanEventModal — voice
@@ -11119,3 +11160,141 @@ label.setting:hover { background: rgb(var(--overlay-hi) / 2%); }
   font-size: 11.5px;
   line-height: 1.5;
 }
+
+/* --- V0.65 : le carnet de touche ---
+   Un tableau, une ligne par combinaison, dans un panneau pleine largeur. La
+   première version empilait neuf boutons segmentés par combinaison dans la
+   colonne étroite de la préparation : elle repoussait la composition hors de
+   l'écran, exactement comme l'entraînement avant la V0.62.1. L'habillage du
+   tableau est celui de l'entraînement, réutilisé tel quel plutôt que recopié. */
+.playbook-intro { margin: 0 0 var(--sp-3); max-width: 78ch; }
+
+.playbook-scroll { max-height: none; }
+
+.playbook-table td { vertical-align: middle; }
+
+.playbook-table th.col-name,
+.playbook-table td.col-name { text-align: left; min-width: 170px; }
+
+.playbook-table th.col-choice,
+.playbook-table td.col-choice { text-align: left; width: 150px; }
+
+.playbook-table th.col-share,
+.playbook-table td.col-share { text-align: right; width: 74px; }
+
+.playbook-table th.col-flag,
+.playbook-table td.col-flag { text-align: center; width: 54px; }
+
+.playbook-table td.col-share.over { color: var(--yellow); }
+
+/* La ligne trop jouée se signale par un liseré, pas par un fond criard : c'est
+   un avertissement, pas une erreur. */
+.playbook-table tr.over-used td.col-name { box-shadow: inset 2px 0 0 var(--yellow); }
+
+.playbook-table .focus-select { max-width: 100%; }
+
+.pc-name {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 5px 8px;
+  width: 100%;
+}
+
+.pc-name:hover { border-color: var(--accent); }
+
+.pc-default,
+.pc-remove {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 5px 8px;
+}
+
+.pc-default.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.pc-remove:disabled { cursor: not-allowed; opacity: 0.35; }
+
+.playbook-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+
+.playbook-warning {
+  color: var(--yellow);
+  font-size: 11.5px;
+}
+
+/* V0.65 : l'avertissement de touche du dossier. Il porte sur nous, pas sur eux,
+   d'où le traitement distinct de la ligne de conseil. */
+.dos-warning {
+  background: color-mix(in srgb, var(--yellow) 12%, transparent);
+  border-left: 2px solid var(--yellow);
+  color: var(--text);
+  font-size: 11.5px;
+  line-height: 1.5;
+  margin: 0 0 10px;
+  padding: 7px 10px;
+}
+
+/* V0.65 : les plans A et B, rappelables en un clic. */
+.saved-plans {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.saved-plan {
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  overflow: hidden;
+}
+
+.saved-plan.active { border-color: var(--accent); }
+
+.sp-recall,
+.sp-store {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11.5px;
+  padding: 6px 10px;
+}
+
+.saved-plan.active .sp-recall { color: var(--accent); font-weight: 600; }
+
+.sp-store {
+  border-left: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 10.5px;
+}
+
+.sp-store:hover { color: var(--text); }
+
+/* V0.65 : le marquage, depuis le bord de touche. Deux listes empilées, pleine
+   largeur : le panneau fait moins de trois cents pixels, et une ligne
+   « X colle Y » y débordait. */
+.lt-marking {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.lt-marking .focus-select { max-width: 100%; font-size: 11.5px; }

@@ -168,7 +168,16 @@ export interface MatchInput {
   /** V0.52 — consigne de discipline au sol, par camp. */
   readonly homeDisciplinePolicy?: import('./referee.js').DisciplinePolicy;
   readonly awayDisciplinePolicy?: import('./referee.js').DisciplinePolicy;
+  /**
+   * V0.65 : ce que chaque camp a joué en touche jusqu'ici cette saison.
+   *
+   * Transmis au match plutôt que recalculé dedans : le compteur vit sur la
+   * saison, et le moteur reste sans mémoire d'un match à l'autre.
+   */
+  readonly homeCallUsage?: import('./playbook.js').CallUsage;
+  readonly awayCallUsage?: import('./playbook.js').CallUsage;
 }
+
 
 /** Modificateurs dérivés du choix de préparation hebdomadaire. */
 export interface HomeWeeklyModifiers {
@@ -182,6 +191,22 @@ export interface HomeWeeklyModifiers {
   readonly backsBonus?: number;
   /** V0.8 — philosophie de touche choisie pré-match. */
   readonly lineoutPhilosophy?: LineoutPhilosophy;
+  /**
+   * V0.65 : le carnet de combinaisons de touche, et ce que l'adversaire en sait.
+   *
+   * Le carnet voyage avec la préparation de la semaine, pas avec le plan de
+   * match : on le dessine à l'entraînement et on le garde d'un match à l'autre,
+   * ce qui est exactement ce qui permet de se faire lire.
+   */
+  readonly playbook?: import('./playbook.js').Playbook;
+  /**
+   * Qualité d'analyse vidéo de **ce** camp, 0 à 1.
+   *
+   * C'est elle qui décide s'il lit les habitudes d'en face, et non l'inverse :
+   * un camp lit, l'autre est lu. Zéro par défaut, donc aucune lecture, donc une
+   * calibration inchangée.
+   */
+  readonly analysis?: number;
 }
 
 /** V0.8 — choix de philosophie de touche. */
@@ -212,6 +237,15 @@ export interface MatchResult {
     readonly color: 'YELLOW' | 'RED';
     readonly minute: number;
   }[];
+  /**
+   * V0.65 : les combinaisons de touche appelées, camp par camp.
+   *
+   * Le moteur ne tient pas le compteur de saison, il dit seulement ce qu'il
+   * vient de jouer. La saison additionne et sauvegarde : deux responsabilités
+   * séparées, et une seule source de vérité pour le cumul.
+   */
+  readonly homeLineoutCalls?: import('./playbook.js').CallUsage;
+  readonly awayLineoutCalls?: import('./playbook.js').CallUsage;
 }
 
 export interface PhaseRecord {

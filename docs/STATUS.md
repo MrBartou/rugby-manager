@@ -1,6 +1,6 @@
-# Statut global : V0.64
+# Statut global : V0.65
 
-> Dernière mise à jour : V0.64 livrée. **1557/1557 tests verts. Calibration 12/12 cibles atteintes (8000 matchs par scénario, inchangée : le moteur de match n'a pas bougé).**
+> Dernière mise à jour : V0.65 livrée. **1607/1607 tests verts. Calibration rejouée après modification du moteur de touche : 12/12 cibles atteintes (8000 matchs par scénario).**
 >
 > Ce document a longtemps annoncé V0.5 alors que le code était déjà en V0.10+ : les jalons
 > V0.6 à V0.12 (carrière, transferts, finances, JIFF, formation, internationaux, records)
@@ -352,6 +352,16 @@
 - [x] Surenchère : le nombre de clubs intéressés s'affiche avant l'offre, et l'un d'eux peut emporter la cible après les deux accords
 - [x] Pré-contrats à six mois de l'échéance, dans les deux sens : on signe le joueur d'un autre, on perd le sien
 - [x] Prêt avec option d'achat obligatoire ou facultative, levée sur les minutes réellement jouées, et rappel anticipé réservé à la crise de blessures
+
+### ✅ V0.65 : Le playbook, la touche se dessine
+- [x] Carnet de trois à cinq combinaisons de touche, nommées par le manager : alignement, créneau de sauteur, option, sauteur désigné
+- [x] La combinaison s'appelle sur la position du ballon : on sort de ses vingt-deux, on va chercher l'essai dans les leurs
+- [x] Une combinaison jouée plus d'une fois sur trois face à un adversaire qui prépare finit lue : conquête en baisse, maul étouffé, et le compte rendu le dit
+- [x] Le dossier d'avant-match avertit avant le coup d'envoi, et le scout principal trouve là son premier usage offensif
+- [x] Consignes individuelles : marquage d'un adversaire (qui coûte au marqueur), consigne au pied jugée sur la ligne défensive adverse
+- [x] Plans A et B enregistrés, rappelés d'un clic, conservés dans la sauvegarde
+- [x] Point neutre vérifié au dix-millième : sans carnet, la touche se joue exactement comme en V0.64
+- [x] Écran d'avant-match refondu : trois onglets (composition, plan, adversaire), barre d'action collante portant niveau du XV, quota JIFF et météo, carnet en tableau pleine largeur
 
 ### ⬜ V0.9 — Bêta privée
 - [ ] Init Tauri (binaire desktop)

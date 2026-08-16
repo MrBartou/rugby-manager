@@ -20,6 +20,12 @@
  */
 
 import type { Club, ClubId, Player, Position } from '../types.js';
+import {
+  favouriteCall,
+  readLevel,
+  type CallUsage,
+  type Playbook,
+} from '../match/playbook.js';
 import { certaintyFor, currentAbility, estimateAttribute, type Certainty, type ScoutingState } from './scouting.js';
 import { canCover, isForwardPosition } from '../match/bench.js';
 import { planForIdentity } from '../match/tactics.js';
@@ -76,6 +82,15 @@ export interface OpponentReport {
   readonly threats: readonly OpponentThreat[];
   /** Absents connus : blessés et suspendus de leur effectif. */
   readonly unavailable: readonly Player[];
+  /**
+   * V0.65 : ce que leur analyse a repéré de **nos** habitudes de touche.
+   *
+   * Le dossier d'avant-match ne servait qu'à préparer l'attaque. Cette ligne le
+   * retourne vers nous : elle dit ce que l'adversaire a compris de notre carnet,
+   * et c'est le seul avertissement que le manager recevra avant de se faire
+   * contrer une touche sur deux.
+   */
+  readonly lineoutWarning?: string;
 }
 
 const UNIT_LABEL: Readonly<Record<UnitId, string>> = {
@@ -103,6 +118,13 @@ export interface OpponentReportInput {
   readonly form: readonly (-1 | 0 | 1)[];
   readonly rank: number | undefined;
   readonly currentRound: number;
+  /**
+   * V0.65 : notre propre carnet, ce qu'on en a joué, et la qualité d'analyse de
+   * l'adversaire. Trois choses que le dossier ne pouvait pas deviner seul.
+   */
+  readonly ownPlaybook?: Playbook;
+  readonly ownCallUsage?: CallUsage;
+  readonly opponentAnalysis?: number;
 }
 
 /**
@@ -240,7 +262,39 @@ export function buildOpponentReport(input: OpponentReportInput): OpponentReport 
     weakness: ranked.length > 0 ? ranked[ranked.length - 1] : undefined,
     threats,
     unavailable,
+    ...(lineoutWarningFor(input) !== undefined
+      ? { lineoutWarning: lineoutWarningFor(input)! } : {}),
   };
+}
+
+/**
+ * L'avertissement de touche : V0.65.
+ *
+ * Il ne se déclenche que si les deux conditions de la lecture sont réunies, les
+ * mêmes que dans le moteur : une combinaison assez répétée, et un adversaire
+ * qui travaille ses adversaires. Le dire autrement produirait un dossier qui
+ * annonce un danger que le match ne confirmerait pas, ce qui est pire que de
+ * ne rien dire.
+ */
+function lineoutWarningFor(input: OpponentReportInput): string | undefined {
+  const { ownPlaybook, ownCallUsage, opponentAnalysis } = input;
+  if (!ownPlaybook || !ownCallUsage || opponentAnalysis === undefined) return undefined;
+
+  const favourite = favouriteCall(ownCallUsage);
+  if (!favourite) return undefined;
+
+  const read = readLevel({
+    usage: ownCallUsage,
+    callId: favourite.callId,
+    opponentPreparation: opponentAnalysis,
+  });
+  if (read < 0.25) return undefined;
+
+  const name = ownPlaybook.calls.find(c => c.id === favourite.callId)?.name ?? 'votre combinaison fétiche';
+  const part = Math.round(favourite.share * 100);
+  return read >= 0.6
+    ? `Ils connaissent votre fond de touche : « ${name} » sort ${part} % du temps, et leur analyse vidéo est bonne. Attendez-vous à être contré.`
+    : `Leur cellule vidéo a repéré « ${name} » (${part} % de vos touches). Varier vous coûtera moins qu'un ballon perdu.`;
 }
 
 // =============================================================================
