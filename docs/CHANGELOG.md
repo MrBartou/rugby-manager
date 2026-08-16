@@ -48,6 +48,19 @@ l'adversaire finit par le lire.
   terrain, c'est lui qui saute au lieu d'être dilué dans la moyenne du paquet ;
   s'il est sorti, la combinaison a été dessinée autour d'un absent, et cela se
   paie.
+- **L'écran d'avant-match passe en trois onglets** : composition, plan de match,
+  adversaire. Il empilait six panneaux et son affiche, soit trois écrans de
+  défilement, avec la composition, qui est le travail même de cette page, en
+  quatrième position et le bouton « Lancer le match » tout en bas. La barre d'onglets est
+  celle du marché et de la carrière : c'est la même navigation, elle ne doit pas
+  avoir trois apparences.
+- **La barre d'action colle en bas de la fenêtre** et porte l'état du XV :
+  niveau moyen, quota JIFF, météo, en jaune dès que l'un sort des clous. Il
+  fallait auparavant remonter pour vérifier sa feuille et redescendre pour
+  lancer le match.
+- **Le carnet de touche est un tableau**, une ligne par combinaison, dans un
+  panneau pleine largeur, avec l'habillage de tableau de l'écran
+  d'entraînement.
 
 ### Notes de modélisation
 
@@ -83,6 +96,12 @@ l'adversaire finit par le lire.
 - **Deux plans enregistrés, pas dix.** A et B, comme sur un banc de touche :
   celui qu'on a préparé et celui qu'on sort quand le premier ne marche pas. Une
   bibliothèque de plans serait devenue une gestion de bibliothèque.
+- **La faute de la V0.62.1, refaite.** Le carnet a d'abord été posé dans la
+  colonne étroite de la préparation, où il tombait à 360 pixels : neuf boutons
+  segmentés par combinaison, dépliés en permanence, qui repoussaient la
+  composition hors de l'écran. Livré fonctionnel, jamais regardé. La leçon reste
+  la même qu'il y a trois versions : une grille qui accepte n'importe quel
+  arrivant se dérègle à chaque ajout, et un panneau se place, il ne tombe pas.
 
 ## [V0.64] : Le mercato mûrit
 

@@ -361,6 +361,7 @@
 - [x] Consignes individuelles : marquage d'un adversaire (qui coûte au marqueur), consigne au pied jugée sur la ligne défensive adverse
 - [x] Plans A et B enregistrés, rappelés d'un clic, conservés dans la sauvegarde
 - [x] Point neutre vérifié au dix-millième : sans carnet, la touche se joue exactement comme en V0.64
+- [x] Écran d'avant-match refondu : trois onglets (composition, plan, adversaire), barre d'action collante portant niveau du XV, quota JIFF et météo, carnet en tableau pleine largeur
 
 ### ⬜ V0.9 — Bêta privée
 - [ ] Init Tauri (binaire desktop)
