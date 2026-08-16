@@ -2212,17 +2212,58 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
    33. PreMatch — actions
    ============================================================================ */
 
+/* V0.65 : la barre d'action colle en bas de la fenêtre et porte l'état du XV.
+   Posée sous six panneaux, elle obligeait à remonter pour vérifier sa feuille
+   et à redescendre pour lancer le match. */
 .pre-match-actions {
   display: flex;
   gap: var(--sp-3);
   flex-wrap: wrap;
-  padding: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
   background: var(--bg-1);
   border: 1px solid var(--border);
   border-radius: var(--radius-3);
   margin-top: var(--sp-2);
   align-items: center;
+  position: sticky;
+  bottom: var(--sp-3);
+  z-index: 5;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 28%);
 }
+
+.pma-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+  align-items: baseline;
+}
+
+.pma-stat {
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pma-stat strong {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  margin-left: 4px;
+}
+
+.pma-stat.warn,
+.pma-stat.warn strong { color: var(--yellow); }
+
+.pma-buttons {
+  display: flex;
+  gap: var(--sp-3);
+  margin-left: auto;
+}
+
+/* Les onglets reprennent la barre du marché et de la carrière : c'est la même
+   navigation interne, elle ne doit pas avoir deux apparences. */
+.pre-match-tabs { margin-bottom: calc(var(--sp-4) * -1 + var(--sp-2)); }
 
 /* ============================================================================
    35. HumanEventModal — voice
